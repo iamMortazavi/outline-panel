@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 from ...core import security
 from ...core.settings import (
-    BOT_ADMIN_IDS, BOT_ENABLED, BOT_TOKEN, TOTP_ENABLED, TOTP_SECRET,
+    BOT_ADMIN_IDS, BOT_ENABLED, BOT_TOKEN, TOTP_ENABLED, TOTP_SECRET, WEBAPP_URL,
 )
 from ..deps import botmgr, require_session, settings
 
@@ -77,7 +77,8 @@ async def disable_2fa(body: PasswordOnly):
 
 
 # ---------------------------------------------------------- Telegram bot
-def _bot_status(configured: bool, enabled: bool, admin_ids: set[int]) -> dict:
+def _bot_status(configured: bool, enabled: bool, admin_ids: set[int],
+                webapp_url: str | None) -> dict:
     st = botmgr.status()
     return {
         "configured": configured,
@@ -85,6 +86,7 @@ def _bot_status(configured: bool, enabled: bool, admin_ids: set[int]) -> dict:
         "running": st["running"],
         "username": st["username"],
         "adminIds": sorted(admin_ids),
+        "webappUrl": webapp_url or "",
     }
 
 
@@ -94,6 +96,7 @@ async def get_bot():
         configured=bool(await settings.get(BOT_TOKEN)),
         enabled=await settings.get_bool(BOT_ENABLED),
         admin_ids=await settings.get_admin_ids(),
+        webapp_url=await settings.get_webapp_url(),
     )
 
 
@@ -114,6 +117,7 @@ class BotBody(BaseModel):
     token: str | None = None          # omit/empty to keep the existing token
     adminIds: str = ""                # comma-separated numeric IDs
     enabled: bool = True
+    webappUrl: str = ""               # public https base for the Mini App
 
 
 @router.put("/bot")
@@ -123,6 +127,7 @@ async def set_bot(body: BotBody):
     ids = ",".join(x.strip() for x in body.adminIds.split(",") if x.strip().isdigit())
     await settings.set(BOT_ADMIN_IDS, ids)
     await settings.set_bool(BOT_ENABLED, body.enabled)
+    await settings.set(WEBAPP_URL, (body.webappUrl or "").strip().rstrip("/") or None)
 
     token = await settings.get(BOT_TOKEN)
     try:
@@ -132,5 +137,6 @@ async def set_bot(body: BotBody):
             await botmgr.stop()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Could not start bot: {e}")
-    return _bot_status(bool(token), body.enabled, await settings.get_admin_ids())
+    return _bot_status(bool(token), body.enabled, await settings.get_admin_ids(),
+                       await settings.get_webapp_url())
 

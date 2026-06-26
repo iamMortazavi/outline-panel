@@ -16,6 +16,7 @@ from ..core import config
 from ..core.db import DB
 from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_TOKEN, SettingsStore
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 from ..web.registry import Registry
 from .core import build_dispatcher
 
@@ -50,7 +51,15 @@ async def main() -> None:
             except Exception as e:  # noqa: BLE001
                 log.warning("notify admin %s failed: %s", aid, e)
 
-    dp = build_dispatcher(db, reg, get_admin_ids)
+    dp = build_dispatcher(db, reg, get_admin_ids,
+                          get_webapp_url=settings.get_webapp_url)
+    wa_base = await settings.get_webapp_url()
+    if wa_base and wa_base.startswith("https://"):
+        try:
+            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
+                text="مدیریت", web_app=WebAppInfo(url=f"{wa_base}/tma")))
+        except Exception as e:  # noqa: BLE001 — non-fatal
+            log.warning("Could not set Web App menu button: %s", e)
     asyncio.create_task(
         expiry_loop(reg, db, config.EXPIRY_CHECK_INTERVAL, notifier=notify)
     )

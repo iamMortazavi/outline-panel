@@ -70,6 +70,12 @@ SESSION_MAX_AGE: int = int(os.getenv("SESSION_MAX_AGE", str(7 * 86400)))
 #   "false"           — never Secure.
 COOKIE_SECURE: str = os.getenv("COOKIE_SECURE", "auto").strip().lower()
 
+# Public HTTPS base URL of the panel, used to build the Telegram Mini App
+# (Web App) link, e.g. https://panel.example.com — the Mini App is served at
+# <base>/tma. Optional; can also be set from the panel's bot settings. Telegram
+# only opens HTTPS Web App URLs.
+WEBAPP_URL: str | None = os.getenv("WEBAPP_URL")
+
 
 def cookie_secure_for(is_https: bool) -> bool:
     if COOKIE_SECURE in ("1", "true", "yes", "on"):

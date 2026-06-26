@@ -21,7 +21,7 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 db = DB(config.DB_PATH)
 reg = Registry(db)
 settings = SettingsStore(db)
-botmgr = BotManager(db, reg, settings.get_admin_ids)
+botmgr = BotManager(db, reg, settings.get_admin_ids, settings.get_webapp_url)
 signer = URLSafeTimedSerializer(config.SESSION_SECRET, salt="session")
 
 

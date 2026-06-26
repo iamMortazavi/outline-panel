@@ -25,6 +25,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     Message,
+    WebAppInfo,
 )
 
 from ..core.outline_api import OutlineError
@@ -48,6 +49,7 @@ def build_dispatcher(
     registry,
     get_admin_ids: Callable[[], "set[int] | Awaitable[set[int]]"],
     notifier=None,
+    get_webapp_url: "Callable[[], str | None | Awaitable[str | None]] | None" = None,
 ) -> Dispatcher:
     dp = Dispatcher()
 
@@ -56,6 +58,17 @@ def build_dispatcher(
         if hasattr(res, "__await__"):
             res = await res
         return set(res or ())
+
+    async def webapp_url() -> str | None:
+        """Full Mini App URL (`<base>/tma`); only HTTPS opens as a Web App."""
+        if get_webapp_url is None:
+            return None
+        res = get_webapp_url()
+        if hasattr(res, "__await__"):
+            res = await res
+        if not res or not res.startswith("https://"):
+            return None
+        return f"{res.rstrip('/')}/tma"
 
     async def is_admin(uid: int) -> bool:
         return uid in await admin_ids()
@@ -67,11 +80,15 @@ def build_dispatcher(
         else:
             await target.answer(text)
 
-    def main_menu() -> InlineKeyboardMarkup:
-        return InlineKeyboardMarkup(inline_keyboard=[
+    def main_menu(wa_url: str | None = None) -> InlineKeyboardMarkup:
+        rows = [
             [InlineKeyboardButton(text="➕ ساخت یوزر جدید", callback_data="new")],
             [InlineKeyboardButton(text="📋 لیست یوزرها", callback_data="list")],
-        ])
+        ]
+        if wa_url:
+            rows.insert(0, [InlineKeyboardButton(
+                text="🚀 وب‌اپ مدیریت", web_app=WebAppInfo(url=wa_url))])
+        return InlineKeyboardMarkup(inline_keyboard=rows)
 
     def back_menu() -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(inline_keyboard=[
@@ -84,7 +101,7 @@ def build_dispatcher(
         if not await is_admin(msg.from_user.id):
             return await deny(msg)
         await msg.answer("🛡 <b>پنل مدیریت Outline</b>\n\nیک گزینه را انتخاب کنید:",
-                         reply_markup=main_menu(), parse_mode="HTML")
+                         reply_markup=main_menu(await webapp_url()), parse_mode="HTML")
 
     @dp.message(Command("id"))
     async def cmd_id(msg: Message) -> None:
@@ -97,7 +114,7 @@ def build_dispatcher(
         if not await is_admin(cq.from_user.id):
             return await deny(cq)
         await cq.message.edit_text("🛡 <b>پنل مدیریت Outline</b>\n\nیک گزینه را انتخاب کنید:",
-                                   reply_markup=main_menu(), parse_mode="HTML")
+                                   reply_markup=main_menu(await webapp_url()), parse_mode="HTML")
         await cq.answer()
 
     # -------------------------------------------------------- create user

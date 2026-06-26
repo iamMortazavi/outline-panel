@@ -138,20 +138,25 @@ class ExtendBody(BaseModel):
 
 
 # --------------------------------------------------------------------- routes
-@router.post("/servers/{sid}/keys")
-async def create_key(sid: str, body: CreateBody):
+async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
+                         monthly_gb: float = 0) -> dict:
+    """Create a key on Outline and persist its local metadata.
+
+    Shared by the dashboard route and the Telegram Mini App. Raises
+    ``HTTPException`` on failure and removes any orphan key left on the server.
+    """
     api = api_or_404(sid)
-    limit_bytes = gb_to_bytes(body.limit_gb) if body.limit_gb > 0 else None
-    monthly_bytes = gb_to_bytes(body.monthly_gb) if body.monthly_gb > 0 else None
+    limit_bytes = gb_to_bytes(limit_gb) if limit_gb > 0 else None
+    monthly_bytes = gb_to_bytes(monthly_gb) if monthly_gb > 0 else None
     if monthly_bytes and limit_bytes is None:
         limit_bytes = monthly_bytes
-    duration = body.days if body.days > 0 else None
+    duration = days if days > 0 else None
     try:
-        key = await api.create_key(name=body.name, limit_bytes=limit_bytes)
+        key = await api.create_key(name=name, limit_bytes=limit_bytes)
     except OutlineError as e:
         raise HTTPException(status_code=502, detail=str(e))
     try:
-        await db.add_key(sid, key["id"], body.name, limit_bytes, duration)
+        await db.add_key(sid, key["id"], name, limit_bytes, duration)
         if monthly_bytes:
             await db.set_monthly(sid, key["id"], monthly_bytes, int(time.time()) + _MONTH)
     except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
@@ -161,10 +166,16 @@ async def create_key(sid: str, body: CreateBody):
         except OutlineError:
             pass
         raise HTTPException(status_code=500, detail=f"Failed to persist key: {e}")
-    return {"id": key["id"], "serverId": sid, "name": body.name,
+    return {"id": key["id"], "serverId": sid, "name": name,
             "accessUrl": key["accessUrl"], "limit": limit_bytes,
             "monthlyBytes": monthly_bytes,
             "durationDays": duration, "pending": duration is not None}
+
+
+@router.post("/servers/{sid}/keys")
+async def create_key(sid: str, body: CreateBody):
+    return await create_key_for(sid, body.name, body.limit_gb, body.days,
+                                body.monthly_gb)
 
 
 @router.put("/servers/{sid}/keys/{kid}/name")

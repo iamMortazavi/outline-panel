@@ -81,6 +81,16 @@ Open **Settings → Telegram bot**, paste your token from
 bot to find one), then Save. The bot starts immediately. Alternatively run it as a
 separate process with `outline-panel-bot`.
 
+### Telegram Mini App (Web App)
+
+Set **Mini App URL** in Settings → Telegram bot to your panel's public HTTPS base
+(e.g. `https://panel.example.com`, or via the `WEBAPP_URL` env). The bot then shows
+a **🚀 وب‌اپ مدیریت** button (and a persistent menu button) that opens a phone-
+friendly Web App at `<base>/tma` — admins can create users and watch each one's
+data usage without leaving Telegram. Auth uses Telegram's signed `initData`
+(validated against the bot token), so only the same admin IDs get in — no extra
+login. HTTPS is required; pair it with the Caddy setup below.
+
 ## Configuration
 
 Almost everything (servers, bot token, admin IDs, password, 2FA) is managed from
@@ -96,6 +106,7 @@ the panel and stored in the DB. The `.env` only holds bootstrap/runtime values:
 | `ENABLE_SCHEDULER` | Run the background scheduler in the web app (set `false` when the standalone bot already runs it) |
 | `OUTLINE_API_URL` / `OUTLINE_CERT_SHA256` | Optional: import one server on first run |
 | `BOT_TOKEN` / `ADMIN_IDS` | Optional: seed the bot config on first run |
+| `WEBAPP_URL` | Public HTTPS base for the Telegram Mini App (served at `<base>/tma`) |
 | `NOTIFY_LIMIT_PERCENT` / `NOTIFY_EXPIRY_DAYS` | Alert thresholds (default 80% / 3 days) |
 
 ## How time & quota work

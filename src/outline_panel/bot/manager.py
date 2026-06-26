@@ -11,6 +11,7 @@ import asyncio
 import logging
 
 from aiogram import Bot
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 from .core import build_dispatcher
 
@@ -18,10 +19,11 @@ log = logging.getLogger("bot.manager")
 
 
 class BotManager:
-    def __init__(self, db, registry, get_admin_ids):
+    def __init__(self, db, registry, get_admin_ids, get_webapp_url=None):
         self.db = db
         self.registry = registry
         self.get_admin_ids = get_admin_ids
+        self.get_webapp_url = get_webapp_url
         self._bot: Bot | None = None
         self._dp = None
         self._task: asyncio.Task | None = None
@@ -43,12 +45,30 @@ class BotManager:
         finally:
             await probe.session.close()
 
+    async def _resolve_webapp_url(self) -> str | None:
+        if self.get_webapp_url is None:
+            return None
+        res = self.get_webapp_url()
+        if hasattr(res, "__await__"):
+            res = await res
+        return res if (res and res.startswith("https://")) else None
+
     async def start(self, token: str) -> str:
         await self.stop()
         bot = Bot(token)
         me = await bot.get_me()  # validates the token
-        dp = build_dispatcher(self.db, self.registry, self.get_admin_ids, self.notify)
+        dp = build_dispatcher(self.db, self.registry, self.get_admin_ids,
+                              self.notify, self.get_webapp_url)
         self._bot, self._dp, self._username = bot, dp, me.username
+        # Persistent chat menu button → opens the Mini App (best effort).
+        wa_url = await self._resolve_webapp_url()
+        if wa_url:
+            try:
+                await bot.set_chat_menu_button(
+                    menu_button=MenuButtonWebApp(
+                        text="مدیریت", web_app=WebAppInfo(url=f"{wa_url}/tma")))
+            except Exception as e:  # noqa: BLE001 — non-fatal
+                log.warning("Could not set Web App menu button: %s", e)
         self._task = asyncio.create_task(
             dp.start_polling(bot, handle_signals=False)
         )

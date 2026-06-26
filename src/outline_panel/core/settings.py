@@ -19,6 +19,7 @@ BOT_ENABLED = "bot_enabled"       # "1"/"0"
 TOTP_SECRET = "totp_secret"
 TOTP_ENABLED = "totp_enabled"     # "1"/"0"
 SUB_BASE_URL = "sub_base_url"
+WEBAPP_URL = "webapp_url"         # public https base, e.g. https://panel.example.com
 
 
 class SettingsStore:
@@ -47,6 +48,12 @@ class SettingsStore:
         raw = await self.get(BOT_ADMIN_IDS, "") or ""
         return {int(x) for x in raw.split(",") if x.strip().isdigit()}
 
+    async def get_webapp_url(self) -> str | None:
+        """Public HTTPS base URL of the panel, or None. The Mini App lives at
+        ``<base>/tma``. Telegram only opens HTTPS Web App URLs."""
+        url = (await self.get(WEBAPP_URL) or "").strip().rstrip("/")
+        return url or None
+
     async def bootstrap(self) -> None:
         """Seed settings from env on first run; never overwrites existing values."""
         if await self.get(ADMIN_PW_HASH) is None and config.ADMIN_PASSWORD:
@@ -58,6 +65,8 @@ class SettingsStore:
             await self.set_bool(BOT_ENABLED, True)
         if await self.get(BOT_ADMIN_IDS) is None and config.ADMIN_IDS:
             await self.set(BOT_ADMIN_IDS, ",".join(str(i) for i in config.ADMIN_IDS))
+        if await self.get(WEBAPP_URL) is None and config.WEBAPP_URL:
+            await self.set(WEBAPP_URL, config.WEBAPP_URL.strip().rstrip("/"))
 
     # password helpers ------------------------------------------------------
     async def verify_admin_password(self, password: str) -> bool:

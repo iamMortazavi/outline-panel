@@ -24,7 +24,8 @@ from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_ENABLED, BOT_TOKEN
 from .deps import STATIC_DIR, botmgr, db, reg, settings
 from .routers import (
-    auth, backup, keys, servers, settings as settings_router, stats, subscription,
+    auth, backup, keys, miniapp, servers, settings as settings_router, stats,
+    subscription,
 )
 
 log = logging.getLogger("webapp")
@@ -72,6 +73,7 @@ app.include_router(stats.router)
 app.include_router(settings_router.router)
 app.include_router(backup.router)
 app.include_router(subscription.router)
+app.include_router(miniapp.router)
 
 
 @app.get("/healthz")
