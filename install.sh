@@ -51,7 +51,9 @@ if [ ! -f "$ENV_FILE" ]; then
   cat > "$ENV_FILE" <<EOF
 ADMIN_PASSWORD=${ADMIN_PW}
 SESSION_SECRET=${SECRET}
-COOKIE_SECURE=true
+# auto = Secure cookie only over HTTPS, so login works on http://IP:8000 too.
+# Behind an HTTPS reverse proxy it becomes Secure automatically.
+COOKIE_SECURE=auto
 DB_PATH=${APP_DIR}/outline_bot.db
 HOST=0.0.0.0
 PORT=${PORT}

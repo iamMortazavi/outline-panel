@@ -64,10 +64,13 @@ async def login(body: LoginBody, request: Request, response: Response):
             _record_login_fail(ip)
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
     _login_fails.pop(ip, None)
+    # honor a TLS-terminating reverse proxy, else the request's own scheme
+    proto = (request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+             or request.url.scheme)
     response.set_cookie(
         COOKIE_NAME, signer.dumps(secrets.token_hex(8)),
         max_age=config.SESSION_MAX_AGE, httponly=True, samesite="lax",
-        secure=config.COOKIE_SECURE,
+        secure=config.cookie_secure_for(proto == "https"),
     )
     return {"ok": True}
 

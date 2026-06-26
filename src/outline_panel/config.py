@@ -62,11 +62,21 @@ SESSION_SECRET_SET: bool = bool(os.getenv("SESSION_SECRET"))
 SESSION_SECRET: str = os.getenv("SESSION_SECRET") or os.urandom(32).hex()
 # How long a login session stays valid (seconds). Default: 7 days.
 SESSION_MAX_AGE: int = int(os.getenv("SESSION_MAX_AGE", str(7 * 86400)))
-# Send the session cookie only over HTTPS. Keep "true" in production; set to
-# "false" for local development over plain HTTP.
-COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "true").lower() not in (
-    "0", "false", "no", "off"
-)
+# Whether to mark the session cookie `Secure` (HTTPS-only).
+#   "auto"  (default) — Secure only when the request itself is HTTPS, so the
+#                       panel works over plain HTTP (IP:8000) AND stays secure
+#                       behind an HTTPS reverse proxy (honors X-Forwarded-Proto).
+#   "true"            — always Secure (HTTPS required to log in).
+#   "false"           — never Secure.
+COOKIE_SECURE: str = os.getenv("COOKIE_SECURE", "auto").strip().lower()
+
+
+def cookie_secure_for(is_https: bool) -> bool:
+    if COOKIE_SECURE in ("1", "true", "yes", "on"):
+        return True
+    if COOKIE_SECURE in ("0", "false", "no", "off"):
+        return False
+    return is_https  # "auto"
 
 
 def require_api_url() -> str:

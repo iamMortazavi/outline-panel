@@ -33,8 +33,9 @@ The script installs into `/opt/outline-panel`, creates a venv, asks for an admin
 password, generates a session secret, and starts a `systemd` service. Then open
 `http://YOUR_SERVER_IP:8000` and add your servers + bot token from the UI.
 
-> **Serve over HTTPS** in production (Caddy/Nginx/Cloudflare). `COOKIE_SECURE=true`
-> is the default, so the login cookie requires HTTPS.
+> **Serve over HTTPS** in production (Caddy/Nginx/Cloudflare). The session cookie
+> defaults to `COOKIE_SECURE=auto` — it works over plain `http://IP:8000` for
+> first setup and automatically becomes `Secure` once you're behind HTTPS.
 
 Manage it: `systemctl {status|restart|stop} outline-panel`
 Locked out? `/opt/outline-panel/.venv/bin/outline-panel-admin reset-password`
@@ -74,7 +75,7 @@ the panel and stored in the DB. The `.env` only holds bootstrap/runtime values:
 |----------|-------------|
 | `ADMIN_PASSWORD` | Initial panel password (seeds the DB on first run; later change it in the panel) |
 | `SESSION_SECRET` | Long random string; **required** in production / multi-worker |
-| `COOKIE_SECURE` | Send the session cookie only over HTTPS (default `true`) |
+| `COOKIE_SECURE` | `auto` (default, Secure only over HTTPS), or force `true`/`false` |
 | `DB_PATH` | SQLite file path |
 | `HOST` / `PORT` | Bind address for `outline-panel` (default `0.0.0.0:8000`) |
 | `ENABLE_SCHEDULER` | Run the background scheduler in the web app (set `false` when the standalone bot already runs it) |
