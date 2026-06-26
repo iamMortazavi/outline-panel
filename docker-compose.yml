@@ -1,0 +1,29 @@
+services:
+  webapp:
+    build: .
+    command: outline-panel
+    env_file: .env
+    environment:
+      - DB_PATH=/data/outline_bot.db
+      # the bot service runs the scheduler; avoid double-processing the shared DB
+      - ENABLE_SCHEDULER=false
+    volumes:
+      - data:/data
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  bot:
+    build: .
+    command: outline-panel-bot
+    env_file: .env
+    environment:
+      - DB_PATH=/data/outline_bot.db
+    volumes:
+      - data:/data
+    restart: unless-stopped
+    # remove this service if you only run the web dashboard
+    # (and then drop ENABLE_SCHEDULER=false from webapp)
+
+volumes:
+  data:

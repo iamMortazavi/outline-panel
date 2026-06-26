@@ -1,0 +1,17 @@
+[Unit]
+Description=Outline Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# adjust User and paths to your setup
+User=outline
+WorkingDirectory=/opt/outline
+EnvironmentFile=/opt/outline/.env
+ExecStart=/opt/outline/.venv/bin/outline-panel-bot
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

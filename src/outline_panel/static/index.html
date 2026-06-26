@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0b0a" />
+<title>Outline · Control Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Hanken+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0b0a;--card:#121512;--card2:#181c19;--line:#262b27;--line2:#333a34;
+    --text:#eef1ec;--muted:#969d96;--faint:#646b64;
+    --accent:#cbf24a;--accent-ink:#0c0f08;--accent-dim:rgba(203,242,74,.13);--accent-line:rgba(203,242,74,.35);
+    --warn:#ffcf5c;--danger:#ff6f6f;--danger-dim:rgba(255,111,111,.12);
+    --r:14px;--r-lg:20px;
+    --sans:"Hanken Grotesk",-apple-system,BlinkMacSystemFont,sans-serif;
+    --disp:"Bricolage Grotesque",var(--sans);--mono:"JetBrains Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{font-family:var(--sans);color:var(--text);min-height:100dvh;background:var(--bg);
+    background-image:radial-gradient(circle at 1px 1px,rgba(255,255,255,.035) 1px,transparent 0);background-size:22px 22px;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:radial-gradient(120% 80% at 50% -10%,rgba(203,242,74,.06),transparent 60%),radial-gradient(100% 60% at 50% 120%,rgba(0,0,0,.5),transparent 55%)}
+  .wrap{max-width:680px;margin:0 auto;padding:0 18px;position:relative;z-index:1}
+  .hidden{display:none!important}.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  button{font-family:inherit;cursor:pointer;border:none;border-radius:12px;font-size:15px;color:var(--text)}
+  .btn{width:100%;padding:15px;border-radius:14px;font-weight:700;background:var(--accent);color:var(--accent-ink);letter-spacing:.2px;transition:transform .12s,filter .2s}
+  .btn:hover{filter:brightness(1.06)}.btn:active{transform:scale(.985)}.btn[disabled]{opacity:.55}
+  .btn-sec{background:var(--card2);color:var(--text);border:1px solid var(--line);font-weight:500}
+  .btn-sec:hover{border-color:var(--line2);background:#1d221e}
+  .btn-danger{background:var(--danger-dim);color:#ffb3b3;border:1px solid rgba(255,111,111,.28);font-weight:500}
+  .login{min-height:100dvh;display:grid;place-items:center;padding:24px;position:relative;z-index:1}
+  .login .box{width:100%;max-width:380px}
+  .mark{display:flex;align-items:center;gap:11px;justify-content:center;margin-bottom:26px}
+  .mark .dot{width:11px;height:11px;border-radius:50%;background:var(--accent);box-shadow:0 0 14px var(--accent)}
+  .mark .wm{font-family:var(--disp);font-weight:700;font-size:21px;letter-spacing:-.4px}
+  .login h1{font-family:var(--disp);font-weight:700;font-size:30px;letter-spacing:-1px;margin:0 0 8px;text-align:center}
+  .login .lead{color:var(--muted);font-size:14px;text-align:center;margin:0 0 28px}
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 8px;text-transform:uppercase;letter-spacing:.7px;font-weight:500}
+  input,select,textarea{width:100%;padding:14px;border-radius:12px;background:var(--card);border:1px solid var(--line);color:var(--text);font-size:16px;outline:none;font-family:var(--sans);transition:border-color .15s,box-shadow .15s}
+  textarea{font-family:var(--mono);font-size:13px;min-height:70px;resize:vertical}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent-line);box-shadow:0 0 0 3px var(--accent-dim)}
+  input::placeholder,textarea::placeholder{color:var(--faint)}
+  select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23969d96' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:38px}
+  header{position:sticky;top:0;z-index:20;background:rgba(10,11,10,.78);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  .hbar{max-width:680px;margin:0 auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .hbar .left{display:flex;align-items:center;gap:9px;min-width:0}
+  .hbar .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);flex:none}
+  .hbar .wm{font-family:var(--disp);font-weight:700;font-size:17px;letter-spacing:-.3px;white-space:nowrap}
+  .hbar .srv{font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+  .ghost{background:none;border:1px solid var(--line);color:var(--muted);padding:8px 12px;border-radius:11px;font-size:13px;flex:none}
+  .ghost:hover{border-color:var(--line2);color:var(--text)}
+  main{padding:18px 0 120px;position:relative;z-index:1}
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:4px 0 16px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:13px 14px;animation:rise .5s both}
+  .stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .stat .v{font-family:var(--mono);font-weight:500;font-size:23px;margin-top:7px;letter-spacing:-.5px}
+  .stat .v small{font-size:12px;color:var(--muted);font-weight:400}
+  .stat.accent{border-color:var(--accent-line);background:linear-gradient(180deg,var(--accent-dim),transparent)}
+  .pulse{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);animation:pulse 1.8s infinite}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 15px;margin-bottom:16px;animation:rise .5s both}
+  .panel .ph{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:12px}
+  .loc{display:flex;align-items:center;gap:11px;margin-bottom:13px}.loc:last-child{margin-bottom:0}
+  .loc .flag{font-size:18px;width:24px;text-align:center;flex:none}
+  .loc .meta{flex:1;min-width:0}
+  .loc .name{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .loc .sub{font-size:11px;color:var(--faint);font-family:var(--mono);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .loc .right{width:98px;flex:none}
+  .loc .track{height:6px;background:#0e110e;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .loc .track>span{display:block;height:100%;background:var(--accent);border-radius:999px}
+  .loc .val{font-size:11.5px;font-family:var(--mono);color:var(--muted);text-align:right;margin-top:5px}
+  .note{font-size:12.5px;color:var(--muted);background:var(--card);border:1px dashed var(--line2);border-radius:12px;padding:11px 13px;margin-bottom:16px}
+  .note b{color:var(--text);font-weight:500}
+  .controls{display:flex;gap:10px;margin-bottom:10px}
+  .search{flex:1;position:relative}
+  .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--faint)}
+  .search input{padding-left:38px}
+  .controls select{flex:1;min-width:0;padding:13px 34px 13px 14px;font-size:14px}
+  .count{font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.8px;margin:6px 2px 12px}
+  /* layout shell (mobile-first single column) */
+  .shell{display:block}
+  .toolbar{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .toolbar .search{flex:1 1 100%}
+  .toolbar select{flex:1;min-width:120px;padding:13px 34px 13px 14px;font-size:14px}
+  .toolbar .newtop{display:none}
+  .mini{padding:7px 26px 7px 10px!important;font-size:12px!important;width:auto!important;border-radius:9px!important}
+  .psrow{padding:11px 0;border-bottom:1px solid var(--line)}
+  .psrow:last-child{border-bottom:none;padding-bottom:0}
+  .pshead{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .pshead .sdot{width:8px;height:8px;border-radius:50%;flex:none}
+  .pshead .sd-on{background:var(--accent);box-shadow:0 0 7px var(--accent)}.pshead .sd-off{background:var(--danger)}
+  .psname{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .psmetrics{display:flex;flex-wrap:wrap;gap:13px;font-size:12px;color:var(--muted);font-family:var(--mono)}
+  .psmetrics b{color:var(--text);font-weight:500}
+  /* desktop */
+  @media(min-width:960px){
+    .wrap{max-width:1180px}.hbar{max-width:1180px}
+    .shell{display:grid;grid-template-columns:330px 1fr;gap:28px;align-items:start}
+    .rail{position:sticky;top:80px}
+    .statgrid{grid-template-columns:1fr 1fr;margin-bottom:14px}
+    .toolbar .search{flex:1 1 auto}
+    .toolbar .newtop{display:flex;align-items:center;justify-content:center;gap:7px;width:auto;padding:0 20px;flex:none}
+    .keygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;align-items:start}
+    .keygrid .card{margin-bottom:0}
+    main{padding-top:24px}
+    .fab{display:none}
+    .overlay{align-items:center;padding:24px}
+    .sheet{max-width:540px;border-radius:22px;border:1px solid var(--line2)}
+    .sheet .grip{display:none}
+  }
+  @media(min-width:1280px){.keygrid{grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;margin-bottom:13px;transition:transform .14s,border-color .14s;animation:rise .5s both}
+  .card:hover{transform:translateY(-2px);border-color:var(--line2)}
+  .card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .card .nm{font-family:var(--disp);font-weight:700;font-size:17px;letter-spacing:-.3px;word-break:break-word;line-height:1.2}
+  .card .sub{font-size:12px;color:var(--faint);margin-top:5px;font-family:var(--mono);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .stag{font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-family:var(--sans);display:inline-flex;align-items:center;gap:5px}
+  .stag .sd{width:5px;height:5px;border-radius:50%;background:var(--accent)}
+  .badge{font-size:11px;font-weight:500;padding:5px 10px;border-radius:999px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+  .badge.on{background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent-line)}
+  .badge.off{background:var(--danger-dim);color:#ffb3b3;border:1px solid rgba(255,111,111,.28)}
+  .badge.pending{background:rgba(255,207,92,.12);color:var(--warn);border:1px solid rgba(255,207,92,.3)}
+  .badge .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .live{color:var(--accent);font-size:11.5px;display:inline-flex;align-items:center;gap:6px;font-weight:500}.live .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .bar{height:7px;border-radius:999px;background:#0e110e;border:1px solid var(--line);overflow:hidden;margin:15px 0 7px}
+  .bar>span{display:block;height:100%;background:var(--accent);border-radius:999px;transition:width .5s cubic-bezier(.2,.7,.2,1)}
+  .usage{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);font-family:var(--mono)}
+  .facts{display:flex;flex-wrap:wrap;gap:14px;margin-top:13px;font-size:12.5px;color:var(--muted)}
+  .facts .f{display:flex;align-items:center;gap:6px}.facts .f b{color:var(--text);font-weight:500;font-family:var(--mono)}.facts svg{color:var(--faint)}
+  .actions{display:flex;gap:8px;margin-top:15px}
+  .actions button{flex:1;padding:11px;font-size:13px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px}
+  .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom));z-index:30;max-width:644px;width:calc(100% - 36px);box-shadow:0 10px 30px rgba(203,242,74,.22),0 4px 12px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;gap:9px}
+  .overlay{position:fixed;inset:0;background:rgba(5,6,5,.66);backdrop-filter:blur(3px);z-index:40;display:flex;align-items:flex-end;justify-content:center;animation:fade .2s}
+  .sheet{background:var(--bg);border:1px solid var(--line2);border-bottom:none;border-radius:24px 24px 0 0;width:100%;max-width:680px;padding:10px 20px calc(28px + env(safe-area-inset-bottom));max-height:92dvh;overflow:auto;animation:rise .26s}
+  .grip{width:44px;height:5px;border-radius:999px;background:var(--line2);margin:8px auto 18px}
+  .sheet h2{font-family:var(--disp);font-weight:700;font-size:23px;letter-spacing:-.6px;margin:0 0 5px}
+  .sheet .desc{color:var(--muted);font-size:13.5px;margin:0 0 18px}
+  .field{margin-bottom:18px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
+  .chip{padding:9px 14px;border-radius:11px;background:var(--card);border:1px solid var(--line);color:var(--muted);font-size:13px;font-family:var(--mono);transition:.14s}
+  .chip:hover{border-color:var(--line2)}.chip.sel{background:var(--accent-dim);border-color:var(--accent-line);color:var(--accent)}
+  .hint{font-size:12px;color:var(--faint);margin-top:7px}
+  .err{color:#ffb3b3;font-size:13px;margin-top:8px;min-height:1px}
+  .qrwrap{display:grid;place-items:center;margin:6px 0 16px}.qrwrap>div{padding:14px;background:#fff;border-radius:16px;line-height:0}
+  .urlbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px;font-size:12px;word-break:break-all;font-family:var(--mono);color:var(--accent);line-height:1.5;white-space:pre-wrap}
+  .empty{text-align:center;color:var(--muted);padding:60px 20px}.empty .big{font-size:42px;margin-bottom:12px;color:var(--accent)}
+  .rowflex{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .srow{display:flex;align-items:center;gap:11px;padding:13px 14px;background:var(--card);border:1px solid var(--line);border-radius:13px;margin-bottom:10px;cursor:pointer;transition:border-color .14s}
+  .srow:hover{border-color:var(--line2)}
+  .srow .sdot{width:9px;height:9px;border-radius:50%;flex:none}
+  .srow .sd-on{background:var(--accent);box-shadow:0 0 8px var(--accent)}.srow .sd-off{background:var(--danger)}
+  .srow .sinfo{flex:1;min-width:0}
+  .srow .sname{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srow .ssub{font-size:11.5px;color:var(--faint);font-family:var(--mono);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .srow .chev{color:var(--faint);flex:none}
+  .toggle{position:relative;width:46px;height:27px;flex:none}.toggle input{opacity:0;width:0;height:0;position:absolute}
+  .toggle .tk{position:absolute;inset:0;background:var(--card2);border:1px solid var(--line2);border-radius:999px;transition:.2s;cursor:pointer}
+  .toggle .tk::before{content:"";position:absolute;width:19px;height:19px;left:3px;top:3px;background:var(--muted);border-radius:50%;transition:.2s}
+  .toggle input:checked + .tk{background:var(--accent-dim);border-color:var(--accent-line)}
+  .toggle input:checked + .tk::before{transform:translateX(19px);background:var(--accent)}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));z-index:60;background:var(--card2);color:var(--text);border:1px solid var(--line2);padding:12px 20px;border-radius:999px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;white-space:nowrap}
+  .toast.show{opacity:1}.toast.bad{border-color:rgba(255,111,111,.4);color:#ffb3b3}
+  .spin{width:18px;height:18px;border:2px solid rgba(12,15,8,.3);border-top-color:var(--accent-ink);border-radius:50%;animation:sp .7s linear infinite;display:inline-block;vertical-align:-3px}
+  .spin.lime{border-color:rgba(203,242,74,.25);border-top-color:var(--accent)}
+  @keyframes sp{to{transform:rotate(360deg)}}@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}@keyframes fade{from{opacity:0}to{opacity:1}}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</head>
+<body>
+<section id="login" class="login"><div class="box">
+  <div class="mark"><span class="dot"></span><span class="wm">outline control</span></div>
+  <h1>Welcome back.</h1><p class="lead">Sign in to manage your servers.</p>
+  <label for="pw">Password</label>
+  <input id="pw" type="password" placeholder="••••••••" autocomplete="current-password" />
+  <div id="totpWrap" class="hidden" style="margin-top:14px"><label for="totp">Two-factor code</label>
+  <input id="totp" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" /></div>
+  <div id="loginErr" class="err"></div><div style="height:18px"></div>
+  <button class="btn" id="loginBtn">Sign in →</button>
+</div></section>
+
+<section id="app" class="hidden">
+  <header><div class="hbar">
+    <div class="left"><span class="dot"></span><span class="wm">outline control</span><span class="srv hidden" id="srvPill"></span></div>
+    <div style="display:flex;gap:8px;flex:none">
+      <button class="ghost" id="settingsBtn" aria-label="Servers & settings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+      <button class="ghost" id="logoutBtn">Sign out</button>
+    </div>
+  </div></header>
+  <div class="wrap"><main>
+    <div class="shell">
+      <aside class="rail">
+        <div id="stats" class="statgrid"></div>
+        <div id="perserver"></div>
+        <div id="locations"></div>
+        <div id="statNote"></div>
+      </aside>
+      <section class="content">
+        <div class="toolbar">
+          <div class="search">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg>
+            <input id="searchBox" type="search" placeholder="Search keys by name or ID…" autocomplete="off" />
+          </div>
+          <select id="serverSel" class="hidden"></select>
+          <select id="sortSel">
+            <option value="id">Newest</option>
+            <option value="name">Name A–Z</option>
+            <option value="usage">Most usage</option>
+            <option value="expiry">Expiring soon</option>
+            <option value="devices">Most devices</option>
+            <option value="online">Online first</option>
+            <option value="lastseen">Last seen</option>
+          </select>
+          <button class="btn newtop" id="newBtnTop"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Create</button>
+        </div>
+        <div id="count" class="count hidden"></div>
+        <div id="list" class="keygrid"></div>
+      </section>
+    </div>
+  </main></div>
+  <button class="btn fab" id="newBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Create new key</button>
+</section>
+
+<div id="toast" class="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const api=async(p,o={})=>{const r=await fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...o});
+  let d=null;try{d=await r.json();}catch(_){}if(!r.ok)throw new Error((d&&d.detail)||('HTTP '+r.status));return d;};
+let toastT;function toast(m,bad){const t=$('#toast');t.textContent=m;t.classList.toggle('bad',!!bad);t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2300);}
+function fmtBytes(n){if(n==null)return null;let u=['B','KB','MB','GB','TB','PB'],i=0,x=Number(n);while(Math.abs(x)>=1024&&i<u.length-1){x/=1024;i++;}return (i>=2&&x<100?x.toFixed(1):Math.round(x))+' '+u[i];}
+function fmtExpiry(ts){if(!ts)return 'No expiry';const ms=ts*1000,n=Date.now();if(ms<=n)return 'Expired';const d=Math.floor((ms-n)/864e5),h=Math.floor(((ms-n)%864e5)/36e5);return d>0?d+'d '+h+'h left':h+'h left';}
+function fmtAgo(ts){if(!ts)return null;const s=Math.max(0,Math.floor(Date.now()/1000-ts));if(s<90)return 'just now';const m=Math.floor(s/60);if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<48)return h+'h ago';return Math.floor(h/24)+'d ago';}
+function fmtDur(sec){if(!sec)return '0h';const h=Math.floor(sec/3600);if(h<48)return h+'h';return Math.floor(h/24)+'d';}
+function isOnline(k){return k.lastSeen&&(Date.now()/1000-k.lastSeen)<300;}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function tagUrl(k){const u=k.accessUrl||'';const m=u.match(/^(ss:\/\/[^@]+@[^\/?#]+)/);return (m?m[1]:u.split(/[\/?#]/)[0])+(k.name?'#'+k.name:'');}
+function flag(cc){if(!cc||cc.length!==2)return '🌐';const A=0x1F1E6;return String.fromCodePoint(...[...cc.toUpperCase()].map(c=>A+c.charCodeAt(0)-65));}
+let _rn;function countryName(cc){if(!cc||cc.length!==2)return cc||'Unknown';try{_rn=_rn||new Intl.DisplayNames(['en'],{type:'region'});return _rn.of(cc.toUpperCase())||cc;}catch(e){return cc;}}
+
+/* auth */
+async function checkAuth(){try{await api('/api/me');showApp();}catch(_){showLogin();}}
+function showLogin(){$('#login').classList.remove('hidden');$('#app').classList.add('hidden');}
+async function showApp(){$('#login').classList.add('hidden');$('#app').classList.remove('hidden');await loadServers();loadStats();loadKeys();}
+$('#loginBtn').onclick=async()=>{const pw=$('#pw').value,tot=$('#totp').value.trim(),b=$('#loginBtn');$('#loginErr').textContent='';b.disabled=true;b.innerHTML='<span class="spin"></span>';
+  try{await api('/api/login',{method:'POST',body:JSON.stringify({password:pw,totp:tot||null})});showApp();}
+  catch(e){if(/2fa code required/i.test(e.message)){$('#totpWrap').classList.remove('hidden');$('#totp').focus();$('#loginErr').textContent='Enter your two-factor code.';}else{$('#loginErr').textContent=e.message;}}
+  finally{b.disabled=false;b.textContent='Sign in →';}};
+$('#pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click();});
+$('#totp').addEventListener('keydown',e=>{if(e.key==='Enter')$('#loginBtn').click();});
+$('#logoutBtn').onclick=async()=>{await api('/api/logout',{method:'POST'});showLogin();};
+
+/* servers */
+let SERVERS=[];let FILTER='all';
+async function loadServers(){
+  try{const r=await api('/api/servers');SERVERS=r.servers;}catch(e){SERVERS=[];}
+  const pill=$('#srvPill');pill.textContent=SERVERS.length+' server'+(SERVERS.length===1?'':'s');pill.classList.toggle('hidden',!SERVERS.length);
+  const sel=$('#serverSel');
+  if(SERVERS.length>1){sel.classList.remove('hidden');sel.innerHTML='<option value="all">All servers</option>'+SERVERS.map(s=>'<option value="'+s.id+'">'+esc(s.name)+'</option>').join('');sel.value=FILTER;}
+  else{sel.classList.add('hidden');FILTER='all';}
+}
+$('#serverSel').onchange=()=>{FILTER=$('#serverSel').value;loadStats();render();};
+
+/* stats */
+let STATS=null,allKeys=[];
+function sc(k,v,o){o=o||{};return '<div class="stat'+(o.accent?' accent':'')+'"><div class="k">'+(o.pulse?'<span class="pulse"></span> ':'')+k+'</div><div class="v">'+v+'</div></div>';}
+async function loadStats(){try{STATS=await api('/api/stats'+(FILTER!=='all'?'?server='+FILTER:''));}catch(e){STATS=null;}renderStats();}
+function renderStats(){
+  const box=$('#stats'),note=$('#statNote');note.innerHTML='';
+  const shown=allKeys.filter(k=>FILTER==='all'||k.serverId===FILTER);
+  const total=shown.length,online=shown.filter(isOnline).length;
+  let h=sc('Total keys','<span class="mono">'+total+'</span>');
+  if(SERVERS.length>1&&FILTER==='all')h+=sc('Servers','<span class="mono">'+SERVERS.length+'</span>');
+  if(STATS&&STATS.available){
+    h+=sc('Online now',online+'<small> live</small>',{accent:online>0,pulse:online>0});
+    h+=sc('Transfer · 30d',fmtBytes(STATS.dataBytes)||'—');
+    h+=sc('Bandwidth',(fmtBytes(STATS.bwCurrent)||'0 B')+'<small>/s</small>');
+    h+=sc('Peak bandwidth',(fmtBytes(STATS.bwPeak)||'0 B')+'<small>/s</small>');
+    h+=sc('Tunnel time',fmtDur(STATS.tunnelSec));
+  }
+  box.innerHTML=h;[...box.children].forEach((c,i)=>c.style.animationDelay=(i*45)+'ms');
+  if(!STATS||!STATS.available)note.innerHTML='<div class="note"><b>Advanced stats are off.</b> Turn on metrics sharing for a server in settings (grid icon) to see live bandwidth, online users, peak devices and ISP locations.</div>';
+  renderLocations();renderPerServer();
+}
+let PS_SORT=localStorage.getItem('psSort')||'transfer';
+function renderPerServer(){
+  const box=$('#perserver');if(!box)return;box.innerHTML='';
+  if(SERVERS.length<2||!STATS||!STATS.perServer||!STATS.perServer.length)return;
+  const rows=STATS.perServer.map(p=>{const ks=allKeys.filter(k=>k.serverId===p.id);
+    return {id:p.id,name:p.name||'Server',available:p.available,keys:ks.length,
+      online:ks.filter(isOnline).length,data:p.dataBytes||0,bw:p.bwCurrent||0,peak:p.bwPeak||0};});
+  const cmp={transfer:(a,b)=>b.data-a.data,bandwidth:(a,b)=>b.bw-a.bw,online:(a,b)=>b.online-a.online,keys:(a,b)=>b.keys-a.keys,name:(a,b)=>(a.name||'').localeCompare(b.name||'')};
+  rows.sort(cmp[PS_SORT]||cmp.transfer);
+  const opt=(v,l)=>'<option value="'+v+'"'+(PS_SORT===v?' selected':'')+'>'+l+'</option>';
+  let h='<div class="panel"><div class="ph rowflex" style="margin-bottom:12px"><span>Per-server metrics</span>'+
+    '<select id="psSort" class="mini">'+opt('transfer','Transfer')+opt('bandwidth','Bandwidth')+opt('online','Online')+opt('keys','Keys')+opt('name','Name')+'</select></div>';
+  rows.forEach(r=>{h+='<div class="psrow"><div class="pshead"><span class="sdot '+(r.available?'sd-on':'sd-off')+'"></span><span class="psname">'+esc(r.name)+'</span></div>'+
+    '<div class="psmetrics"><span><b>'+r.keys+'</b> keys</span>'+(STATS.available?('<span><b>'+r.online+'</b> online</span><span><b>'+(fmtBytes(r.data)||'0 B')+'</b> · 30d</span><span><b>'+(fmtBytes(r.bw)||'0 B')+'</b>/s</span>'):'')+'</div></div>';});
+  box.innerHTML=h+'</div>';
+  $('#psSort').onchange=()=>{PS_SORT=$('#psSort').value;localStorage.setItem('psSort',PS_SORT);renderPerServer();};
+}
+function renderLocations(){
+  const box=$('#locations');box.innerHTML='';
+  if(!STATS||!STATS.available||!STATS.locations)return;
+  const rows=STATS.locations.map(l=>({cc:l.location||'',asn:l.asn,asOrg:l.asOrg,bytes:(l.dataTransferred||{}).bytes||0}))
+    .filter(l=>l.bytes>0).sort((a,b)=>b.bytes-a.bytes).slice(0,8);
+  if(!rows.length)return;const max=rows[0].bytes;const byISP=rows.some(r=>r.asOrg||r.asn);
+  let h='<div class="panel"><div class="ph">'+(byISP?'Connections by network · ISP':'Connections by country')+'</div>';
+  rows.forEach(r=>{const pct=Math.max(5,Math.round(r.bytes/max*100));const primary=r.asOrg||(r.asn?('AS'+r.asn):countryName(r.cc));const sub=(r.asOrg||r.asn)?(countryName(r.cc)+(r.asn?(' · AS'+r.asn):'')):'';
+    h+='<div class="loc"><span class="flag">'+flag(r.cc)+'</span><div class="meta"><div class="name">'+esc(primary)+'</div>'+(sub?'<div class="sub">'+esc(sub)+'</div>':'')+'</div><div class="right"><div class="track"><span style="width:'+pct+'%"></span></div><div class="val">'+fmtBytes(r.bytes)+'</div></div></div>';});
+  box.innerHTML=h+'</div>';
+}
+
+/* keys */
+function sortKeys(a,m){a=a.slice();
+  if(m==='name')a.sort((x,y)=>(x.name||'').localeCompare(y.name||''));
+  else if(m==='usage')a.sort((x,y)=>(y.used||0)-(x.used||0));
+  else if(m==='expiry')a.sort((x,y)=>(x.expiry||Infinity)-(y.expiry||Infinity));
+  else if(m==='devices')a.sort((x,y)=>(y.peakDevices||0)-(x.peakDevices||0));
+  else if(m==='online')a.sort((x,y)=>(isOnline(y)-isOnline(x))||((y.lastSeen||0)-(x.lastSeen||0)));
+  else if(m==='lastseen')a.sort((x,y)=>(y.lastSeen||0)-(x.lastSeen||0));
+  else a.sort((x,y)=>(parseInt(y.id)||0)-(parseInt(x.id)||0));
+  return a;}
+function errBanner(){
+  const errs=KEY_ERRORS.filter(e=>FILTER==='all'||e.serverId===FILTER);
+  if(!errs.length)return '';
+  const names=errs.map(e=>esc(e.serverName||'a server')).join(', ');
+  return '<div class="note" style="border-color:rgba(255,111,111,.4);color:#ffb3b3">'+
+    '<b>Couldn’t reach '+names+'.</b> Its keys are hidden until it responds again — they have not been deleted.</div>';
+}
+function render(){
+  const list=$('#list'),q=$('#searchBox').value.trim().toLowerCase();
+  let ks=allKeys.filter(k=>FILTER==='all'||k.serverId===FILTER)
+    .filter(k=>!q||(k.name||'').toLowerCase().includes(q)||String(k.id).includes(q));
+  ks=sortKeys(ks,$('#sortSel').value);
+  const c=$('#count'),bn=errBanner();
+  if(!SERVERS.length){c.classList.add('hidden');list.innerHTML='<div class="empty"><div class="big">⌁</div>No servers yet.<br><button class="btn-sec" style="width:auto;margin-top:14px;padding:11px 18px" onclick="openSettings()">Add your first server</button></div>';return;}
+  const totalShown=allKeys.filter(k=>FILTER==='all'||k.serverId===FILTER).length;
+  if(!totalShown){c.classList.add('hidden');list.innerHTML=bn+(bn?'':'<div class="empty"><div class="big">🔑</div>No keys yet.<br>Create your first one below.</div>');return;}
+  c.classList.remove('hidden');c.textContent=(q?ks.length+' of '+totalShown:totalShown)+' keys';
+  if(!ks.length){list.innerHTML=bn+'<div class="empty">No keys match “'+esc(q)+'”.</div>';return;}
+  list.innerHTML=bn;ks.forEach((k,i)=>{const el=card(k);el.style.animationDelay=Math.min(i*40,400)+'ms';list.appendChild(el);});
+}
+$('#searchBox').addEventListener('input',render);
+$('#sortSel').value=localStorage.getItem('sortMode')||'id';
+$('#sortSel').onchange=()=>{localStorage.setItem('sortMode',$('#sortSel').value);render();};
+let KEY_ERRORS=[];
+async function loadKeys(){const list=$('#list');list.innerHTML='<div class="empty"><span class="spin lime"></span></div>';
+  try{const r=await api('/api/keys');allKeys=r.keys;KEY_ERRORS=r.errors||[];renderStats();render();}
+  catch(e){if(/auth|session/i.test(e.message)){showLogin();return;}list.innerHTML='<div class="empty err" style="color:#ffb3b3">'+esc(e.message)+'</div>';}}
+
+const ICN={clock:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg>',dev:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/></svg>',cal:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>'};
+const cpS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg>';
+const qrS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>';
+const slS='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 17h16" stroke-linecap="round"/><circle cx="9" cy="7" r="2.4" fill="var(--card)"/><circle cx="16" cy="17" r="2.4" fill="var(--card)"/></svg>';
+const trS='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function card(k){
+  const el=document.createElement('div');el.className='card';
+  const limit=k.limit,used=k.used||0,pct=limit?Math.min(100,Math.round(used/limit*100)):0;
+  const bc=pct>=90?'var(--danger)':pct>=70?'var(--warn)':'var(--accent)';
+  const ur=limit?fmtBytes(used)+' / '+fmtBytes(limit):fmtBytes(used)+' · unlimited';
+  const on=isOnline(k);
+  let st;if(k.pending)st='<span class="badge pending"><span class="d"></span>Pending</span>';else if(on)st='<span class="live"><span class="d"></span>Online</span>';else st='<span class="badge '+(k.disabled?'off':'on')+'"><span class="d"></span>'+(k.disabled?'Disabled':'Active')+'</span>';
+  const srvTag=SERVERS.length>1?'<span class="stag"><span class="sd"></span>'+esc(k.serverName||'')+'</span>':'';
+  let facts=k.pending?'<span class="f">'+ICN.clock+' Starts on first use · <b>'+k.durationDays+'d</b></span>':'<span class="f">'+ICN.cal+' '+fmtExpiry(k.expiry)+'</span>';
+  if(k.lastSeen)facts+='<span class="f">'+ICN.clock+' <b>'+(on?'now':fmtAgo(k.lastSeen))+'</b></span>';
+  if(k.peakDevices!=null)facts+='<span class="f">'+ICN.dev+' <b>'+k.peakDevices+'</b> device'+(k.peakDevices===1?'':'s')+'</span>';
+  if(k.monthlyBytes)facts+='<span class="f">🔄 <b>'+fmtBytes(k.monthlyBytes)+'</b>/mo</span>';
+  el.innerHTML='<div class="top"><div><div class="nm">'+esc(k.name)+'</div><div class="sub">#'+esc(k.id)+srvTag+'</div></div>'+st+'</div>'+
+    '<div class="bar"><span style="width:'+pct+'%;background:'+bc+'"></span></div>'+
+    '<div class="usage"><span>'+(pct?pct+'% used':'usage')+'</span><span>'+ur+'</span></div>'+
+    '<div class="facts">'+facts+'</div>'+
+    '<div class="actions"><button class="btn-sec" data-a="copy">'+cpS+' Copy</button><button class="btn-sec" data-a="qr">'+qrS+' QR</button><button class="btn-sec" data-a="mng">'+slS+' Manage</button></div>';
+  el.querySelector('[data-a=copy]').onclick=()=>copy(tagUrl(k));
+  el.querySelector('[data-a=qr]').onclick=()=>showQR(k);
+  el.querySelector('[data-a=mng]').onclick=()=>manageSheet(k);
+  return el;
+}
+async function copy(t){try{await navigator.clipboard.writeText(t);toast('Copied ✓');}catch(_){prompt('Copy:',t);}}
+
+/* sheets */
+function openSheet(html){const ov=document.createElement('div');ov.className='overlay';ov.innerHTML='<div class="sheet"><div class="grip"></div>'+html+'</div>';ov.onclick=e=>{if(e.target===ov)ov.remove();};document.body.appendChild(ov);return ov;}
+const kbase=k=>'/api/servers/'+k.serverId+'/keys/'+k.id;
+
+function manageSheet(k){
+  const lim=k.limit?(k.limit/1073741824):0;
+  const mon=k.monthlyBytes?(k.monthlyBytes/1073741824):0;
+  const ov=openSheet('<h2>Manage key</h2><p class="desc">'+esc(k.name)+' · #'+esc(k.id)+(SERVERS.length>1?' · '+esc(k.serverName):'')+'</p>'+
+    '<div class="field"><label>Name</label><input id="mn" value="'+esc(k.name)+'" /></div>'+
+    '<div class="field"><label>Data limit · GB (0 = unlimited)</label><input id="ml" type="number" min="0" value="'+(lim||'')+'" placeholder="Unlimited" /></div>'+
+    '<div class="field"><label>Monthly quota · GB (0 = off)</label><input id="mq" type="number" min="0" value="'+(mon||'')+'" placeholder="Auto-renew off" /><div class="hint">Refreshes the data allowance every 30 days.</div></div>'+
+    '<div class="field"><div class="rowflex"><div><label style="margin:0 0 4px">Status</label><div class="hint" id="mst"></div></div><button class="btn-sec" id="mtog" style="width:auto;padding:11px 18px"></button></div></div>'+
+    '<div class="field"><label>Extend validity</label><div class="chips" id="mext"><span class="chip" data-d="30">+30 days</span><span class="chip" data-d="90">+90 days</span><span class="chip" data-d="365">+1 year</span></div>'+(k.pending?'<div class="hint">Not activated yet — extends the post-activation duration.</div>':'')+'</div>'+
+    '<div class="field" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn-sec" id="mcfg" style="width:auto;padding:11px 16px">⤓ Config</button>'+
+    '<button class="btn-sec" id="msub" style="width:auto;padding:11px 16px">🔗 Subscription</button>'+
+    '<button class="btn-sec" id="mreset" style="width:auto;padding:11px 16px">🔄 Reset usage</button></div>'+
+    '<div id="me" class="err"></div><button class="btn" id="msave">Save changes</button><div style="height:10px"></div>'+
+    '<button class="btn btn-danger" id="mdel">'+trS+' Delete key</button>');
+  let disabled=k.disabled;const refl=()=>{ov.querySelector('#mst').textContent=disabled?'Disabled — traffic blocked':'Active';ov.querySelector('#mtog').textContent=disabled?'Enable':'Disable';};refl();
+  ov.querySelector('#mtog').onclick=async()=>{try{await api(kbase(k)+'/'+(disabled?'enable':'disable'),{method:'POST'});disabled=!disabled;refl();toast(disabled?'Key disabled':'Key enabled');}catch(e){toast(e.message,1);}};
+  ov.querySelectorAll('#mext .chip').forEach(ch=>ch.onclick=async()=>{try{await api(kbase(k)+'/extend',{method:'POST',body:JSON.stringify({days:+ch.dataset.d})});toast('Extended +'+ch.dataset.d+'d ✓');ov.remove();loadKeys();}catch(e){toast(e.message,1);}});
+  ov.querySelector('#mcfg').onclick=()=>showConfig(k);
+  ov.querySelector('#msub').onclick=async()=>{try{const r=await api(kbase(k)+'/sub',{method:'POST'});const link=location.origin+r.path;
+    const s=openSheet('<h2>Subscription link</h2><p class="desc">A stable link for '+esc(k.name)+'. Paste it into a client that supports subscriptions; it stays valid even if you change the underlying key.</p><div class="qrwrap"><div id="sqr"></div></div><div class="urlbox">'+esc(link)+'</div><div style="height:16px"></div><button class="btn" id="scp">'+cpS+' Copy link</button><div style="height:10px"></div><button class="btn btn-sec" id="sdn">Done</button>');
+    renderQR(s.querySelector('#sqr'),link);s.querySelector('#scp').onclick=()=>copy(link);s.querySelector('#sdn').onclick=()=>s.remove();}catch(e){toast(e.message,1);}};
+  ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”? It gets a fresh allowance (current usage + its quota).'))return;try{await api(kbase(k)+'/reset',{method:'POST'});toast('Usage reset ✓');ov.remove();loadKeys();}catch(e){toast(e.message,1);}};
+  ov.querySelector('#msave').onclick=async()=>{const name=ov.querySelector('#mn').value.trim();const lg=parseFloat(ov.querySelector('#ml').value||'0')||0;const mg=parseFloat(ov.querySelector('#mq').value||'0')||0;const er=ov.querySelector('#me');if(!name){er.textContent='Name cannot be empty.';return;}const b=ov.querySelector('#msave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{if(name!==k.name)await api(kbase(k)+'/name',{method:'PUT',body:JSON.stringify({name})});await api(kbase(k)+'/limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});if(mg!==mon)await api(kbase(k)+'/monthly',{method:'PUT',body:JSON.stringify({monthly_gb:mg})});toast('Saved ✓');ov.remove();loadKeys();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}};
+  ov.querySelector('#mdel').onclick=async()=>{if(!confirm('Delete “'+k.name+'”? This cannot be undone.'))return;try{await api(kbase(k),{method:'DELETE'});toast('Key deleted');ov.remove();loadKeys();}catch(e){toast(e.message,1);}};
+}
+
+/* dynamic-key config (decode static key) */
+function decodeKey(url){try{const m=(url||'').match(/^ss:\/\/([^@]+)@([^:\/?#]+):(\d+)/);if(!m)return null;let ui=m[1].replace(/-/g,'+').replace(/_/g,'/');while(ui.length%4)ui+='=';const dec=atob(ui);const i=dec.indexOf(':');return {server:m[2],server_port:+m[3],method:dec.slice(0,i),password:dec.slice(i+1)};}catch(e){return null;}}
+function showConfig(k){
+  const c=decodeKey(k.accessUrl);
+  if(!c){toast('Could not decode this key',1);return;}
+  const json=JSON.stringify({server:c.server,server_port:c.server_port,password:c.password,method:c.method},null,2);
+  const ov=openSheet('<h2>Dynamic key config</h2><p class="desc">Host this JSON at a URL and hand users a key that points to it — then you can change the server without redistributing keys.</p>'+
+    '<div class="field"><label>Endpoint</label><div class="urlbox">'+esc(c.server+':'+c.server_port)+'  ·  '+esc(c.method)+'</div></div>'+
+    '<div class="field"><label>JSON config</label><div class="urlbox" id="cfgj">'+esc(json)+'</div></div>'+
+    '<button class="btn" id="cpj">'+cpS+' Copy JSON</button><div style="height:10px"></div><button class="btn btn-sec" id="cdn">Close</button>');
+  ov.querySelector('#cpj').onclick=()=>copy(json);
+  ov.querySelector('#cdn').onclick=()=>ov.remove();
+}
+
+/* create */
+$('#newBtn').onclick=()=>{
+  if(!SERVERS.length){toast('Add a server first',1);openSettings();return;}
+  const srvField=SERVERS.length>1?'<div class="field"><label>Server</label><select id="fs">'+SERVERS.map(s=>'<option value="'+s.id+'">'+esc(s.name)+'</option>').join('')+'</select></div>':'';
+  const ov=openSheet('<h2>Create new key</h2><p class="desc">Generate an access key for one user.</p>'+srvField+
+    '<div class="field"><label>Name</label><input id="fn" placeholder="e.g. MohsenFayazi" /></div>'+
+    '<div class="field"><label>Data limit</label><input id="fl" type="number" min="0" placeholder="Gigabytes" /><div class="chips" id="cl"><span class="chip" data-v="10">10 GB</span><span class="chip" data-v="50">50 GB</span><span class="chip" data-v="100">100 GB</span><span class="chip" data-v="0">Unlimited</span></div></div>'+
+    '<div class="field"><label>Valid for</label><input id="fd" type="number" min="0" placeholder="Days" /><div class="chips" id="cd"><span class="chip" data-v="30">30 days</span><span class="chip" data-v="90">90 days</span><span class="chip" data-v="365">1 year</span><span class="chip" data-v="0">No expiry</span></div><div class="hint">Countdown starts on the first connection. Expired keys are auto-disabled, not deleted.</div></div>'+
+    '<div class="field"><label>Monthly quota · GB (0 = off)</label><input id="fm" type="number" min="0" placeholder="Renews every 30 days" /><div class="hint">If set, the data allowance refreshes automatically every 30 days.</div></div>'+
+    '<div id="fe" class="err"></div><div style="height:8px"></div><button class="btn" id="fc">Create key</button>');
+  const bind=(w,inp)=>{const e=ov.querySelector(w);e.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{e.querySelectorAll('.chip').forEach(c=>c.classList.remove('sel'));ch.classList.add('sel');ov.querySelector(inp).value=ch.dataset.v;});};
+  bind('#cl','#fl');bind('#cd','#fd');ov.querySelector('#fn').focus();
+  ov.querySelector('#fc').onclick=async()=>{const name=ov.querySelector('#fn').value.trim();const lg=parseFloat(ov.querySelector('#fl').value||'0')||0;const dd=parseInt(ov.querySelector('#fd').value||'0')||0;const mq=parseFloat(ov.querySelector('#fm').value||'0')||0;const sid=SERVERS.length>1?ov.querySelector('#fs').value:SERVERS[0].id;const er=ov.querySelector('#fe');if(!name){er.textContent='Please enter a name.';return;}
+    const b=ov.querySelector('#fc');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mq})});k.serverId=sid;ov.remove();loadKeys();share('Key created ✓','Scan with the Outline app, or copy the link.',k);}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create key';}};
+};
+$('#newBtnTop').onclick=()=>$('#newBtn').onclick();
+function share(title,desc,k){const ov=openSheet('<h2>'+esc(title)+'</h2><p class="desc">'+desc+'</p><div class="qrwrap"><div id="qr"></div></div><div class="urlbox">'+esc(tagUrl(k))+'</div><div style="height:16px"></div><button class="btn" id="cp">'+cpS+' Copy link</button><div style="height:10px"></div><button class="btn btn-sec" id="dn">Done</button>');renderQR(ov.querySelector('#qr'),tagUrl(k));ov.querySelector('#cp').onclick=()=>copy(tagUrl(k));ov.querySelector('#dn').onclick=()=>ov.remove();}
+function showQR(k){share(k.name,'Scan with the Outline app to add this key.',k);}
+function renderQR(box,text){if(typeof QRCode==='undefined'){box.parentElement.innerHTML='<div class="hint">QR unavailable offline.</div>';return;}new QRCode(box,{text,width:200,height:200,colorDark:'#0a0b0a',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}
+
+/* settings: servers list + add */
+window.openSettings=function(){
+  const ov=openSheet('<h2>Servers &amp; settings</h2><p class="desc">Manage your Outline servers. Add one by pasting its API URL or the Outline Manager access config.</p>'+
+    '<div id="slist"></div>'+
+    '<div style="height:6px"></div><button class="btn" id="addBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-3px"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg> Add a server</button>'+
+    '<div class="ph" style="margin:24px 0 12px">Panel</div>'+
+    '<div class="srow" id="rowBot"><span class="sdot sd-off" id="botDot"></span><div class="sinfo"><div class="sname">Telegram bot</div><div class="ssub" id="botSub">Loading…</div></div><span class="chev">›</span></div>'+
+    '<div class="srow" id="rowSec"><span class="sdot sd-on"></span><div class="sinfo"><div class="sname">Security</div><div class="ssub">Password &amp; two-factor authentication</div></div><span class="chev">›</span></div>'+
+    '<div class="srow" id="rowBak"><span class="sdot sd-on"></span><div class="sinfo"><div class="sname">Backup &amp; restore</div><div class="ssub">Download or restore all servers, keys &amp; settings</div></div><span class="chev">›</span></div>');
+  const renderList=()=>{const box=ov.querySelector('#slist');
+    if(!SERVERS.length){box.innerHTML='<div class="hint" style="margin-bottom:12px">No servers yet.</div>';return;}
+    box.innerHTML=SERVERS.map(s=>'<div class="srow" data-id="'+s.id+'"><span class="sdot '+(s.reachable?'sd-on':'sd-off')+'"></span><div class="sinfo"><div class="sname">'+esc(s.name)+'</div><div class="ssub">'+esc(s.host||'')+(s.version?' · v'+esc(s.version):'')+(s.reachable?'':' · unreachable')+'</div></div><span class="chev">›</span></div>').join('');
+    box.querySelectorAll('.srow').forEach(r=>r.onclick=()=>serverDetail(SERVERS.find(x=>x.id===r.dataset.id),ov));};
+  renderList();
+  ov.querySelector('#addBtn').onclick=()=>addServerSheet(ov);
+  ov.querySelector('#rowBot').onclick=()=>botSheet(ov);
+  ov.querySelector('#rowSec').onclick=()=>securitySheet(ov);
+  ov.querySelector('#rowBak').onclick=()=>backupSheet(ov);
+  api('/api/settings/bot').then(b=>{ov.querySelector('#botDot').className='sdot '+(b.running?'sd-on':'sd-off');
+    ov.querySelector('#botSub').textContent=b.running?('Active · @'+(b.username||'bot')):(b.configured?'Configured · stopped':'Not configured');}).catch(()=>{});
+};
+$('#settingsBtn').onclick=openSettings;
+
+/* Telegram bot config */
+function botSheet(parent){
+  const ov=openSheet('<h2>Telegram bot</h2><p class="desc">Paste your bot token from @BotFather and the numeric admin IDs allowed to use it. The bot runs inside the panel — no separate process needed.</p>'+
+    '<div id="botStatus" class="note" style="margin-bottom:16px">Loading…</div>'+
+    '<div class="field"><label>Bot token</label><input id="bt" placeholder="123456:ABC… (leave blank to keep current)" /></div>'+
+    '<div class="field"><label>Admin Telegram IDs (comma separated)</label><input id="bi" placeholder="e.g. 11111111, 22222222" /><div class="hint">Send /id to your bot to find an ID.</div></div>'+
+    '<div class="field"><div class="rowflex"><div><label style="margin:0 0 4px">Enabled</label><div class="hint">Turn the bot on or off.</div></div><label class="toggle"><input type="checkbox" id="be" checked><span class="tk"></span></label></div></div>'+
+    '<div id="boterr" class="err"></div><button class="btn" id="bsave">Save &amp; apply</button><div style="height:10px"></div><button class="btn btn-sec" id="btest">Test token</button>');
+  const refresh=()=>api('/api/settings/bot').then(b=>{
+    ov.querySelector('#botStatus').innerHTML=b.running?('<b>Running</b> as @'+esc(b.username||'bot')):(b.configured?'<b>Configured</b> but stopped.':'<b>Not configured</b> yet.');
+    ov.querySelector('#bi').value=(b.adminIds||[]).join(', ');ov.querySelector('#be').checked=b.enabled;}).catch(()=>{});
+  refresh();
+  ov.querySelector('#btest').onclick=async()=>{const tok=ov.querySelector('#bt').value.trim();const er=ov.querySelector('#boterr');if(!tok){er.textContent='Enter a token to test.';return;}er.textContent='';
+    try{const r=await api('/api/settings/bot/test',{method:'POST',body:JSON.stringify({token:tok})});toast('Valid · @'+r.username);}catch(e){er.textContent=e.message;}};
+  ov.querySelector('#bsave').onclick=async()=>{const tok=ov.querySelector('#bt').value.trim();const ids=ov.querySelector('#bi').value.trim();const en=ov.querySelector('#be').checked;const er=ov.querySelector('#boterr');er.textContent='';
+    const b=ov.querySelector('#bsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/settings/bot',{method:'PUT',body:JSON.stringify({token:tok||null,adminIds:ids,enabled:en})});toast('Saved ✓');ov.remove();if(parent){parent.remove();openSettings();}}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save & apply';}};
+}
+
+/* Backup & restore */
+function backupSheet(parent){
+  const ov=openSheet('<h2>Backup &amp; restore</h2><p class="desc">Download a JSON snapshot of every server, key and setting (including the password hash and bot token). Keep it somewhere safe.</p>'+
+    '<button class="btn" id="bkdl">⤓ Download backup</button>'+
+    '<div class="ph" style="margin:26px 0 12px">Restore</div>'+
+    '<p class="desc">Restoring <b>replaces</b> all current data with the backup file.</p>'+
+    '<input id="bkfile" type="file" accept="application/json,.json" style="padding:11px" />'+
+    '<div id="bkerr" class="err"></div><div style="height:12px"></div><button class="btn btn-danger" id="bkres">Restore from file</button>');
+  ov.querySelector('#bkdl').onclick=async()=>{try{const r=await fetch('/api/backup',{credentials:'same-origin'});if(!r.ok)throw new Error('Download failed');const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='outline-panel-backup.json';a.click();URL.revokeObjectURL(a.href);toast('Backup downloaded ✓');}catch(e){toast(e.message,1);}};
+  ov.querySelector('#bkres').onclick=async()=>{const f=ov.querySelector('#bkfile').files[0];const er=ov.querySelector('#bkerr');er.textContent='';if(!f){er.textContent='Choose a backup file first.';return;}
+    if(!confirm('Restore will REPLACE all current data. Continue?'))return;
+    const b=ov.querySelector('#bkres');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{const text=await f.text();const data=JSON.parse(text);const r=await api('/api/restore',{method:'POST',body:JSON.stringify(data)});toast('Restored '+r.servers+' servers, '+r.keys+' keys ✓');ov.remove();if(parent)parent.remove();await loadServers();loadStats();loadKeys();}catch(e){er.textContent=e.message||'Invalid backup file';b.disabled=false;b.textContent='Restore from file';}};
+}
+
+/* Security: password + 2FA */
+function securitySheet(parent){
+  const ov=openSheet('<h2>Security</h2><p class="desc">Change the panel password and set up two-factor authentication.</p>'+
+    '<div class="ph" style="margin:0 0 12px">Change password</div>'+
+    '<div class="field"><label>Current password</label><input id="pc" type="password" autocomplete="current-password" /></div>'+
+    '<div class="field"><label>New password</label><input id="pn" type="password" autocomplete="new-password" /></div>'+
+    '<div id="pwerr" class="err"></div><button class="btn" id="pwsave">Update password</button>'+
+    '<div class="ph" style="margin:26px 0 12px">Two-factor authentication</div>'+
+    '<div id="tfaBox"><div class="hint">Loading…</div></div>');
+  ov.querySelector('#pwsave').onclick=async()=>{const cur=ov.querySelector('#pc').value;const nw=ov.querySelector('#pn').value;const er=ov.querySelector('#pwerr');er.textContent='';if(nw.length<6){er.textContent='New password must be at least 6 characters.';return;}
+    const b=ov.querySelector('#pwsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/settings/password',{method:'POST',body:JSON.stringify({current:cur,new:nw})});toast('Password updated ✓');ov.querySelector('#pc').value='';ov.querySelector('#pn').value='';}catch(e){er.textContent=e.message;}finally{b.disabled=false;b.textContent='Update password';}};
+  const tfa=ov.querySelector('#tfaBox');
+  const renderTfa=()=>api('/api/settings').then(s=>{
+    if(s.totpEnabled){tfa.innerHTML='<div class="hint" style="margin-bottom:10px">2FA is <b style="color:var(--accent)">enabled</b>.</div><div class="field"><label>Password to disable</label><input id="tpw" type="password" /></div><button class="btn btn-danger" id="tdis">Disable 2FA</button>';
+      ov.querySelector('#tdis').onclick=async()=>{try{await api('/api/settings/2fa/disable',{method:'POST',body:JSON.stringify({password:ov.querySelector('#tpw').value})});toast('2FA disabled');renderTfa();}catch(e){toast(e.message,1);}};}
+    else{tfa.innerHTML='<button class="btn btn-sec" id="tstart">Set up 2FA</button>';
+      ov.querySelector('#tstart').onclick=async()=>{try{const r=await api('/api/settings/2fa/start',{method:'POST'});
+        tfa.innerHTML='<p class="desc">Scan this with Google Authenticator / Authy, then enter the 6-digit code.</p><div class="qrwrap"><div id="tqr"></div></div><div class="urlbox" style="margin-bottom:14px">'+esc(r.secret)+'</div><div class="field"><label>6-digit code</label><input id="tcode" inputmode="numeric" placeholder="000000" /></div><div id="tferr" class="err"></div><button class="btn" id="tconf">Enable 2FA</button>';
+        renderQR(ov.querySelector('#tqr'),r.uri);
+        ov.querySelector('#tconf').onclick=async()=>{try{await api('/api/settings/2fa/enable',{method:'POST',body:JSON.stringify({code:ov.querySelector('#tcode').value})});toast('2FA enabled ✓');renderTfa();}catch(e){ov.querySelector('#tferr').textContent=e.message;}};
+      }catch(e){toast(e.message,1);}};}
+  }).catch(()=>{tfa.innerHTML='<div class="hint">Could not load 2FA status.</div>';});
+  renderTfa();
+}
+
+function addServerSheet(parent){
+  const ov=openSheet('<h2>Add a server</h2><p class="desc">Paste the API URL, or the full Outline Manager access config (the JSON with apiUrl and certSha256).</p>'+
+    '<div class="field"><label>Label</label><input id="an" placeholder="e.g. Germany · Hetzner" /></div>'+
+    '<div class="field"><label>API URL or access config</label><textarea id="au" placeholder=\'https://1.2.3.4:1234/xxxx   —or—   {"apiUrl":"https://…","certSha256":"…"}\'></textarea></div>'+
+    '<div id="ae" class="err"></div><button class="btn" id="aok">Connect &amp; add</button>');
+  ov.querySelector('#an').focus();
+  ov.querySelector('#aok').onclick=async()=>{const name=ov.querySelector('#an').value.trim();const apiUrl=ov.querySelector('#au').value.trim();const er=ov.querySelector('#ae');if(!name){er.textContent='Please enter a label.';return;}if(!apiUrl){er.textContent='Please paste the API URL.';return;}
+    const b=ov.querySelector('#aok');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/servers',{method:'POST',body:JSON.stringify({name,apiUrl})});toast('Server added ✓');ov.remove();await loadServers();loadStats();loadKeys();if(parent)parent.remove();openSettings();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Connect & add';}};
+}
+
+async function serverDetail(s,parent){
+  const ov=openSheet('<h2>'+esc(s.name)+'</h2><p class="desc">Loading…</p>');
+  let st;try{st=await api('/api/servers/'+s.id+'/settings');}catch(e){ov.querySelector('.desc').textContent=e.message;return;}
+  const gl=st.globalLimit?(st.globalLimit/1073741824):0;
+  ov.querySelector('.sheet').innerHTML='<div class="grip"></div><h2>'+esc(s.name)+'</h2><p class="desc">'+esc(st.host||'')+(st.version?' · Outline v'+esc(st.version):'')+'</p>'+
+    '<div class="field"><label>Label (shown in this panel)</label><input id="dl" value="'+esc(s.name)+'" /></div>'+
+    '<div class="field"><label>Outline server name</label><input id="dn" value="'+esc(st.name||'')+'" /></div>'+
+    '<div class="field"><label>Default data limit · all keys · GB (0 = none)</label><input id="dg" type="number" min="0" value="'+(gl||'')+'" placeholder="No global limit" /></div>'+
+    '<div class="field"><div class="rowflex"><div><label style="margin:0 0 4px">Metrics sharing</label><div class="hint">Live bandwidth, online users &amp; ISP locations.</div></div><label class="toggle"><input type="checkbox" id="dm" '+(st.metricsEnabled?'checked':'')+'><span class="tk"></span></label></div></div>'+
+    '<div id="de" class="err"></div><button class="btn" id="dsave">Save</button><div style="height:10px"></div><button class="btn btn-danger" id="drm">'+trS+' Remove this server</button>';
+  ov.querySelector('#dm').onchange=async(e)=>{try{await api('/api/servers/'+s.id+'/settings/metrics',{method:'PUT',body:JSON.stringify({enabled:e.target.checked})});toast('Metrics '+(e.target.checked?'enabled':'disabled'));loadStats();}catch(err){toast(err.message,1);e.target.checked=!e.target.checked;}};
+  ov.querySelector('#dsave').onclick=async()=>{const label=ov.querySelector('#dl').value.trim();const oname=ov.querySelector('#dn').value.trim();const lg=parseFloat(ov.querySelector('#dg').value||'0')||0;const b=ov.querySelector('#dsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';const er=ov.querySelector('#de');
+    try{if(label&&label!==s.name)await api('/api/servers/'+s.id,{method:'PUT',body:JSON.stringify({name:label})});if(oname&&oname!==st.name)await api('/api/servers/'+s.id+'/settings/name',{method:'PUT',body:JSON.stringify({name:oname})});await api('/api/servers/'+s.id+'/settings/global-limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});toast('Saved ✓');ov.remove();await loadServers();loadStats();loadKeys();if(parent)parent.remove();openSettings();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save';}};
+  ov.querySelector('#drm').onclick=async()=>{if(!confirm('Remove “'+s.name+'” from this panel? (The Outline server itself is not deleted.)'))return;try{await api('/api/servers/'+s.id,{method:'DELETE'});toast('Server removed');ov.remove();await loadServers();loadStats();loadKeys();if(parent)parent.remove();openSettings();}catch(e){toast(e.message,1);}};
+}
+
+checkAuth();
+</script>
+</body>
+</html>
