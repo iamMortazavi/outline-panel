@@ -35,8 +35,9 @@ apt-get install -y -qq python3 python3-venv python3-pip rsync >/dev/null
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "==> Copying source to $APP_DIR"
 mkdir -p "$APP_DIR"
+# NOTE: never delete the live .env / DB on the target (they are not in git)
 rsync -a --delete --exclude '.git' --exclude '.venv' --exclude '*.db*' \
-      "$SRC_DIR/" "$APP_DIR/"
+      --exclude '.env' "$SRC_DIR/" "$APP_DIR/"
 
 echo "==> Creating virtualenv & installing"
 python3 -m venv "$APP_DIR/.venv"
