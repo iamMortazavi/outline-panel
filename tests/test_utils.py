@@ -8,7 +8,7 @@ def test_gb_to_bytes():
 
 
 def test_fmt_bytes_none_is_unlimited():
-    assert fmt_bytes(None) == "نامحدود"
+    assert fmt_bytes(None) == "Unlimited"
 
 
 def test_fmt_bytes_units():
@@ -18,15 +18,15 @@ def test_fmt_bytes_units():
 
 
 def test_fmt_expiry_none():
-    assert fmt_expiry(None) == "بدون انقضا"
-    assert fmt_expiry(0) == "بدون انقضا"
+    assert fmt_expiry(None) == "No expiry"
+    assert fmt_expiry(0) == "No expiry"
 
 
 def test_fmt_expiry_past():
-    assert "منقضی" in fmt_expiry(1)  # epoch-ish past timestamp
+    assert "Expired" in fmt_expiry(1)  # epoch-ish past timestamp
 
 
 def test_fmt_expiry_future():
     import time
     txt = fmt_expiry(int(time.time()) + 5 * 86400)
-    assert "مانده" in txt
+    assert "left" in txt

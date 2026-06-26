@@ -147,9 +147,9 @@ install.sh  Dockerfile  docker-compose.yml  deploy/  .github/workflows/ci.yml
 ```
 
 The `core/` package holds all domain logic (storage, Outline API client,
-scheduler, security) with no web/bot dependencies, so both interfaces build on
-the same foundation. Code and comments are English; the Telegram bot's
-user-facing text is Persian by design.
+scheduler, security) with no web/bot dependencies, so both the dashboard and the
+bot build on the same foundation. Code, comments, and all user-facing text are
+in English.
 
 ## Security notes
 

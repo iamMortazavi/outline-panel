@@ -99,7 +99,8 @@ async def _check_once(registry, db, notifier, notified) -> None:
                 log.info("monthly quota for %s/%s reset (%s).", sid, kid, fmt_bytes(mb))
                 await _safe_notify(
                     notifier,
-                    f"🔄 سهمیه‌ی ماهانه‌ی <b>{name}</b> تازه شد ({fmt_bytes(mb)}).",
+                    f"🔄 Monthly quota for <b>{name}</b> has been reset "
+                    f"({fmt_bytes(mb)}).",
                 )
             except OutlineError as e:
                 log.warning("monthly reset for %s/%s failed: %s", sid, kid, e)
@@ -118,8 +119,8 @@ async def _check_once(registry, db, notifier, notified) -> None:
                     notified.add(tag_lim)
                     await _safe_notify(
                         notifier,
-                        f"⚠️ مصرف <b>{name}</b> به {fmt_bytes(used)} از "
-                        f"{fmt_bytes(lim)} رسید.",
+                        f"⚠️ <b>{name}</b> has used {fmt_bytes(used)} of "
+                        f"{fmt_bytes(lim)}.",
                     )
             else:
                 notified.discard(tag_lim)
@@ -134,7 +135,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
                 notified.add(tag_exp)
                 await _safe_notify(
                     notifier,
-                    f"⏳ اعتبار <b>{name}</b> رو به پایان است: {fmt_expiry(exp)}.",
+                    f"⏳ <b>{name}</b> is about to expire: {fmt_expiry(exp)}.",
                 )
         else:
             notified.discard(tag_exp)
@@ -151,7 +152,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
             log.info("key %s/%s disabled (expired).", sid, kid)
             await _safe_notify(
                 notifier,
-                f"🔴 کلید <b>{key.get('name') or kid}</b> به دلیل انقضا غیرفعال شد.",
+                f"🔴 <b>{key.get('name') or kid}</b> has been disabled (expired).",
             )
         except OutlineError as e:
             log.warning("failed to disable %s/%s: %s", sid, kid, e)
