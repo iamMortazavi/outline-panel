@@ -15,7 +15,10 @@ from . import __version__
 from .core import config
 from .core.db import DB
 from .core.settings import (
-    BOT_ENABLED, BOT_TOKEN, TOTP_ENABLED, SettingsStore,
+    BOT_ENABLED,
+    BOT_TOKEN,
+    TOTP_ENABLED,
+    SettingsStore,
 )
 
 

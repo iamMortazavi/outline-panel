@@ -111,9 +111,9 @@ async def app():
     os.environ.pop("OUTLINE_API_URL", None)
     for m in [m for m in list(sys.modules) if m.startswith("outline_panel")]:
         del sys.modules[m]
+    from outline_panel.core.settings import BOT_ADMIN_IDS, BOT_TOKEN
     from outline_panel.web import app as appmod
     from outline_panel.web import deps
-    from outline_panel.core.settings import BOT_ADMIN_IDS, BOT_TOKEN
     await deps.db.init()
     await deps.settings.set(BOT_TOKEN, TOKEN)
     await deps.settings.set(BOT_ADMIN_IDS, "777")

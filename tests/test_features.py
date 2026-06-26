@@ -20,7 +20,7 @@ class FakeOutline:
         self._id += 1
         kid = str(self._id)
         self.keys[kid] = {"id": kid, "name": name,
-                          "accessUrl": f"ss://YWVzOnB3@1.2.3.4:8388/?o=1",
+                          "accessUrl": "ss://YWVzOnB3@1.2.3.4:8388/?o=1",
                           "dataLimit": {"bytes": limit_bytes} if limit_bytes else {}}
         if limit_bytes:
             self.limits[kid] = limit_bytes

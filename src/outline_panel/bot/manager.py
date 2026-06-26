@@ -13,7 +13,7 @@ import logging
 from aiogram import Bot
 from aiogram.types import MenuButtonWebApp, WebAppInfo
 
-from .core import build_dispatcher
+from .dispatcher import build_dispatcher
 
 log = logging.getLogger("bot.manager")
 

@@ -11,14 +11,14 @@ import asyncio
 import logging
 
 from aiogram import Bot
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 from ..core import config
 from ..core.db import DB
 from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_TOKEN, SettingsStore
-from aiogram.types import MenuButtonWebApp, WebAppInfo
 from ..web.registry import Registry
-from .core import build_dispatcher
+from .dispatcher import build_dispatcher
 
 logging.basicConfig(
     level=logging.INFO,

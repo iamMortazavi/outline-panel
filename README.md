@@ -85,9 +85,10 @@ separate process with `outline-panel-bot`.
 
 Set **Mini App URL** in Settings → Telegram bot to your panel's public HTTPS base
 (e.g. `https://panel.example.com`, or via the `WEBAPP_URL` env). The bot then shows
-a **🚀 وب‌اپ مدیریت** button (and a persistent menu button) that opens a phone-
-friendly Web App at `<base>/tma` — admins can create users and watch each one's
-data usage without leaving Telegram. Auth uses Telegram's signed `initData`
+a **🚀 Open Web App** button (and a persistent **Open** menu button) that opens a
+phone-friendly Web App at `<base>/tma` — admins can create, edit and delete users,
+view per-user QR codes, and watch usage and server stats without leaving Telegram.
+Auth uses Telegram's signed `initData`
 (validated against the bot token), so only the same admin IDs get in — no extra
 login. HTTPS is required; pair it with the Caddy setup below.
 
@@ -129,14 +130,18 @@ src/outline_panel/
   cli.py                 `outline-panel-admin` management CLI
   core/                  domain logic, framework-agnostic
     config.py settings.py security.py db.py outline_api.py scheduler.py utils.py
-  web/                   FastAPI dashboard
+  web/                   FastAPI dashboard + Mini App API
     app.py deps.py registry.py run.py
-    routers/  auth.py servers.py keys.py stats.py settings.py subscription.py backup.py
+    routers/  auth.py servers.py keys.py stats.py settings.py subscription.py
+              backup.py miniapp.py
   bot/                   Telegram bot (aiogram)
-    core.py  build_dispatcher (handlers)
-    manager.py  in-process start/stop
-    run.py  standalone runner
-  static/index.html      single-file web UI
+    dispatcher.py  build_dispatcher (handlers)
+    manager.py     in-process start/stop
+    run.py         standalone runner
+  static/
+    index.html           single-file web dashboard
+    miniapp.html         Telegram Mini App
+    vendor/qrcode.js     self-hosted QR generator
 tests/                   pytest suite
 install.sh  Dockerfile  docker-compose.yml  deploy/  .github/workflows/ci.yml
 ```

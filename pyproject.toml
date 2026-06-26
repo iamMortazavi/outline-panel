@@ -4,13 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "outline-panel"
-version = "1.0.0"
-description = "Web dashboard + Telegram bot for managing Outline VPN servers"
+version = "1.2.0"
+description = "Web dashboard, Telegram bot & Mini App for managing Outline VPN servers"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Outline Panel contributors" }]
-keywords = ["outline", "vpn", "shadowsocks", "telegram-bot", "fastapi"]
+authors = [{ name = "Ali Mortazavi", email = "iamali.mortazavi@gmail.com" }]
+keywords = ["outline", "vpn", "shadowsocks", "telegram-bot", "telegram-mini-app", "fastapi"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: Proxy Servers",
+]
 dependencies = [
     "httpx>=0.27",
     "aiosqlite>=0.20",
@@ -24,10 +35,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
 
 [project.urls]
 Homepage = "https://github.com/iamMortazavi/outline-panel"
+Repository = "https://github.com/iamMortazavi/outline-panel"
 Issues = "https://github.com/iamMortazavi/outline-panel/issues"
 
 [project.scripts]
@@ -39,9 +51,24 @@ outline-panel-admin = "outline_panel.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-outline_panel = ["static/*"]
+# Ship the dashboard, the Mini App, and its self-hosted vendor assets (the
+# `static/*` glob alone does not match the nested `static/vendor/` directory).
+outline_panel = ["static/*", "static/vendor/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4"]
+ignore = [
+    "E501",   # line length is the formatter's job, not the linter's
+    "B008",   # FastAPI relies on calls (Depends/Header/Cookie) in arg defaults
+    "B904",   # web handlers re-raise as HTTPException without chaining on purpose
+]

@@ -1,5 +1,5 @@
 [Unit]
-Description=Outline Control Room (web dashboard)
+Description=Outline Panel (Telegram bot)
 After=network-online.target
 Wants=network-online.target
 
@@ -7,9 +7,9 @@ Wants=network-online.target
 Type=simple
 # adjust User and paths to your setup
 User=outline
-WorkingDirectory=/opt/outline
-EnvironmentFile=/opt/outline/.env
-ExecStart=/opt/outline/.venv/bin/outline-panel
+WorkingDirectory=/opt/outline-panel
+EnvironmentFile=/opt/outline-panel/.env
+ExecStart=/opt/outline-panel/.venv/bin/outline-panel-bot
 Restart=on-failure
 RestartSec=5
 

@@ -24,8 +24,16 @@ from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_ENABLED, BOT_TOKEN
 from .deps import STATIC_DIR, botmgr, db, reg, settings
 from .routers import (
-    auth, backup, keys, miniapp, servers, settings as settings_router, stats,
+    auth,
+    backup,
+    keys,
+    miniapp,
+    servers,
+    stats,
     subscription,
+)
+from .routers import (
+    settings as settings_router,
 )
 
 log = logging.getLogger("webapp")
@@ -64,7 +72,7 @@ async def lifespan(app: FastAPI):
     await db.close()
 
 
-app = FastAPI(title="Outline Control Room", lifespan=lifespan)
+app = FastAPI(title="Outline Panel", lifespan=lifespan)
 
 app.include_router(auth.router)
 app.include_router(servers.router)

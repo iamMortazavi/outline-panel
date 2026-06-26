@@ -8,8 +8,8 @@ from urllib.parse import urlparse
 from fastapi import Cookie, HTTPException
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
-from ..core import config
 from ..bot.manager import BotManager
+from ..core import config
 from ..core.db import DB
 from ..core.outline_api import OutlineAPI
 from ..core.settings import SettingsStore

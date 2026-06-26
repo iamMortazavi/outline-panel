@@ -1,9 +1,9 @@
 """
-Reusable Telegram bot logic (aiogram v3).
+Telegram bot handlers and dispatcher factory (aiogram v3).
 
-`build_dispatcher(db, registry, get_admin_ids, notifier)` returns a configured
-Dispatcher with no Bot attached, so the same handlers serve both the standalone
-bot (`outline-panel-bot`) and the in-process bot managed from the web panel.
+`build_dispatcher(db, registry, get_admin_ids, notifier, get_webapp_url)` returns
+a configured Dispatcher with no Bot attached, so the same handlers serve both the
+standalone bot (`outline-panel-bot`) and the in-process bot managed from the panel.
 
 The bot is multi-server: it lists keys across every configured server and, when
 more than one exists, asks which server a new key belongs to. Callback data
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import html
 import time
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from aiogram import Dispatcher, F
 from aiogram.filters import Command
@@ -47,9 +47,9 @@ class EditKey(StatesGroup):
 def build_dispatcher(
     db,
     registry,
-    get_admin_ids: Callable[[], "set[int] | Awaitable[set[int]]"],
+    get_admin_ids: Callable[[], set[int] | Awaitable[set[int]]],
     notifier=None,
-    get_webapp_url: "Callable[[], str | None | Awaitable[str | None]] | None" = None,
+    get_webapp_url: Callable[[], str | None | Awaitable[str | None]] | None = None,
 ) -> Dispatcher:
     dp = Dispatcher()
 

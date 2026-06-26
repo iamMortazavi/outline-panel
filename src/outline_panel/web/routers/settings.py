@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field
 
 from ...core import security
 from ...core.settings import (
-    BOT_ADMIN_IDS, BOT_ENABLED, BOT_TOKEN, TOTP_ENABLED, TOTP_SECRET, WEBAPP_URL,
+    BOT_ADMIN_IDS,
+    BOT_ENABLED,
+    BOT_TOKEN,
+    TOTP_ENABLED,
+    TOTP_SECRET,
+    WEBAPP_URL,
 )
 from ..deps import botmgr, require_session, settings
 

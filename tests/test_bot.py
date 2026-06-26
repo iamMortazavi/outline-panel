@@ -4,10 +4,9 @@ import tempfile
 
 import httpx
 import pytest
-
 from aiogram import Dispatcher
 
-from outline_panel.bot.core import build_dispatcher
+from outline_panel.bot.dispatcher import build_dispatcher
 
 
 class _DummyReg:
