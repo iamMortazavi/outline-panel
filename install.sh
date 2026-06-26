@@ -84,8 +84,10 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now "$SERVICE"
-sleep 2
+systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+# restart (not just `enable --now`) so re-running after a `git pull` reloads code
+systemctl restart "$SERVICE"
+sleep 3
 systemctl --no-pager --lines=0 status "$SERVICE" || true
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
