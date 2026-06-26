@@ -87,7 +87,7 @@ def build_dispatcher(
         ]
         if wa_url:
             rows.insert(0, [InlineKeyboardButton(
-                text="🚀 وب‌اپ مدیریت", web_app=WebAppInfo(url=wa_url))])
+                text="🚀 Open Web App", web_app=WebAppInfo(url=wa_url))])
         return InlineKeyboardMarkup(inline_keyboard=rows)
 
     def back_menu() -> InlineKeyboardMarkup:

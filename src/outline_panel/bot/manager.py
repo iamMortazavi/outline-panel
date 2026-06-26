@@ -66,7 +66,7 @@ class BotManager:
             try:
                 await bot.set_chat_menu_button(
                     menu_button=MenuButtonWebApp(
-                        text="مدیریت", web_app=WebAppInfo(url=f"{wa_url}/tma")))
+                        text="Open", web_app=WebAppInfo(url=f"{wa_url}/tma")))
             except Exception as e:  # noqa: BLE001 — non-fatal
                 log.warning("Could not set Web App menu button: %s", e)
         self._task = asyncio.create_task(

@@ -1,130 +1,144 @@
 <!doctype html>
-<html lang="fa" dir="rtl">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<title>پنل Outline</title>
+<title>Outline</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root{
-    --bg:#17212b; --panel:#232e3c; --panel2:#1c2733; --text:#fff; --dim:#7d8b99;
-    --line:#2b3947; --acc:#2ea6ff; --acc2:#3390ec; --btxt:#fff;
-    --ok:#4dd36f; --warn:#f0b429; --danger:#ff5c5c; --radius:16px;
+    --bg:#17212b; --bg2:#0e1621; --panel:#232e3c; --panel2:#1b2735; --card:#232e3c;
+    --text:#fff; --dim:#8a99a8; --line:#2a3848; --acc:#3390ec; --acc2:#53a6f0;
+    --btxt:#fff; --ok:#4dd36f; --warn:#f5b945; --danger:#ff5d5d; --r:18px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
   body{
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Vazirmatn",Tahoma,sans-serif;
-    background:var(--bg); color:var(--text); font-size:15px; line-height:1.5;
-    padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 90px);
-    -webkit-font-smoothing:antialiased;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
+    background:var(--bg); color:var(--text); font-size:15px; line-height:1.45;
+    padding:env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 28px);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
   }
-  .wrap{max-width:560px;margin:0 auto;padding:14px}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;direction:ltr;unicode-bidi:plaintext}
+  .wrap{max-width:600px;margin:0 auto;padding:16px 16px 0}
+  .mono{font-variant-numeric:tabular-nums}
   .muted{color:var(--dim)}
   .row{display:flex;align-items:center;gap:10px}
   .spread{justify-content:space-between}
+  button{font-family:inherit}
 
-  /* header summary */
+  /* ---- hero ---- */
   .hero{
-    background:linear-gradient(135deg,var(--acc2),var(--acc));
-    border-radius:var(--radius); padding:18px; color:#fff; margin-bottom:14px;
-    box-shadow:0 8px 24px -12px rgba(0,0,0,.5);
+    position:relative; border-radius:var(--r); padding:20px 20px 18px; margin-bottom:16px;
+    background:linear-gradient(135deg,var(--acc),var(--acc2));
+    color:#fff; overflow:hidden; box-shadow:0 12px 30px -16px rgba(0,0,0,.6);
   }
-  .hero .big{font-size:30px;font-weight:800;letter-spacing:-.5px;margin-top:2px}
-  .hero .sub{opacity:.92;font-size:13px}
-  .hero .stats{display:flex;gap:18px;margin-top:12px;font-size:13px;opacity:.95}
-  .hero .stats b{font-size:16px;font-weight:700}
+  .hero::after{content:"";position:absolute;right:-40px;top:-60px;width:180px;height:180px;
+    border-radius:50%;background:rgba(255,255,255,.12)}
+  .hero .lbl{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;opacity:.85}
+  .hero .big{font-size:34px;font-weight:800;letter-spacing:-.6px;margin:3px 0 0;line-height:1}
+  .hero .grid{display:flex;gap:0;margin-top:18px;position:relative;z-index:1}
+  .hero .cell{flex:1}
+  .hero .cell + .cell{border-inline-start:1px solid rgba(255,255,255,.22);padding-inline-start:14px}
+  .hero .cell .n{font-size:19px;font-weight:800}
+  .hero .cell .t{font-size:11.5px;opacity:.85;margin-top:1px}
+  .reload{position:absolute;top:16px;right:16px;z-index:2;width:34px;height:34px;border:none;
+    border-radius:11px;background:rgba(255,255,255,.16);color:#fff;font-size:16px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center}
+  .reload:active{transform:scale(.92)}
+  .reload.spin svg{animation:rot .8s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
 
-  /* chips */
-  .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:8px;scrollbar-width:none}
-  .chips::-webkit-scrollbar{display:none}
-  .chip{
-    white-space:nowrap;padding:7px 14px;border-radius:999px;background:var(--panel);
-    border:1px solid var(--line);color:var(--dim);font-size:13px;font-weight:600;cursor:pointer;
-  }
-  .chip.on{background:var(--acc);border-color:var(--acc);color:#fff}
+  /* ---- controls ---- */
+  .search{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);
+    border-radius:13px;padding:10px 13px;margin-bottom:11px}
+  .search input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:15px}
+  .search input::placeholder{color:var(--dim)}
+  .seg{display:flex;gap:7px;overflow-x:auto;margin-bottom:13px;scrollbar-width:none}
+  .seg::-webkit-scrollbar{display:none}
+  .seg .s{white-space:nowrap;padding:8px 15px;border-radius:999px;background:var(--panel);
+    border:1px solid var(--line);color:var(--dim);font-size:13px;font-weight:600;cursor:pointer}
+  .seg .s.on{background:var(--acc);border-color:var(--acc);color:#fff}
 
-  /* key card */
-  .card{
-    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-    padding:14px;margin-bottom:10px;
-  }
-  .kname{font-weight:700;font-size:15.5px;display:flex;align-items:center;gap:7px;min-width:0}
-  .kname span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .dot{width:8px;height:8px;border-radius:50%;flex:none}
-  .tag{font-size:11px;color:var(--dim);background:var(--panel2);border:1px solid var(--line);
-    border-radius:6px;padding:2px 7px;white-space:nowrap}
-  .bar{height:7px;border-radius:6px;background:var(--panel2);overflow:hidden;margin:11px 0 7px}
-  .bar > i{display:block;height:100%;border-radius:6px;transition:width .4s}
-  .usage{font-size:12.5px;color:var(--dim);display:flex;justify-content:space-between}
-  .kmeta{font-size:12px;color:var(--dim);margin-top:7px}
-  .klink{margin-top:11px;display:flex;gap:8px}
-  .lbtn{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--text);
-    border-radius:11px;padding:9px;font-size:13px;font-weight:600;cursor:pointer}
-  .lbtn:active{opacity:.7}
+  .sectitle{font-size:12.5px;color:var(--dim);font-weight:600;margin:2px 4px 9px;
+    text-transform:uppercase;letter-spacing:.05em}
 
-  /* buttons */
-  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;
-    background:var(--acc);color:var(--btxt);border-radius:13px;padding:14px;font-size:15px;
-    font-weight:700;cursor:pointer;font-family:inherit}
-  .btn:active{opacity:.85}
-  .btn[disabled]{opacity:.55;cursor:default}
-  .btn-sec{background:var(--panel);border:1px solid var(--line);color:var(--text)}
+  /* ---- key row ---- */
+  .item{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line);
+    border-radius:15px;padding:13px;margin-bottom:9px;cursor:pointer;transition:transform .08s,background .15s}
+  .item:active{transform:scale(.985);background:var(--panel2)}
+  .av{width:44px;height:44px;border-radius:13px;flex:none;display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:18px;color:#fff;text-transform:uppercase}
+  .it-main{flex:1;min-width:0}
+  .it-top{display:flex;align-items:center;gap:8px}
+  .it-name{font-weight:700;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap;flex:none}
+  .pill.ok{background:rgba(77,211,111,.15);color:var(--ok)}
+  .pill.off{background:rgba(255,93,93,.15);color:var(--danger)}
+  .pill.pend{background:rgba(245,185,69,.16);color:var(--warn)}
+  .bar{height:6px;border-radius:5px;background:var(--panel2);overflow:hidden;margin:9px 0 6px}
+  .bar > i{display:block;height:100%;border-radius:5px;transition:width .45s cubic-bezier(.2,.8,.2,1)}
+  .it-sub{display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+  .chev{color:var(--dim);font-size:18px;flex:none;opacity:.7}
 
-  /* fab */
-  .fab{position:fixed;left:0;right:0;bottom:0;padding:12px 14px calc(12px + env(safe-area-inset-bottom));
-    background:linear-gradient(to top,var(--bg) 60%,transparent);z-index:30;max-width:560px;margin:0 auto}
-
-  /* sheet */
-  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;opacity:0;pointer-events:none;
-    transition:opacity .25s}
-  .scrim.on{opacity:1;pointer-events:auto}
-  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--bg);
-    border-radius:20px 20px 0 0;padding:8px 16px calc(20px + env(safe-area-inset-bottom));
-    max-width:560px;margin:0 auto;transform:translateY(110%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
-    max-height:92vh;overflow-y:auto}
-  .sheet.on{transform:translateY(0)}
-  .grab{width:38px;height:4px;border-radius:3px;background:var(--line);margin:6px auto 14px}
-  .h2{font-size:18px;font-weight:800;margin:0 0 4px}
-  .desc{font-size:13px;color:var(--dim);margin:0 0 16px}
-  .field{margin-bottom:14px}
-  .lab{display:block;font-size:13px;font-weight:600;margin-bottom:7px}
-  .inp{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:12px;
-    padding:13px;color:var(--text);font-size:15px;font-family:inherit;outline:none}
-  .inp:focus{border-color:var(--acc)}
-  .two{display:flex;gap:10px}.two>.field{flex:1}
-  .hint{font-size:11.5px;color:var(--dim);margin-top:6px}
-  .err{color:var(--danger);font-size:13px;min-height:18px;margin:4px 0}
-
-  /* state screens */
-  .center{display:flex;flex-direction:column;align-items:center;justify-content:center;
-    text-align:center;min-height:60vh;padding:24px;gap:10px}
-  .emoji{font-size:44px}
-  .spin{width:18px;height:18px;border:2.5px solid rgba(255,255,255,.35);border-top-color:#fff;
-    border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-3px}
-  @keyframes sp{to{transform:rotate(360deg)}}
-  .skel{height:96px;border-radius:var(--radius);background:linear-gradient(90deg,var(--panel),var(--panel2),var(--panel));
-    background-size:200% 100%;animation:sh 1.2s infinite;margin-bottom:10px}
+  /* ---- empty / error ---- */
+  .center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+    min-height:58vh;padding:28px;gap:9px}
+  .emoji{font-size:50px;margin-bottom:2px}
+  .center .ttl{font-weight:800;font-size:18px}
+  .spin{width:20px;height:20px;border:2.5px solid var(--line);border-top-color:var(--acc);
+    border-radius:50%;display:inline-block;animation:rot .7s linear infinite}
+  .skel{height:72px;border-radius:15px;margin-bottom:9px;
+    background:linear-gradient(90deg,var(--panel) 25%,var(--panel2) 37%,var(--panel) 63%);
+    background-size:400% 100%;animation:sh 1.3s ease infinite}
   @keyframes sh{to{background-position:-200% 0}}
 
-  /* toast */
-  #toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);
-    background:#000c;color:#fff;padding:10px 18px;border-radius:12px;font-size:13.5px;font-weight:600;
-    z-index:60;opacity:0;transition:.25s;max-width:90%;text-align:center;pointer-events:none}
+  /* ---- sheet ---- */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;opacity:0;pointer-events:none;
+    transition:opacity .25s;backdrop-filter:blur(2px)}
+  .scrim.on{opacity:1;pointer-events:auto}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;background:var(--bg);
+    border-radius:22px 22px 0 0;padding:8px 18px calc(24px + env(safe-area-inset-bottom));
+    max-width:600px;margin:0 auto;transform:translateY(110%);max-height:93vh;overflow-y:auto;
+    transition:transform .3s cubic-bezier(.2,.85,.25,1)}
+  .sheet.on{transform:translateY(0)}
+  .grab{width:40px;height:4px;border-radius:3px;background:var(--line);margin:7px auto 16px}
+  .h2{font-size:20px;font-weight:800;margin:0 0 4px;letter-spacing:-.3px}
+  .desc{font-size:13.5px;color:var(--dim);margin:0 0 18px}
+  .field{margin-bottom:15px}
+  .lab{display:block;font-size:13px;font-weight:600;margin-bottom:8px;color:var(--dim)}
+  .inp,select.inp{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:13px;
+    padding:14px;color:var(--text);font-size:16px;font-family:inherit;outline:none;-webkit-appearance:none;appearance:none}
+  .inp:focus{border-color:var(--acc)}
+  select.inp{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%238a99a8' stroke-width='2'><path d='M6 8l4 4 4-4'/></svg>");
+    background-repeat:no-repeat;background-position:right 14px center}
+  .two{display:flex;gap:11px}.two>.field{flex:1}
+  .hint{font-size:11.5px;color:var(--dim);margin-top:7px;line-height:1.4}
+  .err{color:var(--danger);font-size:13px;min-height:17px;margin:6px 0 2px}
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;border:none;
+    background:var(--acc);color:var(--btxt);border-radius:14px;padding:15px;font-size:16px;font-weight:700;cursor:pointer}
+  .btn:active{opacity:.85}.btn[disabled]{opacity:.5}
+  .btn-sec{background:var(--panel);border:1px solid var(--line);color:var(--text)}
+
+  /* ---- detail ---- */
+  .dhead{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 14px}
+  .stat .t{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+  .stat .v{font-size:18px;font-weight:800;margin-top:3px}
+  .link{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:13px;
+    font-size:12.5px;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    color:var(--dim);margin-bottom:13px;line-height:1.5}
+
+  /* ---- toast ---- */
+  #toast{position:fixed;left:50%;bottom:36px;transform:translateX(-50%) translateY(20px);
+    background:#000d;color:#fff;padding:11px 20px;border-radius:13px;font-size:14px;font-weight:600;
+    z-index:60;opacity:0;transition:.25s;max-width:88%;text-align:center;pointer-events:none}
   #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
-  #toast.bad{background:#c0392b}
+  #toast.bad{background:#c0392bee}
 </style>
 </head>
 <body>
-  <div class="wrap" id="app">
-    <div class="center"><span class="spin"></span></div>
-  </div>
-
-  <div class="fab" id="fab" style="display:none">
-    <button class="btn" id="fabBtn">➕ ساخت یوزر جدید</button>
-  </div>
-
+  <div class="wrap" id="app"><div class="center"><span class="spin"></span></div></div>
   <div class="scrim" id="scrim"></div>
   <div class="sheet" id="sheet"></div>
   <div id="toast"></div>
@@ -132,214 +146,244 @@
 <script>
 const tg = window.Telegram && window.Telegram.WebApp;
 const initData = (tg && tg.initData) || "";
-let SERVERS = [];
-let FILTER = null;          // server id filter or null = all
-let DATA = {keys:[], errors:[]};
+const MB = tg && tg.MainButton;
+const BB = tg && tg.BackButton;
+let SERVERS = [], FILTER = null, QUERY = "", DATA = {keys:[], errors:[]}, SHEET = false;
 
-/* ---- Telegram theme ---- */
+/* ---------- theme ---------- */
 function applyTheme(){
   if(!tg) return;
-  const p = tg.themeParams || {};
-  const set=(k,v)=>{ if(v) document.documentElement.style.setProperty(k,v); };
+  const p = tg.themeParams || {}, set=(k,v)=>{ if(v) document.documentElement.style.setProperty(k,v); };
   set('--bg',p.bg_color); set('--text',p.text_color); set('--dim',p.hint_color);
-  set('--panel',p.secondary_bg_color); set('--acc',p.button_color);
-  set('--acc2',p.button_color); set('--btxt',p.button_text_color);
-  if(p.section_bg_color) set('--panel2',p.section_bg_color);
-  try{ tg.setHeaderColor && tg.setHeaderColor(p.bg_color || '#17212b'); }catch(e){}
+  set('--panel',p.secondary_bg_color); set('--card',p.secondary_bg_color);
+  set('--acc',p.button_color); set('--acc2',p.button_color); set('--btxt',p.button_text_color);
+  if(p.section_separator_color) set('--line',p.section_separator_color);
+  try{ tg.setHeaderColor && tg.setHeaderColor('bg_color'); tg.setBackgroundColor && tg.setBackgroundColor(p.bg_color||'#17212b'); }catch(e){}
 }
-if(tg){ tg.ready(); tg.expand(); applyTheme(); tg.onEvent('themeChanged',applyTheme); }
+if(tg){ tg.ready(); tg.expand(); applyTheme(); tg.onEvent('themeChanged',applyTheme);
+  try{ tg.enableClosingConfirmation && tg.enableClosingConfirmation(); }catch(e){} }
 
-/* ---- helpers ---- */
+/* ---------- native buttons ---------- */
+let mbCb=null;
+function mainBtn(text, cb){
+  if(!MB) return;
+  if(mbCb) MB.offClick(mbCb); mbCb=cb;
+  MB.setText(text); MB.onClick(cb); MB.enable(); MB.hideProgress(); MB.show();
+}
+function mainHide(){ if(MB){ if(mbCb) MB.offClick(mbCb); mbCb=null; MB.hideProgress(); MB.hide(); } }
+function mainBusy(on){ if(!MB) return; on?(MB.showProgress(),MB.disable()):(MB.hideProgress(),MB.enable()); }
+let bbCb=null;
+function backBtn(cb){ if(!BB) return; if(bbCb) BB.offClick(bbCb); bbCb=cb;
+  if(cb){ BB.onClick(cb); BB.show(); } else BB.hide(); }
+
+/* ---------- helpers ---------- */
 function haptic(t){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(t||'light'); }catch(e){} }
+function notify(t){ try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred(t); }catch(e){} }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function fmtBytes(n){
-  if(n==null) return '∞';
-  n=Number(n); const u=['B','KB','MB','GB','TB']; let i=0;
-  while(Math.abs(n)>=1024 && i<u.length-1){ n/=1024; i++; }
-  return (n>=100||i===0 ? n.toFixed(0) : n.toFixed(1))+' '+u[i];
-}
-function fmtExpiry(k){
-  if(k.disabled) return '⛔️ غیرفعال';
-  if(k.pending) return '⏳ '+k.durationDays+' روز از اولین اتصال';
-  if(!k.expiry) return '♾ بدون انقضا';
-  const left = k.expiry - Date.now()/1000;
-  if(left<=0) return '⌛️ منقضی شده';
+function fmtBytes(n){ if(n==null) return '∞'; n=Number(n); const u=['B','KB','MB','GB','TB']; let i=0;
+  while(Math.abs(n)>=1024&&i<u.length-1){n/=1024;i++;} return (n>=100||i===0?n.toFixed(0):n.toFixed(1))+' '+u[i]; }
+function ago(ts){ if(!ts) return 'Never'; const s=Date.now()/1000-ts;
+  if(s<60) return 'Just now'; if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+function expiryText(k){
+  if(k.disabled) return 'Disabled';
+  if(k.pending) return 'Pending · '+k.durationDays+'d from first use';
+  if(!k.expiry) return 'No expiry';
+  const left=k.expiry-Date.now()/1000; if(left<=0) return 'Expired';
   const d=Math.floor(left/86400), h=Math.floor((left%86400)/3600);
-  return '⏳ '+(d>0? d+' روز': h+' ساعت')+' مانده';
-}
+  return 'Expires in '+(d>0?d+'d':h+'h'); }
+function hue(s){ let h=0; for(const c of String(s||'?')) h=(h*31+c.charCodeAt(0))%360; return h; }
+function avatar(name){ const h=hue(name); return '<div class="av" style="background:linear-gradient(135deg,hsl('+h+',58%,52%),hsl('+((h+40)%360)+',58%,46%))">'+esc((name||'?').trim().charAt(0)||'?')+'</div>'; }
+function pct(k){ if(k.limit==null||k.limit===0) return 0; return Math.min(100,Math.round(k.used/k.limit*100)); }
+function barColor(k){ const p=pct(k); return p>=100?'var(--danger)':p>=85?'var(--warn)':'var(--ok)'; }
+
 let toastT;
-function toast(msg,bad){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.className='on'+(bad?' bad':''); clearTimeout(toastT);
-  toastT=setTimeout(()=>t.className=bad?'bad':'',1900);
-}
-async function api(path,opts){
-  opts=opts||{};
-  const r=await fetch(path,{...opts,headers:{
-    'Authorization':'tma '+initData,'Content-Type':'application/json',...(opts.headers||{})}});
+function toast(msg,bad){ const t=document.getElementById('toast'); t.textContent=msg;
+  t.className='on'+(bad?' bad':''); clearTimeout(toastT); toastT=setTimeout(()=>t.className=bad?'bad':'',1900); }
+async function api(path,opts){ opts=opts||{};
+  const r=await fetch(path,{...opts,headers:{'Authorization':'tma '+initData,'Content-Type':'application/json',...(opts.headers||{})}});
   if(!r.ok){ let d; try{d=await r.json()}catch(e){} const e=new Error((d&&d.detail)||('HTTP '+r.status)); e.status=r.status; throw e; }
-  return r.json();
-}
-async function copy(text,label){
-  try{ await navigator.clipboard.writeText(text); }
-  catch(e){ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
-    ta.select(); try{document.execCommand('copy')}catch(_){} ta.remove(); }
-  haptic('light'); toast((label||'لینک')+' کپی شد ✅');
-}
+  return r.json(); }
+async function copy(text){ try{ await navigator.clipboard.writeText(text); }
+  catch(e){ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity=0;
+    document.body.appendChild(ta); ta.focus(); ta.select(); try{document.execCommand('copy')}catch(_){} ta.remove(); }
+  notify('success'); toast('Link copied'); }
 
-/* ---- render ---- */
-function pct(k){ if(k.limit==null||k.limit===0) return 0; return Math.min(100, Math.round(k.used/k.limit*100)); }
-function barColor(k){ const p=pct(k); return p>=100?'var(--danger)':p>=80?'var(--warn)':'var(--ok)'; }
-
+/* ---------- list render ---------- */
+function visibleKeys(){
+  let ks = FILTER ? DATA.keys.filter(k=>k.serverId===FILTER) : DATA.keys;
+  if(QUERY) ks = ks.filter(k=>(k.name||'').toLowerCase().includes(QUERY));
+  return ks;
+}
 function render(){
   const app=document.getElementById('app');
-  const list = FILTER ? DATA.keys.filter(k=>k.serverId===FILTER) : DATA.keys;
-  const totalUsed = list.reduce((s,k)=>s+(k.used||0),0);
-  const active = list.filter(k=>!k.disabled).length;
+  const all = FILTER ? DATA.keys.filter(k=>k.serverId===FILTER) : DATA.keys;
+  const totalUsed = all.reduce((s,k)=>s+(k.used||0),0);
+  const active = all.filter(k=>!k.disabled).length;
 
-  let chips='';
+  let html = '<div class="hero">'+
+    '<button class="reload" id="reload" aria-label="Refresh"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg></button>'+
+    '<div class="lbl">Total usage</div><div class="big">'+fmtBytes(totalUsed)+'</div>'+
+    '<div class="grid">'+
+      '<div class="cell"><div class="n">'+all.length+'</div><div class="t">Users</div></div>'+
+      '<div class="cell"><div class="n">'+active+'</div><div class="t">Active</div></div>'+
+      '<div class="cell"><div class="n">'+SERVERS.length+'</div><div class="t">Servers</div></div>'+
+    '</div></div>';
+
   if(SERVERS.length>1){
-    chips='<div class="chips"><div class="chip'+(FILTER==null?' on':'')+'" data-srv="">همه</div>'+
-      SERVERS.map(s=>'<div class="chip'+(FILTER===s.id?' on':'')+'" data-srv="'+esc(s.id)+'">'+esc(s.name)+'</div>').join('')+'</div>';
+    html += '<div class="seg"><div class="s'+(FILTER==null?' on':'')+'" data-srv="">All</div>'+
+      SERVERS.map(s=>'<div class="s'+(FILTER===s.id?' on':'')+'" data-srv="'+esc(s.id)+'">'+esc(s.name)+'</div>').join('')+'</div>';
+  }
+  if(all.length>4){
+    html += '<div class="search"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--dim)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>'+
+      '<input id="q" placeholder="Search users" value="'+esc(QUERY)+'" autocomplete="off" /></div>';
   }
 
-  const hero='<div class="hero"><div class="sub">مجموع مصرف</div>'+
-    '<div class="big">'+fmtBytes(totalUsed)+'</div>'+
-    '<div class="stats"><div><b>'+list.length+'</b> یوزر</div>'+
-    '<div><b>'+active+'</b> فعال</div>'+
-    '<div><b>'+SERVERS.length+'</b> سرور</div></div></div>';
-
-  let errs='';
   if(DATA.errors && DATA.errors.length){
-    errs=DATA.errors.map(e=>'<div class="card" style="border-color:var(--danger)">⚠️ <b>'+esc(e.serverName)+'</b> در دسترس نیست<div class="kmeta">'+esc(e.error||'')+'</div></div>').join('');
+    html += DATA.errors.map(e=>'<div class="item" style="border-color:var(--danger);cursor:default"><div class="av" style="background:var(--danger)">!</div><div class="it-main"><div class="it-name">'+esc(e.serverName)+' unavailable</div><div class="it-sub"><span>'+esc((e.error||'').slice(0,48))+'</span></div></div></div>').join('');
   }
 
-  let body;
-  if(list.length===0){
-    body='<div class="center"><div class="emoji">🗂</div><div style="font-weight:700">هنوز یوزری نیست</div>'+
-      '<div class="muted">با دکمه‌ی پایین اولین یوزر را بساز.</div></div>';
-  }else{
-    body=list.map(k=>{
-      const unlimited = (k.limit==null||k.limit===0);
-      const width = unlimited?6:Math.max(pct(k),3);
-      const fill = unlimited?'var(--acc)':barColor(k);
-      const stat = k.disabled?'var(--danger)':(k.pending?'var(--warn)':'var(--ok)');
-      const tag = SERVERS.length>1?'<span class="tag">'+esc(k.serverName)+'</span>':'';
-      return '<div class="card">'+
-        '<div class="row spread"><div class="kname"><span class="dot" style="background:'+stat+'"></span><span>'+esc(k.name)+'</span></div>'+tag+'</div>'+
-        '<div class="bar"><i style="width:'+width+'%;background:'+fill+'"></i></div>'+
-        '<div class="usage"><span>'+fmtBytes(k.used)+' از '+(unlimited?'∞':fmtBytes(k.limit))+'</span><span>'+(unlimited?'نامحدود':pct(k)+'%')+'</span></div>'+
-        '<div class="kmeta">'+fmtExpiry(k)+'</div>'+
-        (k.accessUrl?'<div class="klink"><button class="lbtn" data-copy="'+esc(k.accessUrl)+'">🔗 کپی لینک اتصال</button></div>':'')+
-      '</div>';
+  const list = visibleKeys();
+  if(all.length===0){
+    html += '<div class="center"><div class="emoji">🗂️</div><div class="ttl">No users yet</div><div class="muted">Tap the button below to create your first user.</div></div>';
+  } else if(list.length===0){
+    html += '<div class="center"><div class="emoji">🔍</div><div class="ttl">No matches</div><div class="muted">Try a different search.</div></div>';
+  } else {
+    html += '<div class="sectitle">'+list.length+(list.length===1?' user':' users')+'</div>';
+    html += list.map(k=>{
+      const unlimited=(k.limit==null||k.limit===0), p=pct(k);
+      const width=unlimited?100:Math.max(p,2);
+      const fill=unlimited?'linear-gradient(90deg,var(--acc),var(--acc2))':barColor(k);
+      const pill=k.disabled?'<span class="pill off">Disabled</span>':(k.pending?'<span class="pill pend">Pending</span>':'<span class="pill ok">Active</span>');
+      const srv=SERVERS.length>1?' · '+esc(k.serverName):'';
+      return '<div class="item" data-id="'+esc(k.id)+'" data-srv="'+esc(k.serverId)+'">'+avatar(k.name)+
+        '<div class="it-main"><div class="it-top"><span class="it-name">'+esc(k.name)+'</span>'+pill+'</div>'+
+        '<div class="bar"><i style="width:'+width+'%;background:'+fill+';opacity:'+(unlimited?'.5':'1')+'"></i></div>'+
+        '<div class="it-sub"><span>'+fmtBytes(k.used)+' / '+(unlimited?'∞':fmtBytes(k.limit))+'</span><span>'+expiryText(k)+'</span></div></div>'+
+        '<span class="chev">›</span></div>';
     }).join('');
   }
 
-  app.innerHTML=hero+chips+errs+body;
-  document.getElementById('fab').style.display='block';
-
-  app.querySelectorAll('[data-srv]').forEach(c=>c.onclick=()=>{ FILTER=c.dataset.srv||null; haptic(); render(); });
-  app.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(b.dataset.copy,'لینک'));
+  app.innerHTML=html;
+  const rl=document.getElementById('reload'); if(rl) rl.onclick=()=>{ haptic(); rl.classList.add('spin'); load(false).finally(()=>rl.classList.remove('spin')); };
+  app.querySelectorAll('[data-srv].s, .seg .s').forEach(c=>c.onclick=()=>{ FILTER=c.dataset.srv||null; haptic(); render(); });
+  const q=document.getElementById('q'); if(q){ q.oninput=()=>{ QUERY=q.value.trim().toLowerCase(); const items=document.getElementById('app'); const sel=items.scrollTop; renderListOnly(); }; }
+  app.querySelectorAll('.item[data-id]').forEach(el=>el.onclick=()=>openDetail(el.dataset.srv,el.dataset.id));
+  if(!SHEET) mainBtn('Create New User', openCreate);
+}
+function renderListOnly(){ // re-render keeping focus on search
+  const q=document.getElementById('q'); const pos=q?q.selectionStart:null; render();
+  const nq=document.getElementById('q'); if(nq){ nq.focus(); if(pos!=null) try{nq.setSelectionRange(pos,pos)}catch(e){} }
 }
 
-function showError(msg,emoji){
-  document.getElementById('app').innerHTML=
-    '<div class="center"><div class="emoji">'+(emoji||'🔒')+'</div><div style="font-weight:700">'+esc(msg)+'</div>'+
-    '<div class="muted">اگر فکر می‌کنی اشتباه است، از داخل بات تلگرام دوباره باز کن.</div></div>';
-  document.getElementById('fab').style.display='none';
-}
-
-/* ---- create sheet ---- */
-function closeSheet(){ document.getElementById('sheet').className='sheet'; document.getElementById('scrim').className='scrim'; }
+/* ---------- sheets ---------- */
 function openSheet(html){
+  SHEET=true; mainHide();
   const s=document.getElementById('sheet'); s.innerHTML='<div class="grab"></div>'+html;
   document.getElementById('scrim').className='scrim on';
   requestAnimationFrame(()=>s.className='sheet on');
+  backBtn(closeSheet);
   return s;
+}
+function closeSheet(){
+  SHEET=false;
+  document.getElementById('sheet').className='sheet';
+  document.getElementById('scrim').className='scrim';
+  backBtn(null); mainBtn('Create New User', openCreate);
 }
 document.getElementById('scrim').onclick=closeSheet;
 
+/* ---------- detail ---------- */
+function openDetail(sid,kid){
+  const k=DATA.keys.find(x=>String(x.id)===String(kid)&&x.serverId===sid); if(!k) return;
+  haptic();
+  const unlimited=(k.limit==null||k.limit===0), p=pct(k);
+  const pill=k.disabled?'<span class="pill off">Disabled</span>':(k.pending?'<span class="pill pend">Pending</span>':'<span class="pill ok">Active</span>');
+  const width=unlimited?100:Math.max(p,2), fill=unlimited?'linear-gradient(90deg,var(--acc),var(--acc2))':barColor(k);
+  const s=openSheet(
+    '<div class="dhead">'+avatar(k.name)+'<div style="min-width:0"><div class="h2" style="margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(k.name)+'</div>'+
+      '<div class="muted" style="font-size:13px;margin-top:2px">'+esc(k.serverName)+' &nbsp;'+pill+'</div></div></div>'+
+    '<div class="bar" style="height:8px"><i style="width:'+width+'%;background:'+fill+';opacity:'+(unlimited?'.5':'1')+'"></i></div>'+
+    '<div class="it-sub" style="margin:8px 1px 16px"><span>'+fmtBytes(k.used)+' used</span><span>'+(unlimited?'Unlimited':p+'% of '+fmtBytes(k.limit))+'</span></div>'+
+    '<div class="stats">'+
+      '<div class="stat"><div class="t">Used</div><div class="v mono">'+fmtBytes(k.used)+'</div></div>'+
+      '<div class="stat"><div class="t">Limit</div><div class="v mono">'+(unlimited?'∞':fmtBytes(k.limit))+'</div></div>'+
+      '<div class="stat"><div class="t">Expiry</div><div class="v" style="font-size:15px">'+expiryText(k)+'</div></div>'+
+      '<div class="stat"><div class="t">Last active</div><div class="v" style="font-size:15px">'+ago(k.lastSeen)+'</div></div>'+
+    '</div>'+
+    (k.accessUrl?('<div class="lab">Connection link</div><div class="link">'+esc(k.accessUrl)+'</div>'+
+      '<button class="btn" id="dcopy">Copy Connection Link</button>'):''));
+  if(k.accessUrl) s.querySelector('#dcopy').onclick=()=>copy(k.accessUrl);
+}
+
+/* ---------- create ---------- */
 function openCreate(){
   haptic();
   const srvField = SERVERS.length>1
-    ? '<div class="field"><label class="lab">سرور</label><select id="cs" class="inp">'+
-        SERVERS.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join('')+'</select></div>'
-    : '';
+    ? '<div class="field"><label class="lab">Server</label><select id="cs" class="inp">'+
+        SERVERS.map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+'</option>').join('')+'</select></div>' : '';
   const s=openSheet(
-    '<div class="h2">ساخت یوزر جدید</div><p class="desc">یک یوزر تازه روی سرور می‌سازد و لینک اتصالش را می‌دهد.</p>'+
+    '<div class="h2">New User</div><p class="desc">Create a user and get its connection link.</p>'+
     srvField+
-    '<div class="field"><label class="lab">نام یوزر</label><input id="cn" class="inp" placeholder="مثلاً علی" /></div>'+
+    '<div class="field"><label class="lab">Name</label><input id="cn" class="inp" placeholder="e.g. Alex" autocomplete="off" /></div>'+
     '<div class="two">'+
-      '<div class="field"><label class="lab">حجم (گیگابایت)</label><input id="cl" class="inp" type="number" inputmode="decimal" min="0" placeholder="0 = نامحدود" /></div>'+
-      '<div class="field"><label class="lab">مدت (روز)</label><input id="cd" class="inp" type="number" inputmode="numeric" min="0" placeholder="0 = همیشگی" /></div>'+
+      '<div class="field"><label class="lab">Data limit (GB)</label><input id="cl" class="inp" type="number" inputmode="decimal" min="0" placeholder="0 = unlimited" /></div>'+
+      '<div class="field"><label class="lab">Duration (days)</label><input id="cd" class="inp" type="number" inputmode="numeric" min="0" placeholder="0 = no expiry" /></div>'+
     '</div>'+
-    '<div class="hint">۰ برای حجم یعنی نامحدود؛ ۰ برای مدت یعنی بدون انقضا (شمارش از اولین اتصال).</div>'+
+    '<div class="hint">Leave 0 for unlimited data or no expiry. Duration counts from the first connection.</div>'+
     '<div id="cerr" class="err"></div>'+
-    '<button class="btn" id="cgo">ساخت یوزر</button>');
-  setTimeout(()=>s.querySelector('#cn').focus(),300);
-  s.querySelector('#cgo').onclick=submitCreate;
+    '<button class="btn" id="cgo">Create User</button>');
+  const go=()=>submitCreate(s);
+  s.querySelector('#cgo').onclick=go;
+  mainBtn('Create User', go);   // native primary button mirrors the in-sheet one
+  setTimeout(()=>{ const n=s.querySelector('#cn'); n&&n.focus(); },320);
 }
-
-async function submitCreate(){
-  const s=document.getElementById('sheet');
-  const server = SERVERS.length>1 ? s.querySelector('#cs').value : SERVERS[0].id;
-  const name = s.querySelector('#cn').value.trim();
-  const limit_gb = parseFloat(s.querySelector('#cl').value||'0')||0;
-  const days = parseInt(s.querySelector('#cd').value||'0',10)||0;
+async function submitCreate(s){
+  const server=SERVERS.length>1?s.querySelector('#cs').value:(SERVERS[0]&&SERVERS[0].id);
+  const name=s.querySelector('#cn').value.trim();
+  const limit_gb=parseFloat(s.querySelector('#cl').value||'0')||0;
+  const days=parseInt(s.querySelector('#cd').value||'0',10)||0;
   const err=s.querySelector('#cerr'); err.textContent='';
-  if(!name){ err.textContent='نام یوزر را وارد کن.'; return; }
-  if(!server){ err.textContent='هیچ سروری تنظیم نشده است.'; return; }
-  const btn=s.querySelector('#cgo'); btn.disabled=true; btn.innerHTML='<span class="spin"></span>';
+  if(!name){ err.textContent='Please enter a name.'; return; }
+  if(!server){ err.textContent='No server is configured.'; return; }
+  const btn=s.querySelector('#cgo'); btn.disabled=true; btn.textContent='Creating…'; mainBusy(true);
   try{
     const k=await api('/tma/api/keys',{method:'POST',body:JSON.stringify({server,name,limit_gb,days})});
-    haptic('medium');
-    showCreated(k);
-    await load(false);
-  }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent='ساخت یوزر'; }
+    notify('success'); showCreated(k); await load(false);
+  }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent='Create User'; mainBusy(false); }
 }
-
 function showCreated(k){
-  openSheet(
-    '<div class="center" style="min-height:auto;padding:8px 0 4px"><div class="emoji">✅</div>'+
-    '<div style="font-weight:800;font-size:17px">یوزر «'+esc(k.name)+'» ساخته شد</div></div>'+
-    '<div class="field"><label class="lab">لینک اتصال</label>'+
-      '<div class="inp mono" style="word-break:break-all;font-size:12.5px">'+esc(k.accessUrl)+'</div></div>'+
-    '<button class="btn" id="ccopy">📋 کپی لینک</button><div style="height:10px"></div>'+
-    '<button class="btn btn-sec" id="cdone">بستن</button>');
-  document.getElementById('ccopy').onclick=()=>copy(k.accessUrl,'لینک');
-  document.getElementById('cdone').onclick=()=>{ closeSheet(); render(); };
+  const s=openSheet(
+    '<div style="text-align:center;padding:6px 0 4px"><div class="emoji" style="font-size:46px">✅</div>'+
+    '<div class="h2" style="margin-top:6px">User created</div>'+
+    '<p class="desc" style="margin-top:4px">“'+esc(k.name)+'” is ready. Share the connection link below.</p></div>'+
+    '<div class="lab">Connection link</div><div class="link">'+esc(k.accessUrl)+'</div>'+
+    '<button class="btn" id="ccopy">Copy Connection Link</button><div style="height:11px"></div>'+
+    '<button class="btn btn-sec" id="cdone">Done</button>');
+  s.querySelector('#ccopy').onclick=()=>copy(k.accessUrl);
+  const done=()=>{ closeSheet(); render(); };
+  s.querySelector('#cdone').onclick=done;
+  mainBtn('Done', done);
 }
 
-document.getElementById('fabBtn').onclick=openCreate;
-
-/* ---- load ---- */
-async function load(showSkeleton){
-  if(showSkeleton){
-    document.getElementById('app').innerHTML='<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
-  }
-  try{
-    const d=await api('/tma/api/keys'+(FILTER?('?server='+encodeURIComponent(FILTER)):''));
-    DATA=d; render();
-  }catch(e){
-    if(e.status===401) showError('دسترسی نامعتبر','🔒');
-    else if(e.status===403) showError('شما ادمین نیستید','⛔️');
-    else if(e.status===503) showError('بات هنوز تنظیم نشده','🛠');
-    else showError(e.message,'⚠️');
-  }
+/* ---------- load / boot ---------- */
+async function load(skeleton){
+  if(skeleton) document.getElementById('app').innerHTML='<div class="skel"></div>'.repeat(5);
+  try{ DATA=await api('/tma/api/keys'); render(); }
+  catch(e){ fail(e); }
 }
-
+function fail(e){
+  mainHide(); backBtn(null);
+  const map={401:['🔒','Invalid session','Please reopen this app from inside Telegram.'],
+             403:['⛔️','Access denied','Your Telegram account is not an admin of this bot.'],
+             503:['🛠️','Not configured','The bot has not been set up yet.']};
+  const m=map[e.status]||['⚠️','Something went wrong',e.message||'Please try again.'];
+  document.getElementById('app').innerHTML='<div class="center"><div class="emoji">'+m[0]+'</div><div class="ttl">'+esc(m[1])+'</div><div class="muted">'+esc(m[2])+'</div></div>';
+}
 async function boot(){
-  if(!initData){ showError('این صفحه فقط داخل تلگرام باز می‌شود','📱'); return; }
-  try{
-    const b=await api('/tma/api/bootstrap');
-    SERVERS=b.servers||[];
-    await load(true);
-  }catch(e){
-    if(e.status===403) showError('شما ادمین نیستید','⛔️');
-    else if(e.status===401) showError('دسترسی نامعتبر','🔒');
-    else if(e.status===503) showError('بات هنوز تنظیم نشده','🛠');
-    else showError(e.message,'⚠️');
-  }
+  if(!initData){ fail({status:401}); return; }
+  try{ const b=await api('/tma/api/bootstrap'); SERVERS=b.servers||[]; await load(true); }
+  catch(e){ fail(e); }
 }
 boot();
 </script>

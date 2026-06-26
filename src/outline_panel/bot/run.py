@@ -57,7 +57,7 @@ async def main() -> None:
     if wa_base and wa_base.startswith("https://"):
         try:
             await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
-                text="مدیریت", web_app=WebAppInfo(url=f"{wa_base}/tma")))
+                text="Open", web_app=WebAppInfo(url=f"{wa_base}/tma")))
         except Exception as e:  # noqa: BLE001 — non-fatal
             log.warning("Could not set Web App menu button: %s", e)
     asyncio.create_task(
