@@ -41,7 +41,9 @@ rsync -a --delete --exclude '.git' --exclude '.venv' --exclude '*.db*' \
 echo "==> Creating virtualenv & installing"
 python3 -m venv "$APP_DIR/.venv"
 "$APP_DIR/.venv/bin/pip" install --quiet --upgrade pip
-# editable install so `git pull` + restart picks up new files without a version bump
+# clean editable install: drop any prior copied install so it can't shadow the
+# editable one, then install -e so `git pull` + restart always serves new files
+"$APP_DIR/.venv/bin/pip" uninstall -y outline-panel >/dev/null 2>&1 || true
 "$APP_DIR/.venv/bin/pip" install --quiet -e "$APP_DIR"
 
 ENV_FILE="$APP_DIR/.env"
