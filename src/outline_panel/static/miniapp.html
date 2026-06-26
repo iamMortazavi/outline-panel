@@ -194,6 +194,13 @@ function expiryText(k){
   return 'Expires in '+(d>0?d+'d':h+'h'); }
 function hue(s){ let h=0; for(const c of String(s||'?')) h=(h*31+c.charCodeAt(0))%360; return h; }
 function avatar(name){ const h=hue(name); return '<div class="av" style="background:linear-gradient(135deg,hsl('+h+',58%,52%),hsl('+((h+40)%360)+',58%,46%))">'+esc((name||'?').trim().charAt(0)||'?')+'</div>'; }
+// Build the shareable Shadowsocks URL with the config name as a #fragment,
+// matching the dashboard: keep ss://base64@host:port, drop /?outline=1, add #Name.
+function configUrl(k){
+  const u=k.accessUrl||''; const m=u.match(/^(ss:\/\/[^@]+@[^\/?#]+)/);
+  const base=m?m[1]:u.split(/[\/?#]/)[0];
+  return base+(k.name?'#'+encodeURIComponent(String(k.name).replace(/\s+/g,'')):'');
+}
 function pct(k){ if(k.limit==null||k.limit===0) return 0; return Math.min(100,Math.round(k.used/k.limit*100)); }
 function barColor(k){ const p=pct(k); return p>=100?'var(--danger)':p>=85?'var(--warn)':'var(--ok)'; }
 
@@ -311,9 +318,9 @@ function openDetail(sid,kid){
       '<div class="stat"><div class="t">Expiry</div><div class="v" style="font-size:15px">'+expiryText(k)+'</div></div>'+
       '<div class="stat"><div class="t">Last active</div><div class="v" style="font-size:15px">'+ago(k.lastSeen)+'</div></div>'+
     '</div>'+
-    (k.accessUrl?('<div class="lab">Connection link</div><div class="link">'+esc(k.accessUrl)+'</div>'+
+    (k.accessUrl?('<div class="lab">Connection link</div><div class="link">'+esc(configUrl(k))+'</div>'+
       '<button class="btn" id="dcopy">Copy Connection Link</button>'):''));
-  if(k.accessUrl) s.querySelector('#dcopy').onclick=()=>copy(k.accessUrl);
+  if(k.accessUrl) s.querySelector('#dcopy').onclick=()=>copy(configUrl(k));
 }
 
 /* ---------- create ---------- */
@@ -357,10 +364,10 @@ function showCreated(k){
     '<div style="text-align:center;padding:6px 0 4px"><div class="emoji" style="font-size:46px">✅</div>'+
     '<div class="h2" style="margin-top:6px">User created</div>'+
     '<p class="desc" style="margin-top:4px">“'+esc(k.name)+'” is ready. Share the connection link below.</p></div>'+
-    '<div class="lab">Connection link</div><div class="link">'+esc(k.accessUrl)+'</div>'+
+    '<div class="lab">Connection link</div><div class="link">'+esc(configUrl(k))+'</div>'+
     '<button class="btn" id="ccopy">Copy Connection Link</button><div style="height:11px"></div>'+
     '<button class="btn btn-sec" id="cdone">Done</button>');
-  s.querySelector('#ccopy').onclick=()=>copy(k.accessUrl);
+  s.querySelector('#ccopy').onclick=()=>copy(configUrl(k));
   const done=()=>{ closeSheet(); render(); };
   s.querySelector('#cdone').onclick=done;
   mainBtn('Done', done);
