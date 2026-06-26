@@ -6,7 +6,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends
 
-from ...outline_api import OutlineError
+from ...core.outline_api import OutlineError
 from ..deps import reg, require_session
 
 router = APIRouter(prefix="/api", tags=["stats"],

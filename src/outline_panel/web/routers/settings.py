@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ... import security
-from ...settings import (
+from ...core import security
+from ...core.settings import (
     BOT_ADMIN_IDS, BOT_ENABLED, BOT_TOKEN, TOTP_ENABLED, TOTP_SECRET,
 )
 from ..deps import botmgr, require_session, settings

@@ -30,7 +30,7 @@ class FakeOutline:
         return {}
 
     async def get_server_metrics(self, since="30d"):
-        from outline_panel.outline_api import OutlineError
+        from outline_panel.core.outline_api import OutlineError
         raise OutlineError("metrics off")
 
     async def get_server_info(self):
@@ -42,7 +42,7 @@ class FakeOutline:
 
 class BrokenOutline(FakeOutline):
     async def list_keys(self):
-        from outline_panel.outline_api import OutlineError
+        from outline_panel.core.outline_api import OutlineError
         raise OutlineError("server down")
 
 

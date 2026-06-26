@@ -45,7 +45,7 @@ class FakeOutline:
         self.limits.pop(kid, None)
 
     async def get_server_metrics(self, since="30d"):
-        from outline_panel.outline_api import OutlineError
+        from outline_panel.core.outline_api import OutlineError
         raise OutlineError("off")
 
     async def get_server_info(self):

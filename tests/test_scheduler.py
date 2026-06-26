@@ -1,6 +1,6 @@
 import time
 
-import outline_panel.scheduler as scheduler
+import outline_panel.core.scheduler as scheduler
 
 
 class FakeAPI:

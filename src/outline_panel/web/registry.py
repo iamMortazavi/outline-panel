@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from .. import config
-from ..db import DB
-from ..outline_api import OutlineAPI
+from ..core import config
+from ..core.db import DB
+from ..core.outline_api import OutlineAPI
 
 
 class Registry:

@@ -7,8 +7,8 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ...outline_api import OutlineAPI, OutlineError, parse_access_config
-from ...utils import gb_to_bytes
+from ...core.outline_api import OutlineAPI, OutlineError, parse_access_config
+from ...core.utils import gb_to_bytes
 from ..deps import api_or_404, db, host, reg, require_session
 
 router = APIRouter(prefix="/api", tags=["servers"],

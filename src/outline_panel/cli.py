@@ -11,9 +11,10 @@ import argparse
 import asyncio
 import getpass
 
-from . import __version__, config
-from .db import DB
-from .settings import (
+from . import __version__
+from .core import config
+from .core.db import DB
+from .core.settings import (
     BOT_ENABLED, BOT_TOKEN, TOTP_ENABLED, SettingsStore,
 )
 

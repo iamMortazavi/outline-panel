@@ -1,4 +1,4 @@
-from outline_panel.utils import fmt_bytes, fmt_expiry, gb_to_bytes
+from outline_panel.core.utils import fmt_bytes, fmt_expiry, gb_to_bytes
 
 
 def test_gb_to_bytes():

@@ -1,4 +1,4 @@
-"""توابع کمکی مشترک."""
+"""Shared helpers. User-facing return strings are Persian (Telegram bot UI)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def gb_to_bytes(gb: float) -> int:
 
 
 def fmt_bytes(n: int | None) -> str:
-    """نمایش خوانای حجم."""
+    """Human-readable byte size (Persian 'unlimited' when None)."""
     if n is None:
         return "نامحدود"
     n = float(n)

@@ -12,10 +12,10 @@ import logging
 
 from aiogram import Bot
 
-from .. import config
-from ..db import DB
-from ..scheduler import expiry_loop
-from ..settings import BOT_TOKEN, SettingsStore
+from ..core import config
+from ..core.db import DB
+from ..core.scheduler import expiry_loop
+from ..core.settings import BOT_TOKEN, SettingsStore
 from ..web.registry import Registry
 from .core import build_dispatcher
 
@@ -54,7 +54,7 @@ async def main() -> None:
     asyncio.create_task(
         expiry_loop(reg, db, config.EXPIRY_CHECK_INTERVAL, notifier=notify)
     )
-    log.info("بات شروع به کار کرد.")
+    log.info("Telegram bot started.")
     try:
         await dp.start_polling(bot)
     finally:

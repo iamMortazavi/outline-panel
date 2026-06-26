@@ -1,6 +1,6 @@
 import pytest
 
-from outline_panel.outline_api import OutlineError, _norm_fp, parse_access_config
+from outline_panel.core.outline_api import OutlineError, _norm_fp, parse_access_config
 
 
 def test_norm_fp():

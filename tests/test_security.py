@@ -1,4 +1,4 @@
-from outline_panel import security
+from outline_panel.core import security
 
 
 def test_password_roundtrip():

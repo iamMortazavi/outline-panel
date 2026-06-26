@@ -27,8 +27,8 @@ from aiogram.types import (
     Message,
 )
 
-from ..outline_api import OutlineError
-from ..utils import fmt_bytes, fmt_expiry, gb_to_bytes
+from ..core.outline_api import OutlineError
+from ..core.utils import fmt_bytes, fmt_expiry, gb_to_bytes
 
 
 class NewUser(StatesGroup):
@@ -173,7 +173,7 @@ def build_dispatcher(
             return await msg.answer(f"❌ ساخت یوزر ناموفق بود:\n{e}")
         try:
             await db.add_key(sid, key["id"], name, limit_bytes, duration)
-        except Exception as e:  # noqa: BLE001 — جلوگیری از کلید یتیم
+        except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
             try:
                 await api.delete_key(key["id"])
             except OutlineError:

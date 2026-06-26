@@ -114,13 +114,26 @@ degrades gracefully.
 
 ```
 src/outline_panel/
-  config.py settings.py security.py db.py outline_api.py scheduler.py
-  web/    app.py deps.py registry.py routers/{auth,servers,keys,stats,settings,subscription,backup}.py
-  bot/    core.py manager.py run.py
-  static/index.html
-tests/   pytest suite
+  __init__.py            package version
+  cli.py                 `outline-panel-admin` management CLI
+  core/                  domain logic, framework-agnostic
+    config.py settings.py security.py db.py outline_api.py scheduler.py utils.py
+  web/                   FastAPI dashboard
+    app.py deps.py registry.py run.py
+    routers/  auth.py servers.py keys.py stats.py settings.py subscription.py backup.py
+  bot/                   Telegram bot (aiogram)
+    core.py  build_dispatcher (handlers)
+    manager.py  in-process start/stop
+    run.py  standalone runner
+  static/index.html      single-file web UI
+tests/                   pytest suite
 install.sh  Dockerfile  docker-compose.yml  deploy/  .github/workflows/ci.yml
 ```
+
+The `core/` package holds all domain logic (storage, Outline API client,
+scheduler, security) with no web/bot dependencies, so both interfaces build on
+the same foundation. Code and comments are English; the Telegram bot's
+user-facing text is Persian by design.
 
 ## Security notes
 

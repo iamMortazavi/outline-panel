@@ -19,9 +19,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import config
-from ..scheduler import expiry_loop
-from ..settings import BOT_ENABLED, BOT_TOKEN
+from ..core import config
+from ..core.scheduler import expiry_loop
+from ..core.settings import BOT_ENABLED, BOT_TOKEN
 from .deps import STATIC_DIR, botmgr, db, reg, settings
 from .routers import (
     auth, backup, keys, servers, settings as settings_router, stats, subscription,

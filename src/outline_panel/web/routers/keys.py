@@ -9,9 +9,9 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ... import security
-from ...outline_api import OutlineAPI, OutlineError
-from ...utils import gb_to_bytes
+from ...core import security
+from ...core.outline_api import OutlineAPI, OutlineError
+from ...core.utils import gb_to_bytes
 from ..deps import api_or_404, db, reg, require_session
 
 log = logging.getLogger("web.keys")

@@ -1,11 +1,11 @@
 """
-کلاینت Outline Management API (Shadowbox).
+Outline Management API (Shadowbox) client.
 
-مستندات رسمی:
+Official docs:
 https://github.com/OutlineFoundation/outline-server/tree/master/src/shadowbox#access-keys-management-api
 
-نکته‌ی مهم: سرور آوت‌لاین از گواهی TLS خودامضا (self-signed) استفاده می‌کند،
-بنابراین باید راستی‌آزمایی گواهی غیرفعال شود (verify=False).
+Note: Outline servers use a self-signed TLS certificate. When no certSha256 is
+provided we fall back to verify=False; when it is, the cert is pinned instead.
 """
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ import httpx
 
 
 class OutlineError(Exception):
-    """خطای عمومی هنگام کار با API آوت‌لاین."""
+    """Raised for any error while talking to the Outline API."""
 
 
 def _norm_fp(fp: str | None) -> str | None:
-    """نرمال‌سازی اثرانگشت گواهی: حذف ':'، فاصله و حروف کوچک."""
+    """Normalize a cert fingerprint: drop ':'/spaces, lowercase."""
     if not fp:
         return None
     fp = fp.replace(":", "").replace(" ", "").strip().lower()
@@ -35,14 +35,14 @@ def _norm_fp(fp: str | None) -> str | None:
 
 def parse_access_config(text: str) -> tuple[str, str | None]:
     """
-    apiUrl و (در صورت وجود) certSha256 را از ورودی کاربر استخراج می‌کند:
-      • یک URL خام:  https://1.2.3.4:1234/SecretPath
-      • کانفیگ JSON اوت‌لاین‌منیجر: {"apiUrl":"https://...","certSha256":"..."}
-    (مطابق داک share-management-access). خروجی: (url, cert_sha256|None)
+    Extract apiUrl and (optionally) certSha256 from user input, which may be:
+      • a raw URL:  https://1.2.3.4:1234/SecretPath
+      • the Outline Manager access config: {"apiUrl":"https://...","certSha256":"..."}
+    Returns (url, cert_sha256|None).
     """
     text = (text or "").strip()
     if not text:
-        raise OutlineError("آدرس API خالی است.")
+        raise OutlineError("API URL is empty.")
     cert = None
     if text.startswith("{"):
         try:
@@ -58,12 +58,12 @@ def parse_access_config(text: str) -> tuple[str, str | None]:
         url = text
     url = url.strip().rstrip("/")
     if not re.match(r"^https://", url):
-        raise OutlineError("آدرس API نامعتبر است (باید با https:// شروع شود).")
+        raise OutlineError("Invalid API URL (must start with https://).")
     return url, _norm_fp(cert)
 
 
 def _fetch_cert_der(host: str, port: int, timeout: float) -> bytes:
-    """گواهی DER سرور را با یک هندشیک TLS بدون اعتبارسنجی دریافت می‌کند."""
+    """Fetch the server's DER certificate via an unverified TLS handshake."""
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -75,11 +75,11 @@ def _fetch_cert_der(host: str, port: int, timeout: float) -> bytes:
 class OutlineAPI:
     def __init__(self, api_url: str, cert_sha256: str | None = None,
                  timeout: float = 15.0):
-        # api_url چیزی مثل: https://1.2.3.4:1234/AbCdEf12345
+        # api_url looks like: https://1.2.3.4:1234/AbCdEf12345
         self.api_url = api_url.rstrip("/")
-        # اگر certSha256 موجود باشد گواهی pin می‌شود؛ وگرنه verify=False
-        # (گواهی سرور خودامضاست). pinning به‌صورت lazy روی اولین درخواست انجام
-        # می‌شود تا constructor همگام/شبکه‌ای نباشد.
+        # If certSha256 is given the cert is pinned; otherwise verify=False
+        # (the server cert is self-signed). Pinning happens lazily on the first
+        # request so the constructor stays sync and non-blocking.
         self.cert_sha256 = _norm_fp(cert_sha256)
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
@@ -96,11 +96,11 @@ class OutlineAPI:
         fp = hashlib.sha256(der).hexdigest()
         if fp != self.cert_sha256:
             raise OutlineError(
-                "گواهی سرور با اثرانگشت ذخیره‌شده مطابقت ندارد (احتمال MITM)."
+                "Server certificate does not match the stored fingerprint (possible MITM)."
             )
         pem = ssl.DER_cert_to_PEM_cert(der)
         ctx = ssl.create_default_context(cadata=pem)
-        ctx.check_hostname = False  # گواهی روی IP صادر شده و CN ممکن است نخواند
+        ctx.check_hostname = False  # cert is issued for an IP; CN may not match
         return ctx
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -119,21 +119,21 @@ class OutlineAPI:
             await self._client.aclose()
             self._client = None
 
-    # ابزار داخلی --------------------------------------------------------
+    # internals ---------------------------------------------------------
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         url = f"{self.api_url}{path}"
         client = await self._get_client()
         try:
             resp = await client.request(method, url, **kwargs)
         except httpx.HTTPError as e:
-            raise OutlineError(f"خطای ارتباط با سرور آوت‌لاین: {e}") from e
+            raise OutlineError(f"Failed to reach the Outline server: {e}") from e
         if resp.status_code >= 400:
             raise OutlineError(
-                f"پاسخ خطا از سرور ({resp.status_code}): {resp.text[:200]}"
+                f"Error response from server ({resp.status_code}): {resp.text[:200]}"
             )
         return resp
 
-    # سرور ---------------------------------------------------------------
+    # server ------------------------------------------------------------
     async def get_server_info(self) -> dict:
         resp = await self._request("GET", "/server")
         return resp.json()
@@ -150,7 +150,7 @@ class OutlineAPI:
     async def remove_global_data_limit(self) -> None:
         await self._request("DELETE", "/server/access-key-data-limit")
 
-    # متریک ---------------------------------------------------------------
+    # metrics -----------------------------------------------------------
     async def get_metrics_enabled(self) -> bool:
         resp = await self._request("GET", "/metrics/enabled")
         return bool(resp.json().get("metricsEnabled"))
@@ -160,7 +160,7 @@ class OutlineAPI:
             "PUT", "/metrics/enabled", json={"metricsEnabled": bool(enabled)}
         )
 
-    # کلیدهای دسترسی (یوزرها) -------------------------------------------
+    # access keys (users) -----------------------------------------------
     async def list_keys(self) -> list[dict]:
         resp = await self._request("GET", "/access-keys")
         return resp.json().get("accessKeys", [])
@@ -190,7 +190,7 @@ class OutlineAPI:
     async def delete_key(self, key_id: str) -> None:
         await self._request("DELETE", f"/access-keys/{key_id}")
 
-    # محدودیت حجم --------------------------------------------------------
+    # data limits -------------------------------------------------------
     async def set_data_limit(self, key_id: str, limit_bytes: int) -> None:
         await self._request(
             "PUT",
@@ -201,19 +201,19 @@ class OutlineAPI:
     async def remove_data_limit(self, key_id: str) -> None:
         await self._request("DELETE", f"/access-keys/{key_id}/data-limit")
 
-    # مصرف ---------------------------------------------------------------
+    # usage -------------------------------------------------------------
     async def get_transfer_metrics(self) -> dict[str, int]:
-        """دیکشنری {key_id: bytes_transferred}"""
+        """Return a {key_id: bytes_transferred} dict."""
         resp = await self._request("GET", "/metrics/transfer")
         return resp.json().get("bytesTransferredByUserId", {})
 
-    # آمار پیشرفته (تجربی) ----------------------------------------------
+    # advanced (experimental) metrics -----------------------------------
     async def get_server_metrics(self, since: str = "30d") -> dict:
         """
-        آمار پیشرفته‌ی سرور و هر کلید از endpoint تجربی.
-        شامل tunnelTime، dataTransferred، bandwidth (لحظه‌ای/اوج)،
-        موقعیت‌های جغرافیایی، و برای هر کلید: آخرین فعالیت و تعداد دستگاه هم‌زمان.
-        ممکن است روی بعضی نسخه‌ها یا وقتی metrics خاموش است در دسترس نباشد.
+        Advanced per-server and per-key metrics from the experimental endpoint:
+        tunnelTime, dataTransferred, bandwidth (current/peak), geo locations,
+        and per key: last activity and peak simultaneous devices.
+        May be unavailable on some versions or when metrics sharing is off.
         """
         resp = await self._request(
             "GET", "/experimental/server/metrics", params={"since": since}

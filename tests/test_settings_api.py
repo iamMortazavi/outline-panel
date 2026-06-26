@@ -56,7 +56,7 @@ async def test_change_password_wrong_current(app):
 
 
 async def test_2fa_enable_and_login(app):
-    from outline_panel import security
+    from outline_panel.core import security
     application, deps = app
     t = httpx.ASGITransport(app=application)
     async with httpx.AsyncClient(transport=t, base_url="http://x") as c:

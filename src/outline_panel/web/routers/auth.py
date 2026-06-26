@@ -8,8 +8,8 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from ... import config, security
-from ...settings import TOTP_ENABLED, TOTP_SECRET
+from ...core import config, security
+from ...core.settings import TOTP_ENABLED, TOTP_SECRET
 from ..deps import COOKIE_NAME, require_session, settings, signer
 
 router = APIRouter(prefix="/api", tags=["auth"])

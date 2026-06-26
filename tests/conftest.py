@@ -7,7 +7,7 @@ import pytest
 # allow running tests without installing the package (src-layout on path)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
 
-from outline_panel.db import DB  # noqa: E402
+from outline_panel.core.db import DB  # noqa: E402
 
 
 @pytest.fixture

@@ -8,11 +8,11 @@ from urllib.parse import urlparse
 from fastapi import Cookie, HTTPException
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
-from .. import config
+from ..core import config
 from ..bot.manager import BotManager
-from ..db import DB
-from ..outline_api import OutlineAPI
-from ..settings import SettingsStore
+from ..core.db import DB
+from ..core.outline_api import OutlineAPI
+from ..core.settings import SettingsStore
 from .registry import Registry
 
 COOKIE_NAME = "outline_session"

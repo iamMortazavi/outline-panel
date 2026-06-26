@@ -1,15 +1,16 @@
 """
-دیتابیس SQLite برای پشتیبانی از چند سرور Outline.
+SQLite storage with multi-server support.
 
-دو جدول:
-  • servers — فهرست سرورهای آوت‌لاین (نام محلی + apiUrl)
-  • keys    — اطلاعات هر کلید، با کلید ترکیبی (server_id, key_id)
+Two tables:
+  • servers — the configured Outline servers (local name + apiUrl)
+  • keys    — per-key metadata, keyed by the composite (server_id, key_id)
 
-مدل زمان: «اعتبار از اولین اتصال». موقع ساخت کلید فقط duration_days ذخیره
-می‌شود؛ به‌محض دیدن اولین ترافیک، زمان‌بند کلید را فعال و expiry_ts را ست می‌کند.
+Time model: "validity starts on first connection". On creation only
+duration_days is stored; as soon as traffic is seen the scheduler activates the
+key and sets expiry_ts.
 
-از یک کانکشن پایدار (با WAL) استفاده می‌شود تا تحت همزمانیِ داشبورد + زمان‌بند
-خطای «database is locked» رخ ندهد. نوشتن‌ها با یک قفل سریال می‌شوند.
+A single persistent connection (WAL mode) is used so the dashboard and the
+scheduler don't hit "database is locked"; writes are serialized with a lock.
 """
 
 from __future__ import annotations
@@ -70,16 +71,16 @@ class DB:
     async def init(self) -> None:
         self._db = await aiosqlite.connect(self.path)
         self._db.row_factory = aiosqlite.Row
-        # WAL برای خواندن/نوشتنِ همزمان بدون قفل‌شدن کل دیتابیس
+        # WAL allows concurrent reads/writes without locking the whole DB
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("PRAGMA busy_timeout=5000")
         await self._db.execute(_SERVERS_SCHEMA)
-        # مهاجرت: افزودن ستون cert_sha256 به جدول servers قدیمی
+        # migration: add the cert_sha256 column to older servers tables
         cur = await self._db.execute("PRAGMA table_info(servers)")
         scols = [r[1] for r in await cur.fetchall()]
         if "cert_sha256" not in scols:
             await self._db.execute("ALTER TABLE servers ADD COLUMN cert_sha256 TEXT")
-        # مهاجرت keys از نسخه‌ی تک‌سروری (بدون server_id) در صورت وجود
+        # migrate a legacy single-server keys table (no server_id), if present
         cur = await self._db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='keys'"
         )
@@ -91,7 +92,7 @@ class DB:
                 await self._migrate_keys(cols)
         else:
             await self._db.execute(_KEYS_SCHEMA)
-        # مهاجرت: افزودن ستون‌های سهمیه‌ی ماهانه به جدول keys قدیمی
+        # migration: add the monthly-quota columns to older keys tables
         cur = await self._db.execute("PRAGMA table_info(keys)")
         kcols = [r[1] for r in await cur.fetchall()]
         for col in ("monthly_bytes", "reset_ts"):
@@ -99,7 +100,7 @@ class DB:
                 await self._db.execute(f"ALTER TABLE keys ADD COLUMN {col} INTEGER")
         if "sub_token" not in kcols:
             await self._db.execute("ALTER TABLE keys ADD COLUMN sub_token TEXT")
-        # جدول تنظیمات runtime (پسورد هش‌شده، توکن بات، 2FA، ...)
+        # runtime settings table (password hash, bot token, 2FA, ...)
         await self._db.execute(_SETTINGS_SCHEMA)
         await self._db.commit()
 
@@ -109,7 +110,7 @@ class DB:
             self._db = None
 
     async def _migrate_keys(self, old_cols: list[str]) -> None:
-        # کلیدهای قدیمی به سرور پیش‌فرض «default» نسبت داده می‌شوند
+        # legacy keys are attributed to the 'default' server
         await self.conn.execute("ALTER TABLE keys RENAME TO keys_old")
         await self.conn.execute(_KEYS_SCHEMA)
         carry = [c for c in (
@@ -123,7 +124,7 @@ class DB:
         )
         await self.conn.execute("DROP TABLE keys_old")
 
-    # سرورها ----------------------------------------------------------------
+    # servers ---------------------------------------------------------------
     async def add_server(self, sid: str, name: str, api_url: str,
                          cert_sha256: str | None = None) -> None:
         async with self._lock:
@@ -157,7 +158,7 @@ class DB:
             await self.conn.execute("DELETE FROM keys WHERE server_id = ?", (sid,))
             await self.conn.commit()
 
-    # کلیدها ----------------------------------------------------------------
+    # keys ------------------------------------------------------------------
     async def add_key(
         self, server_id: str, key_id: str, name: str,
         limit_bytes: int | None, duration_days: int | None,
@@ -268,7 +269,7 @@ class DB:
         )
         return [dict(r) for r in await cur.fetchall()]
 
-    # تنظیمات key/value -----------------------------------------------------
+    # key/value settings ----------------------------------------------------
     async def get_setting(self, key: str) -> str | None:
         cur = await self.conn.execute(
             "SELECT value FROM settings WHERE key = ?", (key,)

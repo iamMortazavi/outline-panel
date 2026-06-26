@@ -6,7 +6,7 @@ import base64
 
 from fastapi import APIRouter, HTTPException, Response
 
-from ...outline_api import OutlineError
+from ...core.outline_api import OutlineError
 from ..deps import db, reg
 
 router = APIRouter(tags=["subscription"])

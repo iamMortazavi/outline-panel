@@ -2,7 +2,7 @@ import os
 import sqlite3
 import tempfile
 
-from outline_panel.db import DB
+from outline_panel.core.db import DB
 
 
 async def test_add_and_get_key(db):
