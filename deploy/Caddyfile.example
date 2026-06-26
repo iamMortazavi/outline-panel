@@ -1,0 +1,12 @@
+# Automatic HTTPS for Outline Panel with Caddy (Let's Encrypt).
+# 1) Point your domain's A record at the server's public IP.
+# 2) Bind the panel to localhost only:  HOST=127.0.0.1  in .env, then restart.
+# 3) Install Caddy, put this at /etc/caddy/Caddyfile (replace the domain),
+#    then:  systemctl restart caddy
+#
+# Caddy obtains & auto-renews the TLS cert and redirects HTTP→HTTPS for you.
+
+your-domain.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8000
+}

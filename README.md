@@ -33,9 +33,24 @@ The script installs into `/opt/outline-panel`, creates a venv, asks for an admin
 password, generates a session secret, and starts a `systemd` service. Then open
 `http://YOUR_SERVER_IP:8000` and add your servers + bot token from the UI.
 
-> **Serve over HTTPS** in production (Caddy/Nginx/Cloudflare). The session cookie
-> defaults to `COOKIE_SECURE=auto` — it works over plain `http://IP:8000` for
-> first setup and automatically becomes `Secure` once you're behind HTTPS.
+> **Serve over HTTPS** in production. The session cookie defaults to
+> `COOKIE_SECURE=auto` — it works over plain `http://IP:8000` for first setup and
+> automatically becomes `Secure` once you're behind HTTPS.
+
+### Automatic HTTPS (Caddy)
+
+Point your domain's DNS at the server, then:
+
+```bash
+# 1) bind the panel to localhost (in .env), then restart
+sed -i 's/^HOST=.*/HOST=127.0.0.1/' /opt/outline-panel/.env && systemctl restart outline-panel
+# 2) install Caddy (https://caddyserver.com/docs/install) and configure it
+printf 'your-domain.com {\n\treverse_proxy 127.0.0.1:8000\n}\n' > /etc/caddy/Caddyfile
+systemctl restart caddy
+```
+
+Caddy fetches and auto-renews a Let's Encrypt certificate and redirects HTTP→HTTPS.
+See [`deploy/Caddyfile.example`](deploy/Caddyfile.example).
 
 Manage it: `systemctl {status|restart|stop} outline-panel`
 Locked out? `/opt/outline-panel/.venv/bin/outline-panel-admin reset-password`
