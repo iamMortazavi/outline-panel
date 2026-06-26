@@ -75,6 +75,21 @@ class FakeOutline:
     async def delete_key(self, kid):
         self.keys = [k for k in self.keys if k["id"] != kid]
 
+    async def rename_key(self, kid, name):
+        for k in self.keys:
+            if k["id"] == kid:
+                k["name"] = name
+
+    async def set_data_limit(self, kid, limit_bytes):
+        for k in self.keys:
+            if k["id"] == kid:
+                k["dataLimit"] = {"bytes": limit_bytes}
+
+    async def remove_data_limit(self, kid):
+        for k in self.keys:
+            if k["id"] == kid:
+                k["dataLimit"] = {}
+
     async def list_keys(self):
         return self.keys
 
@@ -152,4 +167,39 @@ async def test_tma_page_served(app):
     c = await _client(app)
     r = await c.get("/tma")
     assert r.status_code == 200 and "telegram-web-app.js" in r.text
+    await c.aclose()
+
+
+async def test_tma_stats(app):
+    c = await _client(app)
+    r = await c.get("/tma/api/stats", headers=_hdr())
+    assert r.status_code == 200
+    body = r.json()
+    assert "perServer" in body and body["serverCount"] == 1
+    await c.aclose()
+
+
+async def test_tma_edit_rename_and_delete(app):
+    c = await _client(app)
+    await c.post("/tma/api/keys", headers=_hdr(),
+                 json={"server": "s1", "name": "Sara", "limit_gb": 5, "days": 0})
+    # rename
+    r = await c.put("/tma/api/keys/s1/1/name", headers=_hdr(), json={"name": "Sara2"})
+    assert r.status_code == 200
+    keys = (await c.get("/tma/api/keys", headers=_hdr())).json()["keys"]
+    assert keys[0]["name"] == "Sara2"
+    # disable / enable
+    assert (await c.post("/tma/api/keys/s1/1/disable", headers=_hdr())).status_code == 200
+    assert (await c.post("/tma/api/keys/s1/1/enable", headers=_hdr())).status_code == 200
+    # delete
+    assert (await c.delete("/tma/api/keys/s1/1", headers=_hdr())).status_code == 200
+    assert (await c.get("/tma/api/keys", headers=_hdr())).json()["keys"] == []
+    await c.aclose()
+
+
+async def test_tma_edit_requires_admin(app):
+    c = await _client(app)
+    bad = make_init_data(user={"id": 555, "first_name": "Nope"})
+    r = await c.put("/tma/api/keys/s1/1/name", headers=_hdr(bad), json={"name": "x"})
+    assert r.status_code == 403
     await c.aclose()

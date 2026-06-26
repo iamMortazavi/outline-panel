@@ -21,6 +21,8 @@ from ...core import security
 from ...core.settings import BOT_TOKEN
 from ..deps import STATIC_DIR, reg, settings
 from . import keys as keys_router
+from . import stats as stats_router
+from .keys import ExtendBody, LimitBody, NameBody
 
 router = APIRouter(tags=["miniapp"])
 
@@ -61,6 +63,11 @@ async def tma_keys(server: str | None = None, auth: dict = Depends(require_tma))
     return await keys_router.list_keys(server)
 
 
+@router.get("/tma/api/stats")
+async def tma_stats(server: str | None = None, auth: dict = Depends(require_tma)):
+    return await stats_router.stats(server)
+
+
 class TmaCreate(BaseModel):
     server: str
     name: str = Field(min_length=1, max_length=100)
@@ -73,3 +80,34 @@ async def tma_create(body: TmaCreate, auth: dict = Depends(require_tma)):
     return await keys_router.create_key_for(
         body.server, body.name, body.limit_gb, body.days
     )
+
+
+# --------------------------------------------------- per-key edit (reuses keys)
+@router.put("/tma/api/keys/{sid}/{kid}/name")
+async def tma_rename(sid: str, kid: str, body: NameBody, auth: dict = Depends(require_tma)):
+    return await keys_router.rename_key(sid, kid, body)
+
+
+@router.put("/tma/api/keys/{sid}/{kid}/limit")
+async def tma_limit(sid: str, kid: str, body: LimitBody, auth: dict = Depends(require_tma)):
+    return await keys_router.set_key_limit(sid, kid, body)
+
+
+@router.post("/tma/api/keys/{sid}/{kid}/enable")
+async def tma_enable(sid: str, kid: str, auth: dict = Depends(require_tma)):
+    return await keys_router.enable_key(sid, kid)
+
+
+@router.post("/tma/api/keys/{sid}/{kid}/disable")
+async def tma_disable(sid: str, kid: str, auth: dict = Depends(require_tma)):
+    return await keys_router.disable_key(sid, kid)
+
+
+@router.post("/tma/api/keys/{sid}/{kid}/extend")
+async def tma_extend(sid: str, kid: str, body: ExtendBody, auth: dict = Depends(require_tma)):
+    return await keys_router.extend_key(sid, kid, body)
+
+
+@router.delete("/tma/api/keys/{sid}/{kid}")
+async def tma_delete(sid: str, kid: str, auth: dict = Depends(require_tma)):
+    return await keys_router.delete_key(sid, kid)
