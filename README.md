@@ -24,7 +24,7 @@ A self-hosted **web dashboard + Telegram bot** for managing users on one or many
 ## Quick install (Debian/Ubuntu)
 
 ```bash
-git clone https://github.com/your-org/outline-panel.git
+git clone https://github.com/iamMortazavi/outline-panel.git
 cd outline-panel
 sudo bash install.sh
 ```

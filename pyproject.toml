@@ -27,8 +27,8 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 [project.urls]
-Homepage = "https://github.com/your-org/outline-panel"
-Issues = "https://github.com/your-org/outline-panel/issues"
+Homepage = "https://github.com/iamMortazavi/outline-panel"
+Issues = "https://github.com/iamMortazavi/outline-panel/issues"
 
 [project.scripts]
 outline-panel = "outline_panel.web.run:cli"
