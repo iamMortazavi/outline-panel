@@ -145,13 +145,22 @@ async function loadAll(){
 }
 async function refreshKeys(){try{const ks=await api('/api/keys');S.keys=ks.keys||[];S.errors=ks.errors||[];}catch(_){}}
 async function refreshStats(){try{S.stats=await api('/api/stats');pushBw();}catch(_){}}
-function pushBw(){if(S.stats&&S.stats.available){S.bwSamples.push(S.stats.bwCurrent||0);if(S.bwSamples.length>46)S.bwSamples.shift();}}
+let _lastBwTs=null;
+function pushBw(){
+  if(!(S.stats&&S.stats.available))return;
+  const ts=S.stats.bwTs, v=S.stats.bwCurrent||0;
+  // Outline refreshes bandwidth only ~once a minute; add a point only when the
+  // sample is genuinely new (by timestamp) so the line isn't a flat duplicate.
+  if(ts!=null){if(ts===_lastBwTs)return;_lastBwTs=ts;}
+  else{if(S.bwSamples.length&&S.bwSamples[S.bwSamples.length-1]===v)return;}
+  S.bwSamples.push(v);if(S.bwSamples.length>60)S.bwSamples.shift();
+}
 async function enterApp(){
   S.screen='app';root.innerHTML='<div style="min-height:100dvh;display:grid;place-items:center"><span class="spin" style="border-color:rgba(199,242,80,.25);border-top-color:var(--acc)"></span></div>';
   try{await loadAll();}catch(e){if(/auth|session/i.test(e.message))return showLogin();}
   renderApp();
   if(pollT)clearInterval(pollT);
-  let n=0;pollT=setInterval(async()=>{await refreshStats();renderRail();renderKpi();if(++n%7===0){await refreshKeys();renderList();}},3000);
+  let n=0;pollT=setInterval(async()=>{await refreshStats();renderRail();renderKpi();if(++n%6===0){await refreshKeys();renderList();}},5000);
 }
 
 /* ---------- scoped computation ---------- */

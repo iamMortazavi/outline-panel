@@ -29,6 +29,9 @@ async def _stats_for(sid: str) -> dict:
         "dataBytes": (srv.get("dataTransferred") or {}).get("bytes") or 0,
         "bwCurrent": ((bw.get("current") or {}).get("data") or {}).get("bytes") or 0,
         "bwPeak": ((bw.get("peak") or {}).get("data") or {}).get("bytes") or 0,
+        # timestamp of the current-bandwidth sample; Outline only refreshes it
+        # every ~minute, so the UI uses it to add a graph point only on change.
+        "bwTs": (bw.get("current") or {}).get("timestamp"),
         "locations": srv.get("locations", []) or [],
     }
 
@@ -54,6 +57,7 @@ async def stats(server: str | None = None):
         "dataBytes": sum(p["dataBytes"] for p in per),
         "bwCurrent": sum(p["bwCurrent"] for p in per),
         "bwPeak": sum(p["bwPeak"] for p in per),
+        "bwTs": max([p.get("bwTs") or 0 for p in per], default=0) or None,
         "locations": locations,
         "perServer": per,
     }
