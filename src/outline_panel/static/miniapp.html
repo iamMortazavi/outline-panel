@@ -349,7 +349,10 @@ function openDetail(sid,kid){
       '<div class="stat"><div class="t">Used</div><div class="v mono">'+fmtBytes(k.used)+'</div></div>'+
       '<div class="stat"><div class="t">Limit</div><div class="v mono">'+(unlimited?'∞':fmtBytes(k.limit))+'</div></div>'+
       '<div class="stat"><div class="t">Expiry</div><div class="v" style="font-size:15px">'+expiryText(k)+'</div></div>'+
-      '<div class="stat"><div class="t">Last active</div><div class="v" style="font-size:15px">'+ago(k.lastSeen)+'</div></div></div>'+
+      '<div class="stat"><div class="t">Last active</div><div class="v" style="font-size:15px">'+ago(k.lastSeen)+'</div></div>'+
+      '<div class="stat"><div class="t">Peak devices</div><div class="v mono" style="color:'+((k.peakDevices&&k.peakDevices>1)?'var(--warn)':'var(--text)')+'">'+(k.peakDevices!=null?k.peakDevices:'—')+'</div></div>'+
+      '<div class="stat"><div class="t">Tunnel time</div><div class="v" style="font-size:15px">'+(k.tunnelSec?fmtDur(k.tunnelSec):'—')+'</div></div></div>'+
+    (k.peakDevices&&k.peakDevices>1?'<div class="hint" style="margin:-6px 1px 14px;color:var(--warn)">⚠️ Used on up to '+k.peakDevices+' devices at once — this key may be shared.</div>':'')+
     (k.accessUrl?('<div class="lab">Connection link</div><div class="link">'+esc(configUrl(k))+'</div>'+
       '<div class="acts" style="margin-bottom:9px"><div class="act" id="dcopy">'+I.copy+'Copy link</div><div class="act" id="dqr">'+I.qr+'QR code</div></div>'):'')+
     '<div class="lab" style="margin-top:6px">Manage</div><div class="acts">'+
