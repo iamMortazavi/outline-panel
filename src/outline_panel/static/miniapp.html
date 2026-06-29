@@ -57,8 +57,10 @@
 
   /* key row */
   .item{display:flex;align-items:center;gap:13px;background:var(--card);border:1px solid var(--line);border-radius:15px;
-    padding:13px;margin-bottom:9px;cursor:pointer;transition:transform .08s,background .15s}
+    padding:13px;margin-bottom:9px;cursor:pointer;transition:transform .08s,background .15s,border-color .15s;
+    animation:itemIn .34s cubic-bezier(.2,.8,.2,1) both}
   .item:active{transform:scale(.985);background:var(--panel2)}
+  @keyframes itemIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
   .av{width:44px;height:44px;border-radius:13px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#fff;text-transform:uppercase}
   .av.lg{width:52px;height:52px;border-radius:15px;font-size:22px}
   .it-main{flex:1;min-width:0} .it-top{display:flex;align-items:center;gap:8px}
@@ -264,10 +266,11 @@ function renderHome(){
   else if(list.length===0){ html+='<div class="center"><div class="emoji">🔍</div><div class="ttl">No matches</div><div class="muted">Try a different search.</div></div>'; }
   else{
     html+='<div class="sectitle">'+list.length+(list.length===1?' user':' users')+'</div>';
-    html+=list.map(k=>{ const unlimited=(k.limit==null||k.limit===0),p=pct(k);
+    html+=list.map((k,i)=>{ const unlimited=(k.limit==null||k.limit===0),p=pct(k);
       const width=unlimited?100:Math.max(p,2), fill=unlimited?'linear-gradient(90deg,var(--acc),var(--acc2))':barColor(k);
       const pill=k.disabled?'<span class="pill off">Disabled</span>':(k.pending?'<span class="pill pend">Pending</span>':'<span class="pill ok">Active</span>');
-      return '<div class="item" data-id="'+esc(k.id)+'" data-srv="'+esc(k.serverId)+'">'+avatar(k.name)+
+      const delay=i<12?'style="animation-delay:'+(i*28)+'ms"':'';
+      return '<div class="item" data-id="'+esc(k.id)+'" data-srv="'+esc(k.serverId)+'" '+delay+'>'+avatar(k.name)+
         '<div class="it-main"><div class="it-top"><span class="it-name">'+esc(k.name)+'</span>'+pill+'</div>'+
         '<div class="bar"><i style="width:'+width+'%;background:'+fill+';opacity:'+(unlimited?'.5':'1')+'"></i></div>'+
         '<div class="it-sub"><span>'+fmtBytes(k.used)+' / '+(unlimited?'∞':fmtBytes(k.limit))+'</span><span>'+expiryText(k)+'</span></div></div><span class="chev">›</span></div>';
