@@ -70,6 +70,15 @@ SESSION_MAX_AGE: int = int(os.getenv("SESSION_MAX_AGE", str(7 * 86400)))
 #   "false"           — never Secure.
 COOKIE_SECURE: str = os.getenv("COOKIE_SECURE", "auto").strip().lower()
 
+# Trust the X-Forwarded-For / X-Forwarded-Proto headers. Enable ONLY when the
+# panel sits behind a reverse proxy you control (e.g. Caddy/Nginx) — otherwise a
+# client could spoof these headers to evade the login rate limit or flip the
+# cookie Secure flag. When false (the default, for direct http://IP:8000 use),
+# the real socket peer is used instead.
+TRUST_PROXY: bool = os.getenv("TRUST_PROXY", "false").strip().lower() in (
+    "1", "true", "yes", "on"
+)
+
 # Public HTTPS base URL of the panel, used to build the Telegram Mini App
 # (Web App) link, e.g. https://panel.example.com — the Mini App is served at
 # <base>/tma. Optional; can also be set from the panel's bot settings. Telegram

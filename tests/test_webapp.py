@@ -33,6 +33,9 @@ class FakeOutline:
         from outline_panel.core.outline_api import OutlineError
         raise OutlineError("metrics off")
 
+    async def get_server_metrics_cached(self, since="30d", ttl=15.0):
+        return await self.get_server_metrics(since)
+
     async def get_server_info(self):
         return {"name": "fake", "version": "1.0"}
 
@@ -61,6 +64,7 @@ async def app(monkeypatch):
     os.environ["DB_PATH"] = os.path.join(tempfile.mkdtemp(), "w.db")
     os.environ["ADMIN_PASSWORD"] = "pw"
     os.environ["COOKIE_SECURE"] = "false"
+    os.environ["TRUST_PROXY"] = "false"   # hermetic: ignore forwarded headers
     os.environ.pop("OUTLINE_API_URL", None)
     # fresh import so deps.db points at this test's temp DB
     for m in [m for m in list(sys.modules) if m.startswith("outline_panel")]:
@@ -110,6 +114,20 @@ async def test_login_rate_limit(app):
         (await c.post("/api/login", json={"password": "x"},
                       headers={"x-forwarded-for": "5.5.5.5"})).status_code
         for _ in range(7)
+    ]
+    assert codes[:5] == [401] * 5
+    assert codes[5] == 429
+    await c.aclose()
+
+
+async def test_rate_limit_not_bypassed_by_rotating_xff(app):
+    # Without TRUST_PROXY (default), X-Forwarded-For is ignored, so rotating it
+    # per request must NOT mint a fresh rate-limit bucket each time.
+    c = await _client(app, login=False)
+    codes = [
+        (await c.post("/api/login", json={"password": "x"},
+                      headers={"x-forwarded-for": f"9.9.9.{i}"})).status_code
+        for i in range(7)
     ]
     assert codes[:5] == [401] * 5
     assert codes[5] == 429

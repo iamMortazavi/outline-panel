@@ -16,6 +16,7 @@ import json
 import re
 import socket
 import ssl
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -84,6 +85,11 @@ class OutlineAPI:
         self._timeout = timeout
         self._client: httpx.AsyncClient | None = None
         self._client_lock = asyncio.Lock()
+        # short-TTL cache for the expensive experimental metrics endpoint, so
+        # /api/stats and /api/keys (and the scheduler) share one upstream fetch
+        # instead of each hitting the server every few seconds.
+        self._metrics_cache: dict[str, tuple[float, dict]] = {}
+        self._metrics_inflight: dict[str, asyncio.Future] = {}
 
     async def _pinned_ssl_context(self) -> ssl.SSLContext:
         parsed = urlparse(self.api_url)
@@ -219,3 +225,33 @@ class OutlineAPI:
             "GET", "/experimental/server/metrics", params={"since": since}
         )
         return resp.json()
+
+    async def get_server_metrics_cached(
+        self, since: str = "30d", ttl: float = 15.0
+    ) -> dict:
+        """`get_server_metrics`, memoised for `ttl` seconds with single-flight.
+
+        The dashboard polls /api/stats (every 5s) and /api/keys (every 30s),
+        both of which need this blob; without caching each poll hits the live
+        Outline server. A short TTL keeps the data fresh while collapsing the
+        redundant calls, and concurrent callers share one in-flight request.
+        """
+        cached = self._metrics_cache.get(since)
+        if cached and (time.monotonic() - cached[0]) < ttl:
+            return cached[1]
+        inflight = self._metrics_inflight.get(since)
+        if inflight is not None:
+            return await inflight
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        self._metrics_inflight[since] = fut
+        try:
+            data = await self.get_server_metrics(since)
+            self._metrics_cache[since] = (time.monotonic(), data)
+            fut.set_result(data)
+            return data
+        except BaseException as e:  # propagate to all waiters, then re-raise
+            fut.set_exception(e)
+            raise
+        finally:
+            self._metrics_inflight.pop(since, None)

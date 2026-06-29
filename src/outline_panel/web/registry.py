@@ -36,6 +36,9 @@ class Registry:
     async def add(self, sid: str, name: str, api_url: str,
                   cert_sha256: str | None = None) -> None:
         await self.db.add_server(sid, name, api_url, cert_sha256)
+        old = self.servers.get(sid)
+        if old:  # replacing an existing entry — close its client first
+            await old["api"].close()
         self.servers[sid] = {"id": sid, "name": name, "api_url": api_url,
                              "cert_sha256": cert_sha256,
                              "api": OutlineAPI(api_url, cert_sha256)}

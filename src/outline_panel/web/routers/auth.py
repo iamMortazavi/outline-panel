@@ -20,31 +20,43 @@ class LoginBody(BaseModel):
     totp: str | None = None
 
 
-# --- simple in-memory per-IP login rate limit -----------------------------
+# --- simple in-memory login rate limit ------------------------------------
+# Per-IP throttle plus a global ceiling. The global ceiling is what protects a
+# directly-exposed panel: an attacker can rotate the source IP (or, behind an
+# untrusted proxy, spoof X-Forwarded-For), so the per-IP bucket alone is not
+# enough — the global counter caps total failures regardless of source.
 _LOGIN_MAX_FAILS = 5
 _LOGIN_WINDOW = 300
+_GLOBAL_MAX_FAILS = 30
 _login_fails: dict[str, list[float]] = {}
+_global_fails: list[float] = []
+_RATE_MSG = "Too many attempts. Try again in a few minutes."
 
 
 def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    # Only trust forwarded headers behind a proxy we control; otherwise they are
+    # attacker-controlled and would let each request reset its own rate bucket.
+    if config.TRUST_PROXY:
+        fwd = request.headers.get("x-forwarded-for")
+        if fwd:
+            return fwd.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
 def _check_login_rate(ip: str) -> None:
     now = time.time()
+    global _global_fails
+    _global_fails = [t for t in _global_fails if now - t < _LOGIN_WINDOW]
     fails = [t for t in _login_fails.get(ip, []) if now - t < _LOGIN_WINDOW]
     _login_fails[ip] = fails
-    if len(fails) >= _LOGIN_MAX_FAILS:
-        raise HTTPException(
-            status_code=429, detail="Too many attempts. Try again in a few minutes."
-        )
+    if len(fails) >= _LOGIN_MAX_FAILS or len(_global_fails) >= _GLOBAL_MAX_FAILS:
+        raise HTTPException(status_code=429, detail=_RATE_MSG)
 
 
 def _record_login_fail(ip: str) -> None:
-    _login_fails.setdefault(ip, []).append(time.time())
+    now = time.time()
+    _login_fails.setdefault(ip, []).append(now)
+    _global_fails.append(now)
 
 
 @router.post("/login")
@@ -64,9 +76,12 @@ async def login(body: LoginBody, request: Request, response: Response):
             _record_login_fail(ip)
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
     _login_fails.pop(ip, None)
-    # honor a TLS-terminating reverse proxy, else the request's own scheme
-    proto = (request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
-             or request.url.scheme)
+    # honor a TLS-terminating reverse proxy (only when trusted), else the
+    # request's own scheme
+    proto = request.url.scheme
+    if config.TRUST_PROXY:
+        proto = (request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+                 or proto)
     response.set_cookie(
         COOKIE_NAME, signer.dumps(secrets.token_hex(8)),
         max_age=config.SESSION_MAX_AGE, httponly=True, samesite="lax",

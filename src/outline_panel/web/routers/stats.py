@@ -15,9 +15,13 @@ router = APIRouter(prefix="/api", tags=["stats"],
 
 async def _stats_for(sid: str) -> dict:
     m = reg.meta(sid)
+    if m is None:  # server removed between snapshot and fetch
+        return {"id": sid, "name": None, "available": False, "tunnelSec": 0,
+                "dataBytes": 0, "bwCurrent": 0, "bwPeak": 0, "bwTs": None,
+                "locations": []}
     api = m["api"]
     try:
-        sm = await api.get_server_metrics("30d")
+        sm = await api.get_server_metrics_cached("30d")
         avail = True
     except OutlineError:
         sm, avail = {}, False

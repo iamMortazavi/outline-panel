@@ -42,12 +42,20 @@ password, generates a session secret, and starts a `systemd` service. Then open
 Point your domain's DNS at the server, then:
 
 ```bash
-# 1) bind the panel to localhost (in .env), then restart
-sed -i 's/^HOST=.*/HOST=127.0.0.1/' /opt/outline-panel/.env && systemctl restart outline-panel
+# 1) bind the panel to localhost and trust the proxy headers (in .env), restart
+sed -i 's/^HOST=.*/HOST=127.0.0.1/' /opt/outline-panel/.env
+grep -q '^TRUST_PROXY=' /opt/outline-panel/.env \
+  && sed -i 's/^TRUST_PROXY=.*/TRUST_PROXY=true/' /opt/outline-panel/.env \
+  || echo 'TRUST_PROXY=true' >> /opt/outline-panel/.env
+systemctl restart outline-panel
 # 2) install Caddy (https://caddyserver.com/docs/install) and configure it
 printf 'your-domain.com {\n\treverse_proxy 127.0.0.1:8000\n}\n' > /etc/caddy/Caddyfile
 systemctl restart caddy
 ```
+
+`TRUST_PROXY=true` lets the panel honor Caddy's `X-Forwarded-*` headers (real
+client IPs for the login rate limit, HTTPS-aware Secure cookies). Leave it
+`false` for direct `http://IP:8000` use, where those headers are spoofable.
 
 Caddy fetches and auto-renews a Let's Encrypt certificate and redirects HTTP→HTTPS.
 See [`deploy/Caddyfile.example`](deploy/Caddyfile.example).

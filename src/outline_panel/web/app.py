@@ -15,7 +15,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -73,6 +73,26 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Outline Panel", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Cheap, always-safe hardening headers on every response."""
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    # HSTS only when the connection is actually HTTPS (honor a trusted proxy).
+    https = request.url.scheme == "https" or (
+        config.TRUST_PROXY
+        and request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https"
+    )
+    if https:
+        resp.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return resp
+
 
 app.include_router(auth.router)
 app.include_router(servers.router)

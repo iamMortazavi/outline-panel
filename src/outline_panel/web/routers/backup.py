@@ -14,9 +14,14 @@ router = APIRouter(prefix="/api", tags=["backup"],
 @router.get("/backup")
 async def download_backup():
     data = await db.export_all()
+    # The backup contains secrets (tokens, password hash) — never let a proxy or
+    # the browser cache it to disk.
     return JSONResponse(
         content=data,
-        headers={"Content-Disposition": "attachment; filename=outline-panel-backup.json"},
+        headers={
+            "Content-Disposition": "attachment; filename=outline-panel-backup.json",
+            "Cache-Control": "no-store",
+        },
     )
 
 

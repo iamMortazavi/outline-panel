@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="/static/vendor/qrcodejs.min.js"></script>
 <style>
   :root{
     --bg:#0a0b0c;--panel:#121317;--panel2:#15171c;--line:#23252b;--line2:#26282f;--line3:#34373f;
@@ -76,7 +76,10 @@
 const $=s=>document.querySelector(s);
 const root=$('#root'), modalRoot=$('#modalRoot');
 const api=async(p,o={})=>{const r=await fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...o});
-  let d=null;try{d=await r.json();}catch(_){}if(!r.ok)throw new Error((d&&d.detail)||('HTTP '+r.status));return d;};
+  let d=null;try{d=await r.json();}catch(_){}
+  // session expired/revoked anywhere (incl. silent polls) → bounce to login once
+  if(r.status===401){if(pollT){clearInterval(pollT);pollT=null;}if(S.screen!=='login')showLogin();throw new Error((d&&d.detail)||'Session expired');}
+  if(!r.ok)throw new Error((d&&d.detail)||('HTTP '+r.status));return d;};
 let toastT;function toast(m,bad){const t=$('#toast');t.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:'+(bad?'var(--danger)':'var(--acc)')+'"></span>'+esc(m);
   t.style.cssText='position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:70;background:#16181d;color:var(--text);border:1px solid '+(bad?'rgba(255,122,122,.4)':'#2b2e36')+';padding:12px 20px;border-radius:99px;font-size:13.5px;font-weight:500;box-shadow:0 14px 40px rgba(0,0,0,.55);display:flex;align-items:center;gap:9px;animation:ocRise .2s both';
   clearTimeout(toastT);toastT=setTimeout(()=>t.style.display='none',2300);t.style.display='flex';}
@@ -102,6 +105,11 @@ const S={screen:'login',servers:[],keys:[],errors:[],stats:null,
   view:localStorage.getItem('oc_view')||'table',search:'',selected:{},srvMenuOpen:false,
   bwSamples:[],bannerDismissed:false,totpEnabled:false};
 let pollT=null;
+// poll-side change detection: only touch the DOM when the underlying data
+// actually changed, so a 5s tick with no new metrics causes zero re-render.
+let _sigStats='',_sigKeys='';
+const statsSig=()=>JSON.stringify(S.stats||0);
+const keysSig=()=>S.keys.map(k=>k.id+':'+k.used+':'+(k.limit||0)+':'+(k.disabled?1:0)+':'+(k.pending?1:0)+':'+(k.lastSeen||0)+':'+(k.expiry||0)+':'+k.name+':'+(k.peakDevices||0)).join('|');
 
 /* ---------- auth ---------- */
 async function checkAuth(){try{await api('/api/me');await enterApp();}catch(_){showLogin();}}
@@ -140,11 +148,17 @@ async function signOut(){try{await api('/api/logout',{method:'POST'});}catch(_){
 
 /* ---------- data ---------- */
 async function loadAll(){
-  const [sv,st,ks]=await Promise.all([api('/api/servers'),api('/api/stats'),api('/api/keys')]);
-  S.servers=sv.servers||[];S.stats=st;S.keys=ks.keys||[];S.errors=ks.errors||[];pushBw();
+  // Servers is the critical endpoint; stats/keys are best-effort so a single
+  // slow/unavailable server can't blank the whole dashboard.
+  const [sv,st,ks]=await Promise.allSettled([api('/api/servers'),api('/api/stats'),api('/api/keys')]);
+  if(sv.status!=='fulfilled')throw sv.reason||new Error('Failed to load servers');
+  S.servers=sv.value.servers||[];
+  if(st.status==='fulfilled'){S.stats=st.value;pushBw();}
+  if(ks.status==='fulfilled'){S.keys=ks.value.keys||[];S.errors=ks.value.errors||[];}
 }
-async function refreshKeys(){try{const ks=await api('/api/keys');S.keys=ks.keys||[];S.errors=ks.errors||[];}catch(_){}}
-async function refreshStats(){try{S.stats=await api('/api/stats');pushBw();}catch(_){}}
+let _keysBusy=false,_statsBusy=false;
+async function refreshKeys(){if(_keysBusy)return;_keysBusy=true;try{const ks=await api('/api/keys');S.keys=ks.keys||[];S.errors=ks.errors||[];}catch(_){}finally{_keysBusy=false;}}
+async function refreshStats(){if(_statsBusy)return;_statsBusy=true;try{S.stats=await api('/api/stats');pushBw();}catch(_){}finally{_statsBusy=false;}}
 let _lastBwTs=null;
 function pushBw(){
   if(!(S.stats&&S.stats.available))return;
@@ -157,10 +171,26 @@ function pushBw(){
 }
 async function enterApp(){
   S.screen='app';root.innerHTML='<div style="min-height:100dvh;display:grid;place-items:center"><span class="spin" style="border-color:rgba(199,242,80,.25);border-top-color:var(--acc)"></span></div>';
-  try{await loadAll();}catch(e){if(/auth|session/i.test(e.message))return showLogin();}
+  try{await loadAll();}
+  catch(e){
+    if(/auth|session/i.test(e.message))return showLogin();
+    root.innerHTML=`<div style="min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center"><div style="max-width:360px;animation:ocRise .4s both"><div style="font-size:42px;margin-bottom:12px;color:var(--danger)">⚠</div><div style="font-weight:700;font-size:17px;margin-bottom:6px">Couldn't load the dashboard</div><p class="desc" style="margin-bottom:20px">${esc(e.message||'Network error')}</p><button class="btn" id="retry" style="width:auto;padding:11px 24px">Retry</button></div></div>`;
+    $('#retry').onclick=()=>enterApp();
+    return;
+  }
   renderApp();
+  // Refresh immediately when the user returns to the tab.
+  if(!enterApp._visBound){enterApp._visBound=true;
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.screen==='app'){refreshStats().then(()=>{renderRail();renderKpi();});}});}
   if(pollT)clearInterval(pollT);
-  let n=0;pollT=setInterval(async()=>{await refreshStats();renderRail();renderKpi();if(++n%6===0){await refreshKeys();renderList();}},5000);
+  _sigStats=statsSig();_sigKeys=keysSig();
+  let n=0;pollT=setInterval(async()=>{
+    if(document.hidden)return;   // don't fan out to every Outline server while hidden
+    await refreshStats();
+    const ss=statsSig();if(ss!==_sigStats){_sigStats=ss;renderRail();renderKpi();}
+    if(++n%6===0){await refreshKeys();const ks=keysSig();
+      if(ks!==_sigKeys){_sigKeys=ks;renderList();renderKpi();_sigStats=statsSig();}}
+  },5000);
 }
 
 /* ---------- scoped computation ---------- */
@@ -644,7 +674,9 @@ document.addEventListener('keydown',e=>{
   if(e.key==='/'){e.preventDefault();($('#search')||$('#msearch'))?.focus();}
   else if(e.key==='n'||e.key==='N'){e.preventDefault();modalCreate();}
 });
-let rsT;addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{if(S.screen==='app')renderApp();},200);});
+// Rebuild only when crossing the layout breakpoint — not on every minor resize
+// (e.g. the mobile URL bar showing/hiding fires resize constantly).
+let rsT,_lastNarrow=innerWidth<720;addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{const nrw=innerWidth<720;if(S.screen==='app'&&nrw!==_lastNarrow){_lastNarrow=nrw;renderApp();}},200);});
 
 checkAuth();
 </script>

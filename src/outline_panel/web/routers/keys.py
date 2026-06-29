@@ -24,7 +24,7 @@ _MONTH = 30 * 86400
 # --------------------------------------------------------------- read helpers
 async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
     try:
-        m = await api.get_server_metrics("30d")
+        m = await api.get_server_metrics_cached("30d")
     except OutlineError:
         return {}
     conn = {}
@@ -40,14 +40,19 @@ async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
 
 async def keys_for_server(sid: str) -> dict:
     m = reg.meta(sid)
+    if m is None:  # server removed between snapshot and fetch
+        return {"serverId": sid, "serverName": None, "keys": [], "error": "Server removed"}
     api = m["api"]
     try:
-        keys = await api.list_keys()
-        usage = await api.get_transfer_metrics()
+        # Run the three upstream reads concurrently on the reused connection
+        # pool; _conn_info swallows its own errors, so only list_keys /
+        # get_transfer_metrics raising OutlineError lands in the except below.
+        keys, usage, conn = await asyncio.gather(
+            api.list_keys(), api.get_transfer_metrics(), _conn_info(api)
+        )
     except OutlineError as e:
         # Server briefly unreachable — surface the error, don't drop its keys.
         return {"serverId": sid, "serverName": m["name"], "keys": [], "error": str(e)}
-    conn = await _conn_info(api)
     local = {k["key_id"]: k for k in await db.keys_for(sid)}
     out = []
     for k in keys:
@@ -212,7 +217,10 @@ async def set_key_monthly(sid: str, kid: str, body: MonthlyBody):
     api_or_404(sid)
     await ensure_local(sid, kid)
     if body.monthly_gb > 0:
-        await db.set_monthly(sid, kid, gb_to_bytes(body.monthly_gb), int(time.time()))
+        # First reset one cycle out (like create_key_for) so saving a quota
+        # doesn't trigger an immediate reset on the next scheduler pass.
+        await db.set_monthly(sid, kid, gb_to_bytes(body.monthly_gb),
+                             int(time.time()) + _MONTH)
     else:
         await db.set_monthly(sid, kid, None, None)
     return {"ok": True}

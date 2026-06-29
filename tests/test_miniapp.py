@@ -100,6 +100,9 @@ class FakeOutline:
         from outline_panel.core.outline_api import OutlineError
         raise OutlineError("metrics off")
 
+    async def get_server_metrics_cached(self, since="30d", ttl=15.0):
+        return await self.get_server_metrics(since)
+
     async def close(self):
         pass
 

@@ -28,6 +28,9 @@ class BotManager:
         self._dp = None
         self._task: asyncio.Task | None = None
         self._username: str | None = None
+        # serialize start/stop so concurrent calls can't leak a Bot session or
+        # spawn a duplicate polling task
+        self._lifecycle_lock = asyncio.Lock()
 
     @property
     def running(self) -> bool:
@@ -54,7 +57,11 @@ class BotManager:
         return res if (res and res.startswith("https://")) else None
 
     async def start(self, token: str) -> str:
-        await self.stop()
+        async with self._lifecycle_lock:
+            return await self._start_locked(token)
+
+    async def _start_locked(self, token: str) -> str:
+        await self._stop_locked()
         bot = Bot(token)
         me = await bot.get_me()  # validates the token
         dp = build_dispatcher(self.db, self.registry, self.get_admin_ids,
@@ -76,6 +83,10 @@ class BotManager:
         return me.username
 
     async def stop(self) -> None:
+        async with self._lifecycle_lock:
+            await self._stop_locked()
+
+    async def _stop_locked(self) -> None:
         if self._dp is not None:
             try:
                 await self._dp.stop_polling()
