@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0d12" />
+<title>Subscription</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/static/vendor/qrcode.js"></script>
+<style>
+  :root{
+    --bg:#0a0d12;--panel:#10151d;--panel2:#151b25;--line:#1f2733;--line2:#2a3340;
+    --text:#eef2f8;--muted:#9aa6b6;--faint:#6b7689;--acc:#37d4e6;--acc-rgb:55,212,230;
+    --ink:#04141a;--ok:#5fe0a0;--warn:#f6c453;--danger:#ff6b7a;
+    --mono:'IBM Plex Mono',ui-monospace,monospace;--sans:'Hanken Grotesk',system-ui,sans-serif;
+    --display:'Bricolage Grotesque','Hanken Grotesk',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;min-height:100dvh;
+    background-image:radial-gradient(130% 80% at 50% -15%,rgba(var(--acc-rgb),.09),transparent 56%),radial-gradient(circle at 1px 1px,rgba(255,255,255,.02) 1px,transparent 0);
+    background-size:100% 100%,24px 24px;background-attachment:fixed;padding:env(safe-area-inset-top) 0 40px}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .wrap{max-width:480px;margin:0 auto;padding:22px 16px 0}
+  .brand{display:flex;align-items:center;gap:9px;margin-bottom:22px}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 11px var(--acc)}
+  .brand b{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:-.2px}
+  .brand span{color:var(--faint);font-size:12.5px;margin-left:auto}
+
+  .hero{position:relative;border-radius:20px;padding:22px;background:linear-gradient(135deg,var(--acc),#53e0d2);color:#03171b;overflow:hidden;box-shadow:0 16px 40px -20px rgba(var(--acc-rgb),.6);margin-bottom:13px}
+  .hero::after{content:"";position:absolute;right:-50px;top:-70px;width:190px;height:190px;border-radius:50%;background:rgba(255,255,255,.16)}
+  .hero .who{font-family:var(--display);font-weight:800;font-size:24px;letter-spacing:-.5px;position:relative}
+  .hero .sub{font-size:12.5px;opacity:.8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
+  .ring{display:flex;align-items:center;gap:18px;margin-top:16px;position:relative}
+  .ring svg{flex:none}
+  .ring .big{font-family:var(--display);font-weight:800;font-size:27px;line-height:1;letter-spacing:-.5px}
+  .ring .lbl{font-size:12.5px;opacity:.85;margin-top:4px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:13px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:15px}
+  .card .t{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+  .card .v{font-family:var(--display);font-weight:700;font-size:19px;margin-top:5px}
+  .sectitle{font-size:12px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:18px 4px 10px}
+
+  .link{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
+  .link .url{font-family:var(--mono);font-size:12px;color:var(--acc);word-break:break-all;line-height:1.5;margin-bottom:12px}
+  .row{display:flex;gap:9px}
+  .btn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 92%,#fff),var(--acc));color:var(--ink);box-shadow:0 8px 20px -10px rgba(var(--acc-rgb),.6)}
+  .btn:active{transform:translateY(1px)}
+  .btn-sec{flex:none;background:var(--panel2);border:1px solid var(--line2);color:var(--text);box-shadow:none;padding:13px 15px}
+
+  .srv{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:14px;margin-bottom:10px}
+  .srv-top{display:flex;align-items:center;gap:10px}
+  .srv-name{font-weight:700;font-size:15px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;flex:none}
+  .pill.ok{background:rgba(95,224,160,.16);color:var(--ok)}.pill.off{background:rgba(255,107,122,.16);color:var(--danger)}
+  .bar{height:6px;border-radius:5px;background:var(--panel2);overflow:hidden;margin:10px 0 7px}
+  .bar>i{display:block;height:100%;border-radius:5px;background:var(--acc)}
+  .srv-sub{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+  .srv-acts{display:flex;gap:8px;margin-top:11px}
+  .mini{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:11px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .mini:active{opacity:.7}
+  .mini svg{width:15px;height:15px}
+
+  .center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:70vh;gap:10px;padding:24px}
+  .spin{width:22px;height:22px;border:2.5px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:rot .7s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .emoji{font-size:46px}.ttl{font-weight:800;font-size:18px}.muted{color:var(--muted)}
+  .foot{text-align:center;color:var(--faint);font-size:12px;margin-top:20px}
+  .foot a{color:var(--acc);cursor:pointer;text-decoration:none}
+
+  /* qr modal */
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);z-index:40;display:none;align-items:center;justify-content:center;padding:24px}
+  .scrim.on{display:flex}
+  .qrbox{background:var(--bg);border:1px solid var(--line2);border-radius:20px;padding:20px;max-width:320px;width:100%;text-align:center}
+  .qrbox .qr{background:#fff;border-radius:16px;padding:16px;margin:6px auto 14px;width:230px;max-width:78vw}
+  .qrbox .qr svg{width:100%;height:auto;display:block}
+  .qrbox .nm{font-weight:700;margin-bottom:2px}
+  #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(16px);background:#000d;color:#fff;padding:11px 20px;border-radius:13px;font-size:13.5px;font-weight:600;z-index:60;opacity:0;transition:.25s;pointer-events:none}
+  #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+  <div id="app"><div class="center"><span class="spin"></span></div></div>
+  <div class="scrim" id="scrim"><div class="qrbox"><div class="nm" id="qrnm"></div><div class="qr" id="qr"></div><button class="btn btn-sec" style="width:100%" onclick="closeQR()">Close</button></div></div>
+  <div id="toast"></div>
+<script>
+const token=decodeURIComponent(location.pathname.replace(/^\/sub\//,'').replace(/\/.*$/,''));
+const subUrl=location.origin+'/sub/'+token;
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function fmtB(n){if(n==null)return '∞';n=Number(n);const u=['B','KB','MB','GB','TB'];let i=0;while(Math.abs(n)>=1024&&i<u.length-1){n/=1024;i++;}return (n>=100||i===0?n.toFixed(0):n.toFixed(1))+' '+u[i];}
+function expiry(ts){if(!ts)return{t:'No expiry',d:null};const left=ts-Date.now()/1000;if(left<=0)return{t:'Expired',d:'expired'};const d=Math.floor(left/86400),h=Math.floor((left%86400)/3600);return{t:(d>0?d+'d '+h+'h':h+'h'),d:new Date(ts*1000).toLocaleDateString()};}
+let toastT;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.className='on';clearTimeout(toastT);toastT=setTimeout(()=>t.className='',1800);}
+async function copy(text){try{await navigator.clipboard.writeText(text);}catch(e){const a=document.createElement('textarea');a.value=text;a.style.position='fixed';a.style.opacity=0;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(_){}a.remove();}toast('Copied');}
+function showQR(name,text){const box=document.getElementById('qr');box.innerHTML='';try{const q=qrcode(0,'M');q.addData(text);q.make();box.innerHTML=q.createSvgTag({cellSize:7,margin:2,scalable:true});}catch(e){box.textContent='QR error';}document.getElementById('qrnm').textContent=name;document.getElementById('scrim').className='scrim on';}
+function closeQR(){document.getElementById('scrim').className='scrim';}
+document.getElementById('scrim').onclick=e=>{if(e.target.id==='scrim')closeQR();};
+
+function ring(pct){const r=30,c=2*Math.PI*r,off=c*(1-Math.min(pct,100)/100);
+  return '<svg width="74" height="74" viewBox="0 0 74 74"><circle cx="37" cy="37" r="'+r+'" fill="none" stroke="rgba(3,23,27,.18)" stroke-width="8"/><circle cx="37" cy="37" r="'+r+'" fill="none" stroke="#03171b" stroke-width="8" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+off+'" transform="rotate(-90 37 37)"/><text x="37" y="42" text-anchor="middle" font-family="var(--display)" font-weight="800" font-size="17" fill="#03171b">'+Math.round(pct)+'%</text></svg>';}
+
+function render(d){
+  const used=d.used||0, total=d.total||0, unlimited=d.unlimited||total===0;
+  const pct=unlimited?0:Math.min(100,used/total*100);
+  const remain=unlimited?null:Math.max(0,total-used);
+  const ex=expiry(d.expire);
+  const multi=(d.servers||[]).length>1;
+  let h='<div class="wrap"><div class="brand"><span class="dot"></span><b>Outline</b><span>SUBSCRIPTION</span></div>';
+  h+='<div class="hero"><div class="sub">Data used</div><div class="who">'+esc(d.name)+'</div>'+
+     '<div class="ring">'+(unlimited?'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">Unlimited plan</div></div>':
+        ring(pct)+'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">of '+fmtB(total)+' · '+fmtB(remain)+' left</div></div>')+'</div></div>';
+  h+='<div class="grid2"><div class="card"><div class="t">Expiry</div><div class="v" style="'+(ex.d==='expired'?'color:var(--danger)':'')+'">'+ex.t+'</div>'+(ex.d&&ex.d!=='expired'?'<div style="font-size:11.5px;color:var(--faint);margin-top:3px">'+ex.d+'</div>':'')+'</div>'+
+     '<div class="card"><div class="t">Configs</div><div class="v">'+(d.servers||[]).length+(multi?' servers':' server')+'</div><div style="font-size:11.5px;color:var(--faint);margin-top:3px">auto-updates ~'+(d.updateInterval||12)+'h</div></div></div>';
+
+  h+='<div class="sectitle">Subscription link</div><div class="link"><div class="url">'+esc(subUrl)+'</div><div class="row"><button class="btn" onclick="copy(subUrl)">Copy link</button><button class="btn btn-sec" onclick="showQR(\'Subscription\',subUrl)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M21 14v3M14 21h3" stroke-linecap="round"/></svg></button></div></div>';
+
+  if((d.servers||[]).length){
+    h+='<div class="sectitle">Configs</div>';
+    h+=d.servers.map(s=>{const un=(s.limit==null);const p=un?0:Math.min(100,(s.used||0)/s.limit*100);
+      return '<div class="srv"><div class="srv-top"><div class="srv-name">'+esc(s.server)+'</div><span class="pill '+(s.disabled?'off':'ok')+'">'+(s.disabled?'Off':'Active')+'</span></div>'+
+        '<div class="bar"><i style="width:'+(un?100:Math.max(p,2))+'%;opacity:'+(un?.45:1)+'"></i></div>'+
+        '<div class="srv-sub"><span>'+fmtB(s.used)+' / '+(un?'∞':fmtB(s.limit))+'</span><span>'+(un?'Unlimited':Math.round(p)+'%')+'</span></div>'+
+        '<div class="srv-acts"><div class="mini" data-copy="'+esc(s.url)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy config</div>'+
+        '<div class="mini" data-qr="'+esc(s.url)+'" data-nm="'+esc(s.server)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>QR</div></div></div>';
+    }).join('');
+  }
+  h+='<div class="foot">Auto-updates in your app · <a onclick="boot()">Refresh</a></div></div>';
+  document.getElementById('app').innerHTML=h;
+  document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(b.dataset.copy));
+  document.querySelectorAll('[data-qr]').forEach(b=>b.onclick=()=>showQR(b.dataset.nm,b.dataset.qr));
+}
+function fail(msg){document.getElementById('app').innerHTML='<div class="center"><div class="emoji">🔗</div><div class="ttl">'+esc(msg)+'</div><div class="muted">Check the link, or ask your provider for a new one.</div></div>';}
+async function boot(){
+  try{const r=await fetch('/sub/'+encodeURIComponent(token)+'/info',{headers:{'Accept':'application/json'}});
+    if(r.status===404)return fail('Subscription not found');
+    if(!r.ok)return fail('Could not load subscription');
+    render(await r.json());
+  }catch(e){fail('Could not load subscription');}
+}
+boot();
+setInterval(()=>{if(!document.hidden&&!document.getElementById('scrim').classList.contains('on'))boot();},30000);
+</script>
+</body>
+</html>

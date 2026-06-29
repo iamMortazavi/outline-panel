@@ -224,6 +224,31 @@ async def test_subscription_multi_server(app):
     await c.aclose()
 
 
+async def test_subscription_browser_vs_client(app):
+    fake = FakeOutline()
+    _register(app, "s1", "Tokyo", fake)
+    await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
+    c = await _client(app)
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "Ali", "limit_gb": 10, "days": 0})).json()["id"]
+    token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
+    pub = await _client(app, login=False)
+    # a browser gets the human page
+    page = await pub.get(f"/sub/{token}", headers={
+        "Accept": "text/html", "User-Agent": "Mozilla/5.0"})
+    assert page.status_code == 200 and "/static/vendor/qrcode.js" in page.text
+    # a VPN client gets the raw base64 sub even with an html Accept
+    raw = await pub.get(f"/sub/{token}", headers={
+        "Accept": "text/html", "User-Agent": "v2rayNG/1.8"})
+    assert raw.status_code == 200 and "subscription-userinfo" in raw.headers
+    # the JSON usage summary that powers the page
+    info = (await pub.get(f"/sub/{token}/info")).json()
+    assert info["name"] == "Ali" and info["unlimited"] is False
+    assert info["total"] == 10 * 1024 ** 3 and len(info["servers"]) == 1
+    await pub.aclose()
+    await c.aclose()
+
+
 async def test_extend_reduce_and_zero(app):
     fake = FakeOutline()
     _register(app, "s1", "S1", fake)
