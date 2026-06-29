@@ -23,6 +23,14 @@ class FakeOutline:
     async def delete_key(self, kid):
         self.keys = [k for k in self.keys if k["id"] != kid]
 
+    async def get_key(self, kid):
+        for k in self.keys:
+            if k["id"] == kid:
+                return {"id": kid, "name": k.get("name"),
+                        "accessUrl": f"ss://abc@1.2.3.4:8388/?outline=1#{k.get('name') or ''}"}
+        from outline_panel.core.outline_api import OutlineError
+        raise OutlineError("no such key")
+
     async def list_keys(self):
         return self.keys
 
@@ -165,4 +173,72 @@ async def test_create_key_with_monthly_quota(app):
     assert meta["reset_ts"] is not None
     # monthly with no explicit limit => limit seeded to the monthly allowance
     assert meta["limit_bytes"] == 5 * 1024 ** 3
+    await c.aclose()
+
+
+async def test_subscription_link_and_headers(app):
+    import base64
+    fake = FakeOutline()
+    _register(app, "s1", "Tokyo", fake)
+    await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
+    c = await _client(app)
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "Ali", "limit_gb": 10, "days": 30})).json()["id"]
+    r = await c.post(f"/api/servers/s1/keys/{kid}/sub")
+    assert r.status_code == 200
+    token = r.json()["token"]
+    assert r.json()["servers"][0]["included"] is True
+    pub = await _client(app, login=False)            # public, no auth
+    sub = await pub.get(f"/sub/{token}")
+    assert sub.status_code == 200
+    assert "download=" in sub.headers["subscription-userinfo"]
+    assert "total=" in sub.headers["subscription-userinfo"]
+    assert sub.headers["profile-update-interval"] == "12"
+    body = base64.b64decode(sub.text).decode()
+    assert body.startswith("ss://") and "?outline" not in body  # path stripped
+    await pub.aclose()
+    await c.aclose()
+
+
+async def test_subscription_multi_server(app):
+    import base64
+    f1, f2 = FakeOutline(), FakeOutline()
+    _register(app, "s1", "Tokyo", f1)
+    _register(app, "s2", "Berlin", f2)
+    await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
+    await app.db.add_server("s2", "Berlin", "https://1.2.3.4:1/x")
+    c = await _client(app)
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "Vip", "limit_gb": 50, "days": 0})).json()["id"]
+    token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
+    r = await c.post(f"/api/sub/{token}/servers/s2")          # mirror onto s2
+    assert r.status_code == 200 and len(r.json()["members"]) == 2
+    pub = await _client(app, login=False)
+    body = base64.b64decode((await pub.get(f"/sub/{token}")).text).decode()
+    assert len(body.splitlines()) == 2                        # two configs
+    r2 = await c.delete(f"/api/sub/{token}/servers/s2")       # unlink s2
+    assert len(r2.json()["members"]) == 1
+    body2 = base64.b64decode((await pub.get(f"/sub/{token}")).text).decode()
+    assert len(body2.splitlines()) == 1
+    await pub.aclose()
+    await c.aclose()
+
+
+async def test_extend_reduce_and_zero(app):
+    fake = FakeOutline()
+    _register(app, "s1", "S1", fake)
+    await app.db.add_server("s1", "S1", "https://1.2.3.4:1/x")
+    c = await _client(app)
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "X", "limit_gb": 0, "days": 30})).json()["id"]
+    # reduce a pending key's duration 30 -> 20
+    assert (await c.post(f"/api/servers/s1/keys/{kid}/extend",
+                         json={"days": -10})).status_code == 200
+    assert (await app.db.get_key("s1", kid))["duration_days"] == 20
+    # extend +5 -> 25
+    await c.post(f"/api/servers/s1/keys/{kid}/extend", json={"days": 5})
+    assert (await app.db.get_key("s1", kid))["duration_days"] == 25
+    # zero is rejected
+    assert (await c.post(f"/api/servers/s1/keys/{kid}/extend",
+                         json={"days": 0})).status_code == 400
     await c.aclose()

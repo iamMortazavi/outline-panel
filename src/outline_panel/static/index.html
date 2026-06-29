@@ -512,7 +512,7 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div class="field"><label class="lab">Name</label><input id="mn" class="inp" value="${esc(k.name)}" /></div>
     <div class="field"><label class="lab">Data limit · GB (0 = unlimited)</label><input id="ml" class="inp" type="number" min="0" value="${lim}" placeholder="Unlimited" /></div>
     <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="mq" class="inp" type="number" min="0" value="${mon}" placeholder="Auto-renew off" /></div>
-    <div class="field"><label class="lab">Extend validity</label><div style="display:flex;gap:8px">${[[30,'+30 days'],[90,'+90 days'],[365,'+1 year']].map(([d,l])=>`<button class="chip" data-ext="${d}" style="flex:1;text-align:center">${l}</button>`).join('')}</div></div>
+    <div class="field"><label class="lab">Validity · add or reduce</label><div style="display:flex;gap:7px;flex-wrap:wrap">${[[-30,'−30d'],[-7,'−7d'],[7,'+7d'],[30,'+30d'],[90,'+90d'],[365,'+1y']].map(([d,l])=>`<button class="chip" data-ext="${d}" style="flex:1;min-width:52px;text-align:center">${l}</button>`).join('')}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
       <button class="btn-sec" data-act="config" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="width:auto;padding:11px 14px">⤓ Config</button>
       <button class="btn-sec" id="msub" style="width:auto;padding:11px 14px">🔗 Subscription</button>
@@ -521,18 +521,23 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div id="me" class="err"></div><button class="btn" id="msave">Save changes</button><div style="height:10px"></div>
     <button class="btn-danger" id="mdel">Delete key</button>`);
   const kb='/api/servers/'+k.serverId+'/keys/'+k.id;let disabled=k.disabled;
-  ov.querySelectorAll('[data-ext]').forEach(c=>c.onclick=async()=>{try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:+c.dataset.ext})});toast('Extended +'+c.dataset.ext+'d');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}});
+  ov.querySelectorAll('[data-ext]').forEach(c=>c.onclick=async()=>{const d=+c.dataset.ext;try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}});
   ov.querySelector('#mtog').onclick=async()=>{try{await api(kb+'/'+(disabled?'enable':'disable'),{method:'POST'});disabled=!disabled;ov.querySelector('#mtog').textContent=disabled?'Enable':'Disable';toast(disabled?'Key disabled':'Key enabled');await refreshKeys();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”?'))return;try{await api(kb+'/reset',{method:'POST'});toast('Usage reset');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
-  ov.querySelector('#msub').onclick=async()=>{try{const r=await api(kb+'/sub',{method:'POST'});const link=location.origin+r.path;
-    const s=openSheet(`<div class="h2">Subscription link</div><p class="desc">A stable link for ${esc(k.name)} — stays valid even if the key changes.</p><div style="display:grid;place-items:center;margin:4px 0 18px"><div id="sq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:13px;font-size:12px;word-break:break-all;color:var(--acc)">${esc(link)}</div><div style="height:16px"></div><button class="btn" data-act="copytext" data-text="${esc(link)}">Copy link</button><div style="height:10px"></div><button class="btn-sec" data-act="close">Done</button>`);
-    renderQR(s.querySelector('#sq'),link);}catch(e){toast(e.message,1);}};
+  ov.querySelector('#msub').onclick=async()=>{try{const r=await api(kb+'/sub',{method:'POST'});openSubSheet(k,r);}catch(e){toast(e.message,1);}};
   ov.querySelector('#msave').onclick=async()=>{const name=ov.querySelector('#mn').value.trim();const lg=parseFloat(ov.querySelector('#ml').value||'0')||0;const mg=parseFloat(ov.querySelector('#mq').value||'0')||0;const er=ov.querySelector('#me');if(!name){er.textContent='Name cannot be empty.';return;}
     const b=ov.querySelector('#msave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{if(name!==k.name)await api(kb+'/name',{method:'PUT',body:JSON.stringify({name})});await api(kb+'/limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});
       const curMon=k.monthlyBytes?(k.monthlyBytes/1073741824):0;if(mg!==curMon)await api(kb+'/monthly',{method:'PUT',body:JSON.stringify({monthly_gb:mg})});
       toast('Changes saved');closeModal();await refreshKeys();renderList();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}};
   ov.querySelector('#mdel').onclick=async()=>{if(!confirm('Delete “'+k.name+'”? This cannot be undone.'))return;try{await api(kb,{method:'DELETE'});toast('Key deleted');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
+}
+function openSubSheet(k,info){
+  const link=location.origin+info.path;const multi=S.servers.length>1;
+  const srv=multi?`<label class="lab" style="margin-top:2px">Servers in this subscription</label><div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px">${info.servers.map(s=>`<button class="chip${s.included?' sel':''}" data-subsrv="${esc(s.id)}" style="flex:none">${s.included?'✓ ':''}${esc(s.name)}</button>`).join('')}</div><p class="desc" style="font-size:12px;margin-bottom:16px">Include another server's config in this one link — handy for failover in v2ray.</p>`:'';
+  const s=openSheet(`<div class="h2">Subscription</div><p class="desc">One auto-updating link for <b>${esc(k.name)}</b>. Clients show data &amp; expiry and refresh it automatically.</p><div style="display:grid;place-items:center;margin:2px 0 16px"><div id="sq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:13px;font-size:12px;word-break:break-all;color:var(--acc)">${esc(link)}</div><div style="height:14px"></div>${srv}<button class="btn" data-act="copytext" data-text="${esc(link)}">Copy link</button><div style="height:10px"></div><button class="btn-sec" data-act="close">Done</button>`);
+  renderQR(s.querySelector('#sq'),link);
+  s.querySelectorAll('[data-subsrv]').forEach(c=>c.onclick=async()=>{const tid=c.dataset.subsrv,inc=c.classList.contains('sel');c.style.opacity='.5';c.style.pointerEvents='none';try{const r=await api('/api/sub/'+info.token+'/servers/'+tid,{method:inc?'DELETE':'POST'});toast(inc?'Server removed':'Server added');await refreshKeys();openSubSheet(k,r);}catch(e){toast(e.message,1);c.style.opacity='1';c.style.pointerEvents='auto';}});
 }
 function modalConfig(k){
   let cfg=null;try{const m=(k.accessUrl||'').match(/^ss:\/\/([^@]+)@([^:\/?#]+):(\d+)/);if(m){let ui=m[1].replace(/-/g,'+').replace(/_/g,'/');while(ui.length%4)ui+='=';const dec=atob(ui),i=dec.indexOf(':');cfg={server:m[2],server_port:+m[3],method:dec.slice(0,i),password:dec.slice(i+1)};}}catch(e){}

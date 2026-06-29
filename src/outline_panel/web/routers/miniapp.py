@@ -111,3 +111,19 @@ async def tma_extend(sid: str, kid: str, body: ExtendBody, auth: dict = Depends(
 @router.delete("/tma/api/keys/{sid}/{kid}")
 async def tma_delete(sid: str, kid: str, auth: dict = Depends(require_tma)):
     return await keys_router.delete_key(sid, kid)
+
+
+# ----------------------------------------------------------- subscription (TMA)
+@router.post("/tma/api/keys/{sid}/{kid}/sub")
+async def tma_make_sub(sid: str, kid: str, auth: dict = Depends(require_tma)):
+    return await keys_router.make_sub_link(sid, kid)
+
+
+@router.post("/tma/api/sub/{token}/servers/{target}")
+async def tma_sub_add(token: str, target: str, auth: dict = Depends(require_tma)):
+    return await keys_router.sub_add_server(token, target)
+
+
+@router.delete("/tma/api/sub/{token}/servers/{target}")
+async def tma_sub_remove(token: str, target: str, auth: dict = Depends(require_tma)):
+    return await keys_router.sub_remove_server(token, target)

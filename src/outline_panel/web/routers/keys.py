@@ -139,7 +139,8 @@ class MonthlyBody(BaseModel):
 
 
 class ExtendBody(BaseModel):
-    days: int = Field(gt=0)
+    # positive extends validity (and re-enables); negative shortens it.
+    days: int = Field(ge=-3650, le=3650)
 
 
 # --------------------------------------------------------------------- routes
@@ -252,15 +253,21 @@ async def enable_key(sid: str, kid: str):
 
 @router.post("/servers/{sid}/keys/{kid}/extend")
 async def extend_key(sid: str, kid: str, body: ExtendBody):
+    """Adjust a key's validity: positive `days` extends (and re-enables a
+    disabled key), negative `days` shortens it (clamped to expire-now)."""
+    if body.days == 0:
+        raise HTTPException(status_code=400, detail="days must not be zero")
     api = api_or_404(sid)
     meta = await ensure_local(sid, kid)
     now = int(time.time())
     if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
-        await db.set_duration(sid, kid, int(meta["duration_days"]) + body.days)
+        # not yet activated — adjust the stored duration (min 1 day)
+        await db.set_duration(sid, kid, max(1, int(meta["duration_days"]) + body.days))
     else:
         base = max(meta.get("expiry_ts") or 0, now)
-        await db.set_expiry(sid, kid, base + body.days * 86400)
-    if meta.get("disabled"):
+        await db.set_expiry(sid, kid, max(now, base + body.days * 86400))
+    # only re-enable on an extension, never on a reduction
+    if body.days > 0 and meta.get("disabled"):
         try:
             await enable_on_outline(api, kid, meta)
             await db.set_disabled(sid, kid, False)
@@ -294,16 +301,80 @@ async def reset_usage(sid: str, kid: str):
     return {"ok": True, "limit": new_limit}
 
 
+async def _sub_info(token: str) -> dict:
+    """Members of a subscription + which configured servers are included."""
+    members = await db.get_keys_by_sub_token(token)
+    member_sids = {m["server_id"] for m in members}
+    return {
+        "token": token,
+        "path": f"/sub/{token}",
+        "members": [
+            {"serverId": m["server_id"],
+             "serverName": (reg.meta(m["server_id"]) or {}).get("name"),
+             "keyId": m["key_id"], "name": m.get("name")}
+            for m in members
+        ],
+        "servers": [
+            {"id": s, "name": reg.meta(s)["name"], "included": s in member_sids}
+            for s in reg.ids()
+        ],
+    }
+
+
 @router.post("/servers/{sid}/keys/{kid}/sub")
 async def make_sub_link(sid: str, kid: str):
-    """Ensure the key has a stable subscription token; return its path."""
+    """Ensure the key has a stable subscription token; return it + members."""
     api_or_404(sid)
     meta = await ensure_local(sid, kid)
     token = meta.get("sub_token")
     if not token:
         token = security.random_token()
         await db.set_sub_token(sid, kid, token)
-    return {"token": token, "path": f"/sub/{token}"}
+    return await _sub_info(token)
+
+
+@router.post("/sub/{token}/servers/{target}")
+async def sub_add_server(token: str, target: str):
+    """Mirror the subscription onto `target`: create a key there (cloning the
+    primary's name/limit/duration) and join it to the same token."""
+    members = await db.get_keys_by_sub_token(token)
+    if not members:
+        raise HTTPException(status_code=404, detail="Unknown subscription")
+    if any(m["server_id"] == target for m in members):
+        return await _sub_info(token)  # already included
+    api = api_or_404(target)
+    primary = members[0]
+    name = primary.get("name") or "user"
+    limit_bytes = primary.get("limit_bytes")
+    duration = primary.get("duration_days")
+    try:
+        key = await api.create_key(name=name, limit_bytes=limit_bytes)
+    except OutlineError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    try:
+        await db.add_key(target, key["id"], name, limit_bytes, duration)
+        await db.set_sub_token(target, key["id"], token)
+    except Exception as e:  # noqa: BLE001 — don't leave an orphan key
+        log.exception("sub mirror persist failed; deleting orphan key")
+        try:
+            await api.delete_key(key["id"])
+        except OutlineError:
+            pass
+        raise HTTPException(status_code=500, detail=f"Failed to add server: {e}")
+    return await _sub_info(token)
+
+
+@router.delete("/sub/{token}/servers/{target}")
+async def sub_remove_server(token: str, target: str):
+    """Remove `target`'s config from the subscription (unlinks the token; the
+    key itself is kept — delete it from the key list if no longer needed)."""
+    members = await db.get_keys_by_sub_token(token)
+    if not members:
+        raise HTTPException(status_code=404, detail="Unknown subscription")
+    for m in members:
+        if m["server_id"] == target:
+            await db.set_sub_token(target, m["key_id"], None)
+    return await _sub_info(token)
 
 
 @router.delete("/servers/{sid}/keys/{kid}")

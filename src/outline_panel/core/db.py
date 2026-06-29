@@ -235,6 +235,13 @@ class DB:
         row = await cur.fetchone()
         return dict(row) if row else None
 
+    async def get_keys_by_sub_token(self, token: str) -> list[dict]:
+        """All keys sharing a subscription token (a multi-server subscription)."""
+        cur = await self.conn.execute(
+            "SELECT * FROM keys WHERE sub_token = ? ORDER BY created_ts", (token,)
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
     async def set_monthly(self, server_id, key_id,
                           monthly_bytes: int | None, reset_ts: int | None):
         async with self._lock:

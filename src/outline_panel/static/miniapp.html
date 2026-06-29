@@ -229,7 +229,8 @@ const I={ rename:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
   off:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>',
   qr:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3M21 14v7M17 21h4"/></svg>',
   copy:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>',
-  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>' };
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>',
+  sub:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>' };
 
 /* ===================== HOME ===================== */
 function visibleKeys(){
@@ -361,14 +362,16 @@ function openDetail(sid,kid){
     '<div class="lab" style="margin-top:6px">Manage</div><div class="acts">'+
       '<div class="act" id="aren">'+I.rename+'Rename</div>'+
       '<div class="act" id="alim">'+I.limit+'Data limit</div>'+
-      '<div class="act" id="aext">'+I.extend+'Extend</div>'+
+      '<div class="act" id="aext">'+I.extend+'Validity</div>'+
       '<div class="act" id="atog">'+(k.disabled?I.on+'Enable':I.off+'Disable')+'</div>'+
+      '<div class="act wide" id="asub">'+I.sub+'Subscription link</div>'+
       '<div class="act danger wide" id="adel">'+I.trash+'Delete user</div></div>');
   if(k.accessUrl){ s.querySelector('#dcopy').onclick=()=>copy(configUrl(k)); s.querySelector('#dqr').onclick=()=>openQR(sid,kid); }
   s.querySelector('#aren').onclick=()=>openRename(sid,kid);
   s.querySelector('#alim').onclick=()=>openLimit(sid,kid);
   s.querySelector('#aext').onclick=()=>openExtend(sid,kid);
   s.querySelector('#atog').onclick=()=>toggleKey(sid,kid);
+  s.querySelector('#asub').onclick=()=>openSub(sid,kid);
   s.querySelector('#adel').onclick=()=>deleteKey(sid,kid);
 }
 async function afterEdit(sid,kid,msg){ if(msg){ notify('success'); toast(msg); } await loadHome(false); if(findKey(sid,kid)) openDetail(sid,kid); else closeSheet(); }
@@ -413,17 +416,30 @@ function openLimit(sid,kid){
 }
 function openExtend(sid,kid){
   const k=findKey(sid,kid); if(!k) return; haptic();
-  const s=openSheet('<div class="h2">Extend validity</div><p class="desc">Add days to the expiry (re-enables if disabled).</p>'+
-    '<div class="field"><label class="lab">Add days</label><input id="en" class="inp" type="number" inputmode="numeric" min="1" value="30" /></div>'+
-    '<div class="seg" style="margin-bottom:14px"><div class="s" data-d="30">+30</div><div class="s" data-d="60">+60</div><div class="s" data-d="90">+90</div><div class="s" data-d="180">+180</div></div>'+
-    '<div id="eerr" class="err"></div><button class="btn" id="ego">Extend</button>', ()=>openDetail(sid,kid));
+  const s=openSheet('<div class="h2">Validity</div><p class="desc">Add or reduce days. Positive extends (re-enables if disabled); negative shortens.</p>'+
+    '<div class="field"><label class="lab">Days (+ / −)</label><input id="en" class="inp" type="number" inputmode="numeric" value="30" /></div>'+
+    '<div class="seg" style="margin-bottom:14px"><div class="s" data-d="-30">−30</div><div class="s" data-d="-7">−7</div><div class="s" data-d="7">+7</div><div class="s" data-d="30">+30</div><div class="s" data-d="90">+90</div><div class="s" data-d="180">+180</div></div>'+
+    '<div id="eerr" class="err"></div><button class="btn" id="ego">Apply</button>', ()=>openDetail(sid,kid));
   s.querySelectorAll('.seg .s').forEach(c=>c.onclick=()=>{ s.querySelector('#en').value=c.dataset.d; haptic(); });
   const go=async()=>{ const days=parseInt(s.querySelector('#en').value||'0',10)||0; const err=s.querySelector('#eerr'); err.textContent='';
-    if(days<1){ err.textContent='Enter at least 1 day.'; return; }
+    if(days===0){ err.textContent='Enter a non-zero number of days.'; return; }
     const b=s.querySelector('#ego'); b.disabled=true; mainBusy(true);
-    try{ await api('/tma/api/keys/'+sid+'/'+kid+'/extend',{method:'POST',body:JSON.stringify({days})}); await afterEdit(sid,kid,'Extended by '+days+'d'); }
+    try{ await api('/tma/api/keys/'+sid+'/'+kid+'/extend',{method:'POST',body:JSON.stringify({days})}); await afterEdit(sid,kid,days>0?('Extended +'+days+'d'):('Reduced '+days+'d')); }
     catch(e){ err.textContent=e.message; b.disabled=false; mainBusy(false); } };
-  s.querySelector('#ego').onclick=go; mainBtn('Extend',go);
+  s.querySelector('#ego').onclick=go; mainBtn('Apply',go);
+}
+function openSub(sid,kid){
+  const k=findKey(sid,kid); if(!k) return; haptic();
+  api('/tma/api/keys/'+sid+'/'+kid+'/sub',{method:'POST'}).then(info=>renderSub(sid,kid,info)).catch(e=>toast(e.message,1));
+}
+function renderSub(sid,kid,info){
+  const k=findKey(sid,kid); if(!k) return;
+  const link=location.origin+info.path, multi=(SERVERS.length>1);
+  let svg=''; try{ const q=qrcode(0,'M'); q.addData(link); q.make(); svg=q.createSvgTag({cellSize:7,margin:2,scalable:true}); }catch(e){}
+  const srv=multi?'<div class="lab">Servers in this subscription</div><div class="seg" style="margin-bottom:6px">'+info.servers.map(s=>'<div class="s'+(s.included?' on':'')+'" data-subsrv="'+esc(s.id)+'">'+(s.included?'✓ ':'')+esc(s.name)+'</div>').join('')+'</div><p class="hint" style="margin:0 1px 16px">Add a server to include its config in this link — handy for failover in v2ray.</p>':'';
+  const s=openSheet('<div style="text-align:center"><div class="h2">Subscription</div><p class="desc" style="margin-bottom:14px">Auto-updating link for '+esc(k.name)+' — clients show data &amp; expiry.</p><div class="qrwrap">'+svg+'</div></div><div style="height:14px"></div><div class="link">'+esc(link)+'</div>'+srv+'<button class="btn" id="subcopy">Copy subscription link</button>', ()=>openDetail(sid,kid));
+  s.querySelector('#subcopy').onclick=()=>copy(link);
+  s.querySelectorAll('[data-subsrv]').forEach(c=>c.onclick=async()=>{const tid=c.dataset.subsrv,inc=c.classList.contains('on');haptic();try{const r=await api('/tma/api/sub/'+info.token+'/servers/'+tid,{method:inc?'DELETE':'POST'});notify('success');toast(inc?'Server removed':'Server added');await loadHome(false);renderSub(sid,kid,r);}catch(e){toast(e.message,1);}});
 }
 async function toggleKey(sid,kid){
   const k=findKey(sid,kid); if(!k) return; const dis=!k.disabled; haptic();
