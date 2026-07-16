@@ -512,7 +512,9 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div class="field"><label class="lab">Name</label><input id="mn" class="inp" value="${esc(k.name)}" /></div>
     <div class="field"><label class="lab">Data limit · GB (0 = unlimited)</label><input id="ml" class="inp" type="number" min="0" value="${lim}" placeholder="Unlimited" /></div>
     <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="mq" class="inp" type="number" min="0" value="${mon}" placeholder="Auto-renew off" /></div>
-    <div class="field"><label class="lab">Validity · add or reduce</label><div style="display:flex;gap:7px;flex-wrap:wrap">${[[-30,'−30d'],[-7,'−7d'],[7,'+7d'],[30,'+30d'],[90,'+90d'],[365,'+1y']].map(([d,l])=>`<button class="chip" data-ext="${d}" style="flex:1;min-width:52px;text-align:center">${l}</button>`).join('')}</div></div>
+    <div class="field"><label class="lab">Validity · add or reduce</label>
+      <div style="display:flex;gap:8px"><input id="mx" class="inp" type="number" min="-3650" max="3650" placeholder="Days — positive extends, negative shortens" /><button class="btn-sec" id="mxgo" style="width:auto;padding:0 18px">Apply</button></div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">${[[-30,'−30d'],[-7,'−7d'],[7,'+7d'],[30,'+30d'],[90,'+90d'],[365,'+1y']].map(([d,l])=>`<span class="chip" data-chip="mx" data-v="${d}" style="flex:1;min-width:52px;text-align:center">${l}</span>`).join('')}</div></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
       <button class="btn-sec" data-act="config" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="width:auto;padding:11px 14px">⤓ Config</button>
       <button class="btn-sec" id="msub" style="width:auto;padding:11px 14px">🔗 Subscription</button>
@@ -521,7 +523,10 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div id="me" class="err"></div><button class="btn" id="msave">Save changes</button><div style="height:10px"></div>
     <button class="btn-danger" id="mdel">Delete key</button>`);
   const kb='/api/servers/'+k.serverId+'/keys/'+k.id;let disabled=k.disabled;
-  ov.querySelectorAll('[data-ext]').forEach(c=>c.onclick=async()=>{const d=+c.dataset.ext;try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}});
+  ov.querySelector('#mxgo').onclick=async()=>{const d=parseInt(ov.querySelector('#mx').value||'0',10)||0;const er=ov.querySelector('#me');er.textContent='';
+    if(!d){er.textContent='Enter a number of days to add or reduce.';return;}
+    if(Math.abs(d)>3650){er.textContent='At most 3650 days at a time.';return;}
+    try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mtog').onclick=async()=>{try{await api(kb+'/'+(disabled?'enable':'disable'),{method:'POST'});disabled=!disabled;ov.querySelector('#mtog').textContent=disabled?'Enable':'Disable';toast(disabled?'Key disabled':'Key enabled');await refreshKeys();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”?'))return;try{await api(kb+'/reset',{method:'POST'});toast('Usage reset');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#msub').onclick=async()=>{try{const r=await api(kb+'/sub',{method:'POST'});openSubSheet(k,r);}catch(e){toast(e.message,1);}};
