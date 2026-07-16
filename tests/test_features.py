@@ -61,6 +61,9 @@ class FakeOutline:
         from outline_panel.core.outline_api import OutlineError
         raise OutlineError("off")
 
+    async def get_server_metrics_cached(self, since="30d", ttl=15.0):
+        return await self.get_server_metrics(since)
+
     async def get_server_info(self):
         return {"name": "fake", "version": "1.0"}
 
@@ -107,6 +110,83 @@ async def test_reset_usage(app):
     assert r.status_code == 200
     assert r.json()["limit"] == 13 * GB          # used(3) + allowance(10)
     assert fake.limits[kid] == 13 * GB
+    await c.aclose()
+
+
+async def test_duration_starts_on_first_connection_by_default(app):
+    """The default: an unused key must not burn its validity, so the clock
+    waits for the scheduler to see the user's first byte."""
+    from outline_panel.core import scheduler
+    application, deps, fake = app
+    c = await _client(application)
+    r = await c.post("/api/servers/s1/keys",
+                     json={"name": "A", "limit_gb": 0, "days": 30})
+    kid = r.json()["id"]
+    assert r.json()["pending"] is True
+    m = await deps.db.get_key("s1", kid)
+    assert m["duration_days"] == 30 and m["activated_ts"] is None and m["expiry_ts"] is None
+
+    await scheduler._check_once(deps.reg, deps.db, None, set())  # nobody connected
+    assert (await deps.db.get_key("s1", kid))["activated_ts"] is None
+
+    fake.usage[kid] = 1  # first connection
+    await scheduler._check_once(deps.reg, deps.db, None, set())
+    m = await deps.db.get_key("s1", kid)
+    assert m["activated_ts"] is not None
+    assert round((m["expiry_ts"] - int(time.time())) / 86400) == 30
+    await c.aclose()
+
+
+async def test_duration_can_start_at_creation(app):
+    """start_now: the clock runs from creation, so the scheduler must leave it
+    alone (it only adopts keys whose activated_ts is still NULL)."""
+    from outline_panel.core import scheduler
+    application, deps, fake = app
+    c = await _client(application)
+    now = int(time.time())
+    r = await c.post("/api/servers/s1/keys",
+                     json={"name": "A", "limit_gb": 0, "days": 30, "start_now": True})
+    kid = r.json()["id"]
+    assert r.json()["pending"] is False
+    m = await deps.db.get_key("s1", kid)
+    assert m["activated_ts"] is not None
+    assert round((m["expiry_ts"] - now) / 86400) == 30
+
+    # a later first connection must not restart the clock
+    started = m["expiry_ts"]
+    fake.usage[kid] = 1
+    await scheduler._check_once(deps.reg, deps.db, None, set())
+    assert (await deps.db.get_key("s1", kid))["expiry_ts"] == started
+
+    # ...and it still expires normally
+    await deps.db.set_expiry("s1", kid, now - 10)
+    await scheduler._check_once(deps.reg, deps.db, None, set())
+    assert (await deps.db.get_key("s1", kid))["disabled"] == 1
+    assert fake.limits[kid] == 0
+    await c.aclose()
+
+
+async def test_start_now_without_a_duration_is_a_no_op(app):
+    """days=0 means no expiry at all — start_now must not invent one."""
+    application, deps, fake = app
+    c = await _client(application)
+    r = await c.post("/api/servers/s1/keys",
+                     json={"name": "A", "limit_gb": 0, "days": 0, "start_now": True})
+    m = await deps.db.get_key("s1", r.json()["id"])
+    assert m["expiry_ts"] is None and m["activated_ts"] is None
+    assert r.json()["pending"] is False
+    await c.aclose()
+
+
+async def test_created_ts_is_stored_and_exposed(app):
+    application, deps, fake = app
+    c = await _client(application)
+    before = int(time.time())
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "A", "limit_gb": 0, "days": 0})).json()["id"]
+    assert (await deps.db.get_key("s1", kid))["created_ts"] >= before
+    listed = (await c.get("/api/keys")).json()["keys"][0]
+    assert listed["createdTs"] >= before
     await c.aclose()
 
 

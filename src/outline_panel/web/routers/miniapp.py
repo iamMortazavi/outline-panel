@@ -73,12 +73,13 @@ class TmaCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     limit_gb: float = Field(ge=0, default=0)
     days: int = Field(ge=0, default=0)
+    start_now: bool = False
 
 
 @router.post("/tma/api/keys")
 async def tma_create(body: TmaCreate, auth: dict = Depends(require_tma)):
     return await keys_router.create_key_for(
-        body.server, body.name, body.limit_gb, body.days
+        body.server, body.name, body.limit_gb, body.days, start_now=body.start_now
     )
 
 

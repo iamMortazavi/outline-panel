@@ -463,7 +463,8 @@ function openCreate(){
     '<div class="field"><label class="lab">Name</label><input id="cn" class="inp" placeholder="e.g. Alex" autocomplete="off" /></div>'+
     '<div class="two"><div class="field"><label class="lab">Data limit (GB)</label><input id="cl" class="inp" type="number" inputmode="decimal" min="0" placeholder="0 = unlimited" /></div>'+
     '<div class="field"><label class="lab">Duration (days)</label><input id="cd" class="inp" type="number" inputmode="numeric" min="0" placeholder="0 = no expiry" /></div></div>'+
-    '<div class="hint">Leave 0 for unlimited data or no expiry. Duration counts from the first connection.</div>'+
+    '<label class="field" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:0"><input id="csn" type="checkbox" style="width:18px;height:18px;flex:none;accent-color:var(--acc)" /><span class="lab" style="margin:0">Start countdown now</span></label>'+
+    '<div class="hint">Leave 0 for unlimited data or no expiry. Unchecked, the duration counts from the user\'s first connection.</div>'+
     '<div id="cerr" class="err"></div><button class="btn" id="cgo">Create User</button>');
   const go=()=>submitCreate(s); s.querySelector('#cgo').onclick=go; mainBtn('Create User',go);
   setTimeout(()=>{ const n=s.querySelector('#cn'); n&&n.focus(); },320);
@@ -476,7 +477,8 @@ async function submitCreate(s){
   if(!name){ err.textContent='Please enter a name.'; return; }
   if(!server){ err.textContent='No server is configured.'; return; }
   const btn=s.querySelector('#cgo'); btn.disabled=true; btn.textContent='Creating…'; mainBusy(true);
-  try{ const k=await api('/tma/api/keys',{method:'POST',body:JSON.stringify({server,name,limit_gb,days})});
+  const start_now=!!s.querySelector('#csn').checked;
+  try{ const k=await api('/tma/api/keys',{method:'POST',body:JSON.stringify({server,name,limit_gb,days,start_now})});
     notify('success'); showCreated(k); await loadHome(false); }
   catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent='Create User'; mainBusy(false); }
 }

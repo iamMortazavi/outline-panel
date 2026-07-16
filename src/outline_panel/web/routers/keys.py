@@ -74,6 +74,7 @@ async def keys_for_server(sid: str) -> dict:
             "limit": limit_b,
             "expiry": meta.get("expiry_ts"),
             "monthlyBytes": meta.get("monthly_bytes"),
+            "createdTs": meta.get("created_ts"),
             "durationDays": duration,
             "activated": activated,
             "pending": duration is not None and not activated,
@@ -120,6 +121,9 @@ class CreateBody(BaseModel):
     limit_gb: float = Field(ge=0)
     days: int = Field(ge=0)
     monthly_gb: float = Field(ge=0, default=0)
+    # False: the countdown waits for the user's first connection (the default,
+    # so an unused key isn't burning its validity). True: it starts right now.
+    start_now: bool = False
 
 
 class NameBody(BaseModel):
@@ -141,11 +145,14 @@ class ExtendBody(BaseModel):
 
 # --------------------------------------------------------------------- routes
 async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
-                         monthly_gb: float = 0) -> dict:
+                         monthly_gb: float = 0, start_now: bool = False) -> dict:
     """Create a key on Outline and persist its local metadata.
 
     Shared by the dashboard route and the Telegram Mini App. Raises
     ``HTTPException`` on failure and removes any orphan key left on the server.
+
+    ``start_now`` picks when the validity clock starts: at creation, or (the
+    default) on the user's first connection, which the scheduler detects.
     """
     api = api_or_404(sid)
     limit_bytes = gb_to_bytes(limit_gb) if limit_gb > 0 else None
@@ -159,8 +166,14 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
         raise HTTPException(status_code=502, detail=str(e))
     try:
         await db.add_key(sid, key["id"], name, limit_bytes, duration)
+        now = int(time.time())
+        if duration and start_now:
+            # Activating here is all it takes: the scheduler only adopts keys
+            # whose activated_ts is still NULL, so it leaves this one alone and
+            # the normal expiry sweep does the rest.
+            await db.activate(sid, key["id"], now, now + duration * 86400)
         if monthly_bytes:
-            await db.set_monthly(sid, key["id"], monthly_bytes, int(time.time()) + MONTH_SECONDS)
+            await db.set_monthly(sid, key["id"], monthly_bytes, now + MONTH_SECONDS)
     except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
         log.exception("DB persist failed; deleting orphan key %s", key.get("id"))
         try:
@@ -170,14 +183,15 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
         raise HTTPException(status_code=500, detail=f"Failed to persist key: {e}")
     return {"id": key["id"], "serverId": sid, "name": name,
             "accessUrl": key["accessUrl"], "limit": limit_bytes,
-            "monthlyBytes": monthly_bytes,
-            "durationDays": duration, "pending": duration is not None}
+            "monthlyBytes": monthly_bytes, "createdTs": now,
+            "durationDays": duration,
+            "pending": duration is not None and not start_now}
 
 
 @router.post("/servers/{sid}/keys")
 async def create_key(sid: str, body: CreateBody):
     return await create_key_for(sid, body.name, body.limit_gb, body.days,
-                                body.monthly_gb)
+                                body.monthly_gb, body.start_now)
 
 
 @router.put("/servers/{sid}/keys/{kid}/name")

@@ -99,6 +99,7 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;',
 function fmtBytes(n){if(n==null)return '—';let u=['B','KB','MB','GB','TB','PB'],i=0,x=Number(n);while(Math.abs(x)>=1024&&i<u.length-1){x/=1024;i++;}return (i>=2&&x<100?x.toFixed(1):Math.round(x))+' '+u[i];}
 function fmtExpiry(ts){if(!ts)return 'No expiry';const ms=ts*1000,n=Date.now();if(ms<=n)return 'Expired';const d=Math.floor((ms-n)/864e5),h=Math.floor(((ms-n)%864e5)/36e5);return d>0?d+'d '+h+'h':h+'h';}
 function fmtAgo(sec){if(sec==null)return 'never';if(sec<90)return 'just now';const m=Math.floor(sec/60);if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<48)return h+'h ago';return Math.floor(h/24)+'d ago';}
+function fmtDate(ts){if(!ts)return '—';return new Date(ts*1000).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});}
 function fmtDur(sec){if(!sec)return '0h';const h=Math.floor(sec/3600);return h<48?h+'h':Math.floor(h/24)+'d';}
 function isOnline(k){return !k.disabled&&!k.pending&&k.lastSeen&&(Date.now()/1000-k.lastSeen)<300;}
 function agoSec(k){return k.lastSeen?Math.max(0,Math.floor(Date.now()/1000-k.lastSeen)):null;}
@@ -459,15 +460,19 @@ function modalCreate(){
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px">${[['10','10 GB'],['50','50 GB'],['100','100 GB'],['0','Unlimited']].map(([v,l])=>`<span class="chip" data-chip="cl" data-v="${v}">${l}</span>`).join('')}</div></div>
     <div class="field"><label class="lab">Valid for</label><input id="cd" class="inp" type="number" min="0" placeholder="Days" />
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px">${[['30','30 days'],['90','90 days'],['365','1 year'],['0','No expiry']].map(([v,l])=>`<span class="chip" data-chip="cd" data-v="${v}">${l}</span>`).join('')}</div></div>
-    <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="cm" class="inp" type="number" min="0" placeholder="Auto-renew off" /><div class="desc" style="margin:9px 0 0;font-size:12px;color:var(--dim)">Countdown starts on first connection. Monthly quota refreshes every 30 days.</div></div>
+    <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="cm" class="inp" type="number" min="0" placeholder="Auto-renew off" /><div class="desc" style="margin:9px 0 0;font-size:12px;color:var(--dim)">Monthly quota refreshes every 30 days.</div></div>
+    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">Start countdown now</label><div style="font-size:12px;color:var(--dim);max-width:230px" id="csd">Off: the clock starts on the user's first connection.</div></div><div class="toggle" id="cst"><div class="tk"></div><div class="kn"></div></div></div></div>
     <div id="ce" class="err"></div><button class="btn" id="cgo">Create key</button>`);
   ov.querySelector('#cn').focus();
+  let startNow=false;const stg=ov.querySelector('#cst');
+  stg.onclick=()=>{startNow=!startNow;stg.classList.toggle('on',startNow);
+    ov.querySelector('#csd').textContent=startNow?'On: the clock starts the moment the key is created.':"Off: the clock starts on the user's first connection.";};
   ov.querySelector('#cgo').onclick=async()=>{
     const sid=multi?ov.querySelector('#cs').value:(S.servers[0]&&S.servers[0].id);
     const name=ov.querySelector('#cn').value.trim();const lg=parseFloat(ov.querySelector('#cl').value||'0')||0;const dd=parseInt(ov.querySelector('#cd').value||'0')||0;const mg=parseFloat(ov.querySelector('#cm').value||'0')||0;
     const er=ov.querySelector('#ce');if(!sid){er.textContent='Add a server first.';return;}if(!name){er.textContent='Please enter a name.';return;}
     const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mg})});
+    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mg,start_now:startNow})});
       await refreshKeys();renderList();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
     catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create key';}
   };
@@ -508,7 +513,7 @@ function modalDetail(k){const b=kBits(k),now=Date.now()/1000;
     </div>`);
 }
 function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.monthlyBytes?(k.monthlyBytes/1073741824):'';const multi=S.servers.length>1;
-  const ov=openSheet(`<div class="h2">Manage key</div><p class="mono desc" style="font-size:13px">#${esc(k.id)}${multi?'  ·  '+esc(srvName(k.serverId)):''}</p>
+  const ov=openSheet(`<div class="h2">Manage key</div><p class="mono desc" style="font-size:13px">#${esc(k.id)}${multi?'  ·  '+esc(srvName(k.serverId)):''}  ·  created ${fmtDate(k.createdTs)}</p>
     <div class="field"><label class="lab">Name</label><input id="mn" class="inp" value="${esc(k.name)}" /></div>
     <div class="field"><label class="lab">Data limit · GB (0 = unlimited)</label><input id="ml" class="inp" type="number" min="0" value="${lim}" placeholder="Unlimited" /></div>
     <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="mq" class="inp" type="number" min="0" value="${mon}" placeholder="Auto-renew off" /></div>
