@@ -23,7 +23,16 @@ import httpx
 
 
 class OutlineError(Exception):
-    """Raised for any error while talking to the Outline API."""
+    """Raised for any error while talking to the Outline API.
+
+    ``status`` is the upstream HTTP status when the server answered, else None
+    (unreachable, TLS failure, ...). Callers use it to tell "the key is already
+    gone" (404) from "the server is down".
+    """
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 def _norm_fp(fp: str | None) -> str | None:
@@ -96,9 +105,15 @@ class OutlineAPI:
         host = parsed.hostname or ""
         port = parsed.port or 443
         loop = asyncio.get_running_loop()
-        der = await loop.run_in_executor(
-            None, _fetch_cert_der, host, port, self._timeout
-        )
+        try:
+            der = await loop.run_in_executor(
+                None, _fetch_cert_der, host, port, self._timeout
+            )
+        except (OSError, ssl.SSLError) as e:
+            # Every caller guards Outline calls with `except OutlineError`; a raw
+            # socket error here escapes them and 500s the whole endpoint — which
+            # is exactly the "server offline" case those guards exist to report.
+            raise OutlineError(f"Failed to reach the Outline server: {e}") from e
         fp = hashlib.sha256(der).hexdigest()
         if fp != self.cert_sha256:
             raise OutlineError(
@@ -135,7 +150,8 @@ class OutlineAPI:
             raise OutlineError(f"Failed to reach the Outline server: {e}") from e
         if resp.status_code >= 400:
             raise OutlineError(
-                f"Error response from server ({resp.status_code}): {resp.text[:200]}"
+                f"Error response from server ({resp.status_code}): {resp.text[:200]}",
+                status=resp.status_code,
             )
         return resp
 

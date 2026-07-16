@@ -82,27 +82,22 @@ async def disable_2fa(body: PasswordOnly):
 
 
 # ---------------------------------------------------------- Telegram bot
-def _bot_status(configured: bool, enabled: bool, admin_ids: set[int],
-                webapp_url: str | None) -> dict:
+async def _bot_status() -> dict:
+    """Read the bot's state from the store — both callers persist first."""
     st = botmgr.status()
     return {
-        "configured": configured,
-        "enabled": enabled,
+        "configured": bool(await settings.get(BOT_TOKEN)),
+        "enabled": await settings.get_bool(BOT_ENABLED),
         "running": st["running"],
         "username": st["username"],
-        "adminIds": sorted(admin_ids),
-        "webappUrl": webapp_url or "",
+        "adminIds": sorted(await settings.get_admin_ids()),
+        "webappUrl": await settings.get_webapp_url() or "",
     }
 
 
 @router.get("/bot")
 async def get_bot():
-    return _bot_status(
-        configured=bool(await settings.get(BOT_TOKEN)),
-        enabled=await settings.get_bool(BOT_ENABLED),
-        admin_ids=await settings.get_admin_ids(),
-        webapp_url=await settings.get_webapp_url(),
-    )
+    return await _bot_status()
 
 
 class BotTokenBody(BaseModel):
@@ -129,7 +124,7 @@ class BotBody(BaseModel):
 async def set_bot(body: BotBody):
     if body.token and body.token.strip():
         await settings.set(BOT_TOKEN, body.token.strip())
-    ids = ",".join(x.strip() for x in body.adminIds.split(",") if x.strip().isdigit())
+    ids = ",".join(x.strip() for x in body.adminIds.split(",") if x.strip().isdecimal())
     await settings.set(BOT_ADMIN_IDS, ids)
     await settings.set_bool(BOT_ENABLED, body.enabled)
     await settings.set(WEBAPP_URL, (body.webappUrl or "").strip().rstrip("/") or None)
@@ -142,6 +137,5 @@ async def set_bot(body: BotBody):
             await botmgr.stop()
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"Could not start bot: {e}")
-    return _bot_status(bool(token), body.enabled, await settings.get_admin_ids(),
-                       await settings.get_webapp_url())
+    return await _bot_status()
 

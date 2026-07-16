@@ -46,6 +46,19 @@ def api_or_404(sid: str) -> OutlineAPI:
     return api
 
 
+def sids_or_404(server: str | None) -> list[str]:
+    """Servers a list/stats query covers: the named one, or all when unfiltered.
+
+    An unknown id must 404, not fall back to "all" — that inverts a filter into
+    its opposite and reports every server's data as that one server's.
+    """
+    if not server:
+        return reg.ids()
+    if reg.meta(server) is None:
+        raise HTTPException(status_code=404, detail="Unknown server")
+    return [server]
+
+
 def host(url: str) -> str:
     try:
         return urlparse(url).netloc

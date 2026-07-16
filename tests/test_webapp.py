@@ -161,6 +161,55 @@ async def test_rate_limit_not_bypassed_by_rotating_xff(app):
     await c.aclose()
 
 
+async def test_login_rate_limit_does_not_hoard_ips(app):
+    """Every IP we merely saw used to get a bucket — including ones already
+    being 429'd — so a botnet grew this dict until the process died."""
+    from outline_panel.web.routers import auth
+    c = await _client(app, login=False)
+    for i in range(200):
+        await c.post("/api/login", json={"password": "x"},
+                     headers={"x-forwarded-for": f"9.9.{i // 256}.{i % 256}"})
+    # TRUST_PROXY=false here, so every request shares one bucket; what matters is
+    # that no bucket is kept for an IP with nothing recorded against it.
+    assert all(v for v in auth._login_fails.values())
+    assert len(auth._login_fails) <= auth._GLOBAL_MAX_FAILS
+    await c.aclose()
+
+
+async def test_unknown_server_filter_is_404_not_everything(app):
+    """A falsy lookup used to fall through to reg.ids(), inverting the filter:
+    ?server=<deleted> answered with every server's keys."""
+    _register(app, "s1", "Tokyo", FakeOutline())
+    await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
+    c = await _client(app)
+    assert (await c.get("/api/keys?server=s1")).status_code == 200
+    assert (await c.get("/api/keys?server=gone")).status_code == 404
+    assert (await c.get("/api/stats?server=gone")).status_code == 404
+    await c.aclose()
+
+
+async def test_api_responses_are_not_cacheable(app):
+    """/api carries ss:// keys, api_urls with their secret path, bot tokens."""
+    _register(app, "s1", "Tokyo", FakeOutline())
+    await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
+    c = await _client(app)
+    for path in ("/api/keys", "/api/servers", "/api/settings/bot"):
+        r = await c.get(path)
+        assert r.headers.get("cache-control") == "no-store", path
+    await c.aclose()
+
+
+async def test_tma_is_framable_by_telegram_only(app):
+    """Telegram Web renders the Mini App in an iframe; XFO:DENY blocked it."""
+    c = await _client(app, login=False)
+    tma = await c.get("/tma")
+    assert "x-frame-options" not in tma.headers
+    assert "web.telegram.org" in tma.headers["content-security-policy"]
+    dash = await c.get("/")
+    assert dash.headers["x-frame-options"] == "DENY"  # everything else stays denied
+    await c.aclose()
+
+
 async def test_healthz_no_auth(app):
     c = await _client(app, login=False)
     r = await c.get("/healthz")
@@ -275,6 +324,43 @@ async def test_subscription_browser_vs_client(app):
     assert info["name"] == "Ali" and info["unlimited"] is False
     assert info["total"] == 10 * 1024 ** 3 and len(info["servers"]) == 1
     await pub.aclose()
+    await c.aclose()
+
+
+async def test_restore_failure_keeps_the_panel(app):
+    """A bad row must not leave the wipe pending: the next commit from anywhere
+    (the scheduler) would flush it and take servers, keys and password with it."""
+    fake = FakeOutline()
+    _register(app, "s1", "Tokyo", fake)
+    await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
+    await app.db.add_key("s1", "1", "Ali", 10 * 1024 ** 3, 30)
+    await app.db.set_setting("admin_password_hash", "deadbeef")
+    c = await _client(app)
+
+    bad = {"servers": [], "keys": [{}], "settings": {}}  # a key row with no columns
+    r = await c.post("/api/restore", json=bad)
+    assert r.status_code == 400
+
+    # the DB rolled back, and a later routine write must not resurrect the wipe
+    await app.db.set_disabled("s1", "1", True)
+    assert len(await app.db.all_servers()) == 1
+    assert len(await app.db.all_keys()) == 1
+    assert await app.db.get_setting("admin_password_hash") is not None
+    await c.aclose()
+
+
+async def test_restore_without_settings_is_rejected(app):
+    """import_all wipes settings, so a payload without them would restore a
+    panel whose admin password is gone — no password could ever log in again."""
+    await app.db.set_setting("admin_password_hash", "deadbeef")
+    c = await _client(app)
+    r = await c.post("/api/restore", json={"servers": [], "keys": []})
+    assert r.status_code == 400
+    assert await app.db.get_setting("admin_password_hash") == "deadbeef"
+    # a complete backup still restores
+    ok = await c.post("/api/restore",
+                      json={"servers": [], "keys": [], "settings": {"x": "1"}})
+    assert ok.status_code == 200
     await c.aclose()
 
 

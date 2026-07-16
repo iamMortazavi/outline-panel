@@ -20,11 +20,10 @@ import time
 
 from . import config
 from .outline_api import OutlineError
-from .utils import fmt_bytes, fmt_expiry
+from .utils import MONTH_SECONDS, fmt_bytes, fmt_expiry
 
 log = logging.getLogger("scheduler")
 
-_MONTH_SECONDS = 30 * 86400
 
 
 async def expiry_loop(registry, db, interval: int, notifier=None) -> None:
@@ -93,7 +92,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
                 # advance the next reset from rt to avoid drift
                 nxt = rt
                 while nxt <= now:
-                    nxt += _MONTH_SECONDS
+                    nxt += MONTH_SECONDS
                 await db.set_reset(sid, kid, nxt)
                 notified.discard((sid, kid, "limit"))
                 log.info("monthly quota for %s/%s reset (%s).", sid, kid, fmt_bytes(mb))

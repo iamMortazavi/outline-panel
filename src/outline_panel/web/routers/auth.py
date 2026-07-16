@@ -48,7 +48,14 @@ def _check_login_rate(ip: str) -> None:
     global _global_fails
     _global_fails = [t for t in _global_fails if now - t < _LOGIN_WINDOW]
     fails = [t for t in _login_fails.get(ip, []) if now - t < _LOGIN_WINDOW]
-    _login_fails[ip] = fails
+    # Only keep IPs that actually owe us something. Storing a bucket for every
+    # IP we merely *saw* grew this dict forever — one entry per source address,
+    # even for requests already being 429'd, which is free memory for a botnet.
+    # The global ceiling bounds recorded fails per window, so this stays small.
+    if fails:
+        _login_fails[ip] = fails
+    else:
+        _login_fails.pop(ip, None)
     if len(fails) >= _LOGIN_MAX_FAILS or len(_global_fails) >= _GLOBAL_MAX_FAILS:
         raise HTTPException(status_code=429, detail=_RATE_MSG)
 

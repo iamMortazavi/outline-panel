@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,24 +33,28 @@ class MetricsBody(BaseModel):
     enabled: bool
 
 
+async def _server_info(sid: str) -> dict:
+    m = reg.meta(sid)
+    info, reachable = {}, False
+    try:
+        info = await m["api"].get_server_info()
+        reachable = True
+    except OutlineError:
+        pass
+    return {
+        "id": sid, "name": m["name"], "host": host(m["api_url"]),
+        "reachable": reachable,
+        "serverName": info.get("name"), "version": info.get("version"),
+    }
+
+
 @router.get("/servers")
 async def list_servers():
-    out = []
-    for sid in reg.ids():
-        m = reg.meta(sid)
-        api = m["api"]
-        info, reachable = {}, False
-        try:
-            info = await api.get_server_info()
-            reachable = True
-        except OutlineError:
-            pass
-        out.append({
-            "id": sid, "name": m["name"], "host": host(m["api_url"]),
-            "reachable": reachable,
-            "serverName": info.get("name"), "version": info.get("version"),
-        })
-    return {"servers": out}
+    # Probe concurrently (like stats.py): serially, N unreachable servers each
+    # burn the full 15s timeout and the whole list times out behind a proxy.
+    return {"servers": list(await asyncio.gather(
+        *[_server_info(sid) for sid in reg.ids()]
+    ))}
 
 
 @router.post("/servers")

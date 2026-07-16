@@ -80,8 +80,18 @@ async def security_headers(request: Request, call_next):
     """Cheap, always-safe hardening headers on every response."""
     resp = await call_next(request)
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-    resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    # The Mini App is framed by Telegram Web; every other page must not be.
+    if request.url.path.startswith("/tma"):
+        resp.headers.setdefault("Content-Security-Policy",
+                                "frame-ancestors https://web.telegram.org "
+                                "https://*.telegram.org")
+    else:
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+    # No API response here is cacheable: they carry ss:// keys, api_urls with
+    # their secret path, bot tokens. A route may still set its own.
+    if request.url.path.startswith(("/api/", "/tma/api/")):
+        resp.headers.setdefault("Cache-Control", "no-store")
     # HSTS only when the connection is actually HTTPS (honor a trusted proxy).
     https = request.url.scheme == "https" or (
         config.TRUST_PROXY

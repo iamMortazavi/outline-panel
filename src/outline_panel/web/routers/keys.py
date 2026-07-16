@@ -11,14 +11,12 @@ from pydantic import BaseModel, Field
 
 from ...core import security
 from ...core.outline_api import OutlineAPI, OutlineError
-from ...core.utils import gb_to_bytes
-from ..deps import api_or_404, db, reg, require_session
+from ...core.utils import MONTH_SECONDS, gb_to_bytes
+from ..deps import api_or_404, db, reg, require_session, sids_or_404
 
 log = logging.getLogger("web.keys")
 router = APIRouter(prefix="/api", tags=["keys"],
                    dependencies=[Depends(require_session)])
-
-_MONTH = 30 * 86400
 
 
 # --------------------------------------------------------------- read helpers
@@ -76,8 +74,6 @@ async def keys_for_server(sid: str) -> dict:
             "limit": limit_b,
             "expiry": meta.get("expiry_ts"),
             "monthlyBytes": meta.get("monthly_bytes"),
-            "resetTs": meta.get("reset_ts"),
-            "subToken": meta.get("sub_token"),
             "durationDays": duration,
             "activated": activated,
             "pending": duration is not None and not activated,
@@ -91,7 +87,7 @@ async def keys_for_server(sid: str) -> dict:
 
 @router.get("/keys")
 async def list_keys(server: str | None = None):
-    sids = [server] if server and reg.meta(server) else reg.ids()
+    sids = sids_or_404(server)
     results = await asyncio.gather(*[keys_for_server(s) for s in sids])
     keys = [k for r in results for k in r["keys"]]
     keys.sort(key=lambda x: (x["serverName"] or "", int(x["id"]) if str(x["id"]).isdigit() else 0))
@@ -164,7 +160,7 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
     try:
         await db.add_key(sid, key["id"], name, limit_bytes, duration)
         if monthly_bytes:
-            await db.set_monthly(sid, key["id"], monthly_bytes, int(time.time()) + _MONTH)
+            await db.set_monthly(sid, key["id"], monthly_bytes, int(time.time()) + MONTH_SECONDS)
     except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
         log.exception("DB persist failed; deleting orphan key %s", key.get("id"))
         try:
@@ -215,13 +211,26 @@ async def set_key_limit(sid: str, kid: str, body: LimitBody):
 
 @router.put("/servers/{sid}/keys/{kid}/monthly")
 async def set_key_monthly(sid: str, kid: str, body: MonthlyBody):
-    api_or_404(sid)
-    await ensure_local(sid, kid)
+    api = api_or_404(sid)
+    meta = await ensure_local(sid, kid)
     if body.monthly_gb > 0:
+        monthly = gb_to_bytes(body.monthly_gb)
+        # Seed the first cycle's allowance on Outline (create_key_for:157 does
+        # the same). Without it the quota is bookkeeping only and the key runs
+        # unmetered until the first scheduler reset, a full cycle away.
+        if meta.get("limit_bytes") is None and not meta.get("disabled"):
+            try:
+                usage = await api.get_transfer_metrics()
+                # same shape as the scheduler's reset (scheduler.py:89-92):
+                # limit_bytes holds the cumulative ceiling, not the plan size
+                new_limit = int(usage.get(str(kid), 0)) + monthly
+                await api.set_data_limit(kid, new_limit)
+            except OutlineError as e:
+                raise HTTPException(status_code=502, detail=str(e))
+            await db.set_limit(sid, kid, new_limit)
         # First reset one cycle out (like create_key_for) so saving a quota
         # doesn't trigger an immediate reset on the next scheduler pass.
-        await db.set_monthly(sid, kid, gb_to_bytes(body.monthly_gb),
-                             int(time.time()) + _MONTH)
+        await db.set_monthly(sid, kid, monthly, int(time.time()) + MONTH_SECONDS)
     else:
         await db.set_monthly(sid, kid, None, None)
     return {"ok": True}
@@ -260,19 +269,22 @@ async def extend_key(sid: str, kid: str, body: ExtendBody):
     api = api_or_404(sid)
     meta = await ensure_local(sid, kid)
     now = int(time.time())
+    # Re-enable FIRST: committing the new expiry before the Outline call means a
+    # 502 still moves the date, and the admin's retry extends a second time.
+    # only re-enable on an extension, never on a reduction
+    if body.days > 0 and meta.get("disabled"):
+        try:
+            await enable_on_outline(api, kid, meta)
+        except OutlineError as e:
+            raise HTTPException(status_code=502, detail=str(e))
     if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
         # not yet activated — adjust the stored duration (min 1 day)
         await db.set_duration(sid, kid, max(1, int(meta["duration_days"]) + body.days))
     else:
         base = max(meta.get("expiry_ts") or 0, now)
         await db.set_expiry(sid, kid, max(now, base + body.days * 86400))
-    # only re-enable on an extension, never on a reduction
     if body.days > 0 and meta.get("disabled"):
-        try:
-            await enable_on_outline(api, kid, meta)
-            await db.set_disabled(sid, kid, False)
-        except OutlineError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+        await db.set_disabled(sid, kid, False)
     return {"ok": True}
 
 
@@ -285,10 +297,12 @@ async def reset_usage(sid: str, kid: str):
     """
     api = api_or_404(sid)
     meta = await ensure_local(sid, kid)
-    base = meta.get("monthly_bytes") or meta.get("limit_bytes")
+    # Only monthly_bytes may be the base. limit_bytes is the *cumulative ceiling*
+    # this endpoint itself writes below, so using it would compound every cycle
+    # (10 -> 20 -> 40 GB). A plain data limit has no per-cycle size to restore.
+    base = meta.get("monthly_bytes")
     if not base:
-        raise HTTPException(status_code=400,
-                            detail="Set a data limit or monthly quota first")
+        raise HTTPException(status_code=400, detail="Set a monthly quota first")
     try:
         usage = await api.get_transfer_metrics()
         used = int(usage.get(str(kid), 0))
@@ -349,10 +363,20 @@ async def sub_add_server(token: str, target: str):
     duration = primary.get("duration_days")
     try:
         key = await api.create_key(name=name, limit_bytes=limit_bytes)
+        # The mirror is the same subscription, so it inherits the primary's
+        # state — not a fresh one. Without this an expired, suspended user gets
+        # a live config with a full allowance and a clock that restarts.
+        if primary.get("disabled"):
+            await api.set_data_limit(key["id"], 0)
     except OutlineError as e:
         raise HTTPException(status_code=502, detail=str(e))
     try:
         await db.add_key(target, key["id"], name, limit_bytes, duration)
+        if primary.get("activated_ts"):
+            await db.activate(target, key["id"], int(primary["activated_ts"]),
+                              int(primary["expiry_ts"] or 0))
+        if primary.get("disabled"):
+            await db.set_disabled(target, key["id"], True)
         await db.set_sub_token(target, key["id"], token)
     except Exception as e:  # noqa: BLE001 — don't leave an orphan key
         log.exception("sub mirror persist failed; deleting orphan key")
@@ -383,6 +407,11 @@ async def delete_key(sid: str, kid: str):
     try:
         await api.delete_key(kid)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        # Already gone upstream (deleted straight from Outline Manager) is a
+        # success for us: still drop the local row, or it becomes an
+        # undeletable ghost — invisible in the key list, yet still holding the
+        # subscription token that sub_add_server clones from.
+        if e.status != 404:
+            raise HTTPException(status_code=502, detail=str(e))
     await db.delete_key(sid, kid)
     return {"ok": True}

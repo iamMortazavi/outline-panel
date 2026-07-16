@@ -46,7 +46,7 @@ class SettingsStore:
 
     async def get_admin_ids(self) -> set[int]:
         raw = await self.get(BOT_ADMIN_IDS, "") or ""
-        return {int(x) for x in raw.split(",") if x.strip().isdigit()}
+        return {int(x) for x in raw.split(",") if x.strip().isdecimal()}
 
     async def get_webapp_url(self) -> str | None:
         """Public HTTPS base URL of the panel, or None. The Mini App lives at

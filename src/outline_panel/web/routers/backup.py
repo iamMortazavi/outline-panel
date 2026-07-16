@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from ..deps import db, reg, require_session, settings
+from ...core.settings import BOT_ENABLED, BOT_TOKEN
+from ..deps import botmgr, db, reg, require_session, settings
+
+log = logging.getLogger("webapp")
 
 router = APIRouter(prefix="/api", tags=["backup"],
                    dependencies=[Depends(require_session)])
@@ -27,14 +32,30 @@ async def download_backup():
 
 @router.post("/restore")
 async def restore_backup(payload: dict):
-    if not isinstance(payload, dict) or "keys" not in payload or "servers" not in payload:
-        raise HTTPException(status_code=400, detail="Not a valid backup file")
-    await db.import_all(payload)
+    # "settings" is not optional: import_all wipes the table, so a payload
+    # without it would restore a panel with no admin password — unloggable-into.
+    for field in ("servers", "keys", "settings"):
+        if payload.get(field) is None:
+            raise HTTPException(status_code=400,
+                                detail=f"Not a valid backup file (missing {field})")
+    try:
+        await db.import_all(payload)
+    except Exception as e:  # noqa: BLE001 — a bad row is a bad file, and the DB rolled back
+        raise HTTPException(status_code=400, detail=f"Not a valid backup file: {e}")
     # rebuild in-memory state from the restored DB
     settings._cache.clear()
     await reg.close_all()
     reg.servers.clear()
     await reg.load()
+    # the restored bot token may differ from the one currently polling
+    try:
+        token = await settings.get(BOT_TOKEN)
+        if await settings.get_bool(BOT_ENABLED) and token:
+            await botmgr.start(token)
+        else:
+            await botmgr.stop()
+    except Exception as e:  # noqa: BLE001 — a bad token must not fail the restore
+        log.warning("bot did not restart after restore: %s", e)
     return {"ok": True,
-            "servers": len(payload.get("servers", [])),
-            "keys": len(payload.get("keys", []))}
+            "servers": len(payload["servers"]),
+            "keys": len(payload["keys"])}

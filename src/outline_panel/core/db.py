@@ -311,30 +311,40 @@ class DB:
         }
 
     async def import_all(self, data: dict) -> None:
-        servers = data.get("servers", [])
-        keys = data.get("keys", [])
-        settings = data.get("settings", {})
+        """Replace servers/keys/settings with ``data``, all-or-nothing.
+
+        The wipe and the refill MUST share one transaction: without the
+        rollback, a bad row leaves the DELETEs pending and the next commit
+        from anywhere (the scheduler) flushes them — losing the whole panel.
+        """
+        servers = data.get("servers") or []
+        keys = data.get("keys") or []
+        settings = data.get("settings") or {}
         async with self._lock:
-            await self.conn.execute("DELETE FROM servers")
-            await self.conn.execute("DELETE FROM keys")
-            await self.conn.execute("DELETE FROM settings")
-            for s in servers:
-                cols = [c for c in self._SERVER_COLS if c in s]
-                await self.conn.execute(
-                    f"INSERT INTO servers ({','.join(cols)}) "
-                    f"VALUES ({','.join('?' * len(cols))})",
-                    [s.get(c) for c in cols],
-                )
-            for k in keys:
-                cols = [c for c in self._KEY_COLS if c in k]
-                await self.conn.execute(
-                    f"INSERT INTO keys ({','.join(cols)}) "
-                    f"VALUES ({','.join('?' * len(cols))})",
-                    [k.get(c) for c in cols],
-                )
-            for key, val in settings.items():
-                await self.conn.execute(
-                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                    (key, val),
-                )
-            await self.conn.commit()
+            try:
+                await self.conn.execute("DELETE FROM servers")
+                await self.conn.execute("DELETE FROM keys")
+                await self.conn.execute("DELETE FROM settings")
+                for s in servers:
+                    cols = [c for c in self._SERVER_COLS if c in s]
+                    await self.conn.execute(
+                        f"INSERT INTO servers ({','.join(cols)}) "
+                        f"VALUES ({','.join('?' * len(cols))})",
+                        [s.get(c) for c in cols],
+                    )
+                for k in keys:
+                    cols = [c for c in self._KEY_COLS if c in k]
+                    await self.conn.execute(
+                        f"INSERT INTO keys ({','.join(cols)}) "
+                        f"VALUES ({','.join('?' * len(cols))})",
+                        [k.get(c) for c in cols],
+                    )
+                for key, val in settings.items():
+                    await self.conn.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                        (key, val),
+                    )
+                await self.conn.commit()
+            except BaseException:
+                await self.conn.rollback()
+                raise

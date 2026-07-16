@@ -5,6 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 GB = 1024 ** 3
+# One billing cycle. The router seeds the first reset with it and the
+# scheduler advances every later one — they must not drift apart.
+MONTH_SECONDS = 30 * 86400
 
 
 def gb_to_bytes(gb: float) -> int:
