@@ -12,8 +12,31 @@ from ..bot.manager import BotManager
 from ..core import config
 from ..core.db import DB
 from ..core.outline_api import OutlineAPI
+
+# The rules live in core so the bot can use them too (deps → bot.manager →
+# bot.dispatcher would be a cycle). Re-exported here because the routers import
+# them from deps alongside db/reg.
+from ..core.rights import (
+    CAPS,
+    can_see,
+    csv_list,
+    has_cap,
+    is_owner,
+    on_credit,
+    owns,
+    price_for,
+)
 from ..core.settings import SettingsStore
 from .registry import Registry
+
+_csv = csv_list
+__all__ = [  # re-exported: the routers import the rules from here
+    "CAPS", "can_see", "csv_list", "_csv", "has_cap", "is_owner", "on_credit",
+    "owns", "price_for", "db", "reg", "settings", "botmgr", "signer",
+    "COOKIE_NAME", "STATIC_DIR", "current_admin", "require", "require_owner",
+    "assert_cap", "assert_key_access", "enforce_scope", "admin_for_telegram",
+    "api_or_404", "sids_or_404", "scoped_ids", "host",
+]
 
 COOKIE_NAME = "outline_session"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -21,16 +44,23 @@ STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 db = DB(config.DB_PATH)
 reg = Registry(db)
 settings = SettingsStore(db)
-botmgr = BotManager(db, reg, settings.get_admin_ids, settings.get_webapp_url)
+async def create_key_as(admin: dict, sid: str, **fields) -> dict:
+    """Create a key exactly the way the dashboard does, on behalf of `admin`.
+
+    The bot used to have its own copy of this and so charged nobody and
+    attributed nothing — a credit reseller could mint free keys over Telegram.
+    The import is deliberately lazy: routers.keys imports this module, so a
+    top-level import here would be a cycle.
+    """
+    from .routers import keys as keys_router
+    return await keys_router.create_key(
+        sid, keys_router.CreateBody(**fields), admin)
+
+
+botmgr = BotManager(db, reg, settings.get_admin_ids, settings.get_webapp_url,
+                    resolve_admin=settings.admin_for_telegram,
+                    create_key=create_key_as)
 signer = URLSafeTimedSerializer(config.SESSION_SECRET, salt="session")
-
-
-# Capabilities a sub-admin can be granted. Deliberately NOT here, and never
-# delegatable: backup/restore (its export carries every password hash and the
-# bot token, and restore rewrites the panel), managing admins (you could grant
-# yourself anything), and the owner's own password/2FA.
-CAPS = ("keys.view", "keys.create", "keys.edit", "keys.delete",
-        "servers.manage", "bot.manage")
 
 
 async def current_admin(outline_session: str | None = Cookie(default=None)) -> dict:
@@ -56,44 +86,8 @@ async def current_admin(outline_session: str | None = Cookie(default=None)) -> d
     return row
 
 
-def is_owner(admin: dict) -> bool:
-    return bool(admin.get("is_owner"))
-
-
-def _csv(value: str | None) -> list[str]:
-    return [x for x in (value or "").split(",") if x]
-
-
-def can_see(admin: dict, sid: str) -> bool:
-    """The owner, and any sub-admin whose allowlist is empty, see every server."""
-    if is_owner(admin):
-        return True
-    allowed = _csv(admin.get("servers"))
-    return not allowed or sid in allowed
-
-
 def scoped_ids(admin: dict) -> list[str]:
     return [s for s in reg.ids() if can_see(admin, s)]
-
-
-def has_cap(admin: dict, cap: str) -> bool:
-    return is_owner(admin) or cap in _csv(admin.get("caps"))
-
-
-def on_credit(admin: dict) -> bool:
-    """Whether this admin buys from the price list. The owner never does, and
-    an admin left outside the credit system keeps the free-form form."""
-    return not is_owner(admin) and bool(admin.get("credit_enabled"))
-
-
-def price_for(pkg: dict, admin: dict) -> int:
-    """What this admin pays for this package, after their personal discount.
-
-    One base price per package plus a per-admin percentage — the single place
-    that math happens, so the picker and the charge can never disagree.
-    """
-    pct = max(0, min(100, int(admin.get("discount_pct") or 0)))
-    return round(int(pkg["price"]) * (100 - pct) / 100)
 
 
 def require(*caps: str):
@@ -113,18 +107,26 @@ async def require_owner(admin: dict = Depends(current_admin)) -> dict:
     return admin
 
 
-def owns(admin: dict, meta: dict | None) -> bool:
-    """Whether this admin's page a key belongs on.
+def assert_cap(admin: dict, cap: str) -> None:
+    """Raise unless this admin holds `cap`. The dependency form is require()."""
+    if not has_cap(admin, cap):
+        raise HTTPException(status_code=403,
+                            detail="You do not have permission for this")
 
-    NULL owner means the panel owner's — that is how every key created before
-    ownership existed stays theirs, with no backfill. A key Outline knows about
-    but the panel has no row for is unattributed, so it is the owner's too.
+
+async def assert_key_access(admin: dict, sid: str | None,
+                            kid: str | None = None) -> None:
+    """The scope + ownership rules, callable outside a FastAPI dependency.
+
+    The dashboard reaches these through enforce_scope; the Telegram bot and
+    Mini App call them directly. One implementation, so Telegram cannot drift
+    into being a back door with laxer rules than the panel.
     """
-    if is_owner(admin):
-        return True
-    if meta is None:
-        return False
-    return meta.get("owner_admin_id") == admin["id"]
+    if sid and not can_see(admin, sid):
+        raise HTTPException(status_code=404, detail="Unknown server")
+    if sid and kid and not is_owner(admin):
+        if not owns(admin, await db.get_key(sid, kid)):
+            raise HTTPException(status_code=404, detail="Unknown key")
 
 
 async def enforce_scope(request: Request,
@@ -136,13 +138,13 @@ async def enforce_scope(request: Request,
     Out-of-scope servers and other admins' users 404: to a sub-admin they
     simply do not exist.
     """
-    sid = request.path_params.get("sid")
-    if sid and not can_see(admin, sid):
-        raise HTTPException(status_code=404, detail="Unknown server")
-    kid = request.path_params.get("kid")
-    if sid and kid and not is_owner(admin):
-        if not owns(admin, await db.get_key(sid, kid)):
-            raise HTTPException(status_code=404, detail="Unknown key")
+    await assert_key_access(admin, request.path_params.get("sid"),
+                            request.path_params.get("kid"))
+
+
+async def admin_for_telegram(uid: int | None) -> dict | None:
+    """The panel admin behind a Telegram user — the bot resolves the same way."""
+    return await settings.admin_for_telegram(uid)
 
 
 def api_or_404(sid: str) -> OutlineAPI:

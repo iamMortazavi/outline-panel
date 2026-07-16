@@ -29,12 +29,14 @@ from aiogram.types import (
 )
 
 from ..core.outline_api import OutlineError
+from ..core.rights import can_see, has_cap, on_credit, owns, price_for
 from ..core.utils import fmt_bytes, fmt_expiry, gb_to_bytes
 
 
 class NewUser(StatesGroup):
     server = State()
     name = State()
+    package = State()      # credit admins buy instead of naming a size
     data_limit = State()
     duration = State()
 
@@ -44,12 +46,21 @@ class EditKey(StatesGroup):
     limit = State()
 
 
+class _Uid:
+    """admin_of() takes an aiogram event; is_admin() takes a bare id."""
+
+    def __init__(self, uid: int):
+        self.from_user = type("U", (), {"id": uid})()
+
+
 def build_dispatcher(
     db,
     registry,
     get_admin_ids: Callable[[], set[int] | Awaitable[set[int]]],
     notifier=None,
     get_webapp_url: Callable[[], str | None | Awaitable[str | None]] | None = None,
+    resolve_admin=None,
+    create_key=None,
 ) -> Dispatcher:
     dp = Dispatcher()
 
@@ -70,11 +81,34 @@ def build_dispatcher(
             return None
         return f"{res.rstrip('/')}/tma"
 
-    async def is_admin(uid: int) -> bool:
-        return uid in await admin_ids()
+    async def admin_of(target) -> dict | None:
+        """The panel admin behind a Telegram user, with their caps and scope.
 
-    async def deny(target: Message | CallbackQuery) -> None:
-        text = "⛔️ You are not authorized to use this bot."
+        The bot used to answer a flat yes/no from a list of ids, so every bot
+        admin could do everything to every server. Now it carries the same
+        identity the dashboard does.
+        """
+        uid = target.from_user.id
+        if resolve_admin is not None:
+            return await resolve_admin(uid)
+        return {"is_owner": 1} if uid in await admin_ids() else None  # tests
+
+    async def is_admin(uid: int) -> bool:
+        return await admin_of(_Uid(uid)) is not None
+
+    async def gate(target, cap: str | None = None) -> dict | None:
+        """Resolve + authorise in one line, or answer and return None."""
+        admin = await admin_of(target)
+        if admin is None:
+            await deny(target)
+            return None
+        if cap and not has_cap(admin, cap):
+            await deny(target, "⛔️ You do not have permission for this.")
+            return None
+        return admin
+
+    async def deny(target: Message | CallbackQuery, text: str | None = None) -> None:
+        text = text or "⛔️ You are not authorized to use this bot."
         if isinstance(target, CallbackQuery):
             await target.answer(text, show_alert=True)
         else:
@@ -98,8 +132,8 @@ def build_dispatcher(
     @dp.message(Command("start"))
     async def cmd_start(msg: Message, state: FSMContext) -> None:
         await state.clear()
-        if not await is_admin(msg.from_user.id):
-            return await deny(msg)
+        if not await gate(msg):
+            return
         await msg.answer("🛡 <b>Outline Panel</b>\n\nChoose an option:",
                          reply_markup=main_menu(await webapp_url()), parse_mode="HTML")
 
@@ -111,8 +145,8 @@ def build_dispatcher(
     @dp.callback_query(F.data == "menu")
     async def cb_menu(cq: CallbackQuery, state: FSMContext) -> None:
         await state.clear()
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        if not await gate(cq):
+            return
         await cq.message.edit_text("🛡 <b>Outline Panel</b>\n\nChoose an option:",
                                    reply_markup=main_menu(await webapp_url()), parse_mode="HTML")
         await cq.answer()
@@ -120,11 +154,14 @@ def build_dispatcher(
     # -------------------------------------------------------- create user
     @dp.callback_query(F.data == "new")
     async def cb_new(cq: CallbackQuery, state: FSMContext) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
-        sids = registry.ids()
+        admin = await gate(cq, "keys.create")
+        if not admin:
+            return
+        sids = [x for x in registry.ids() if can_see(admin, x)]
         if not sids:
-            return await cq.answer("No server is configured.", show_alert=True)
+            return await cq.answer("No server is available to you.", show_alert=True)
+        # remember who is buying: the FSM outlives this callback
+        await state.update_data(aid=admin["id"], credit=on_credit(admin))
         if len(sids) == 1:
             await state.update_data(sid=sids[0])
             await state.set_state(NewUser.name)
@@ -140,7 +177,13 @@ def build_dispatcher(
 
     @dp.callback_query(NewUser.server, F.data.startswith("newsrv:"))
     async def cb_new_server(cq: CallbackQuery, state: FSMContext) -> None:
-        await state.update_data(sid=cq.data.split(":", 1)[1])
+        admin = await gate(cq, "keys.create")
+        if not admin:
+            return
+        sid = cq.data.split(":", 1)[1]
+        if not can_see(admin, sid):   # callback data comes from the client
+            return await cq.answer("Unknown server.", show_alert=True)
+        await state.update_data(sid=sid)
         await state.set_state(NewUser.name)
         await cq.message.edit_text("📝 Enter the new user's name:")
         await cq.answer()
@@ -148,10 +191,67 @@ def build_dispatcher(
     @dp.message(NewUser.name)
     async def step_name(msg: Message, state: FSMContext) -> None:
         await state.update_data(name=msg.text.strip())
-        await state.set_state(NewUser.data_limit)
-        await msg.answer("💾 Enter the data limit in <b>GB</b>.\n"
-                         "Send <code>0</code> for unlimited.",
-                         parse_mode="HTML")
+        data = await state.get_data()
+        if not data.get("credit"):
+            await state.set_state(NewUser.data_limit)
+            return await msg.answer("💾 Enter the data limit in <b>GB</b>.\n"
+                                    "Send <code>0</code> for unlimited.",
+                                    parse_mode="HTML")
+        # On credit: only the price list. A free-form size here would let a
+        # reseller mint whatever they liked and never be charged for it.
+        admin = await admin_of(msg)
+        pkgs = await db.all_packages()
+        if not pkgs:
+            await state.clear()
+            return await msg.answer("❌ No packages are available yet. "
+                                    "Ask the owner to add one.")
+        rows = []
+        for pk in pkgs:
+            price = price_for(pk, admin)
+            size = "Unlimited" if pk["gb"] is None else f"{pk['gb']:g} GB"
+            term = f"{pk['days']}d" if pk["days"] else "no expiry"
+            afford = int(admin.get("credit") or 0) >= price
+            rows.append([InlineKeyboardButton(
+                text=f"{'' if afford else '🔒 '}{pk['name']} · {size} · {term} · {price:,}",
+                callback_data=f"newpkg:{pk['id']}")])
+        await state.set_state(NewUser.package)
+        await msg.answer(
+            f"📦 Pick a package.\nYour credit: <b>{int(admin.get('credit') or 0):,}</b>",
+            parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=rows))
+
+    async def _finish_create(target: Message, state: FSMContext, admin: dict,
+                             **fields) -> None:
+        """Create through the panel's own path, so the bot charges credit and
+        records ownership exactly like the dashboard."""
+        data = await state.get_data()
+        await state.clear()
+        sid = data["sid"]
+        if create_key is None:      # only in tests without the injection
+            return await target.answer("❌ Key creation is unavailable.")
+        try:
+            key = await create_key(admin, sid, name=data["name"], **fields)
+        except Exception as e:  # noqa: BLE001 — HTTPException carries the reason
+            reason = getattr(e, "detail", None) or str(e)
+            return await target.answer(f"❌ Could not create the user:\n{reason}")
+        dur = key.get("durationDays")
+        exp_txt = f"{dur} days from first connection" if dur else "No expiry"
+        await target.answer(
+            "✅ <b>User created</b>\n\n"
+            f"👤 Name: <b>{html.escape(data['name'])}</b>\n"
+            f"🆔 ID: <code>{key['id']}</code>\n"
+            f"💾 Data limit: {fmt_bytes(key.get('limit'))}\n"
+            f"⏳ Validity: {exp_txt}\n\n"
+            f"🔗 Connection link:\n<code>{html.escape(key['accessUrl'])}</code>",
+            parse_mode="HTML", reply_markup=back_menu())
+
+    @dp.callback_query(NewUser.package, F.data.startswith("newpkg:"))
+    async def cb_new_package(cq: CallbackQuery, state: FSMContext) -> None:
+        admin = await gate(cq, "keys.create")
+        if not admin:
+            return
+        await cq.answer()
+        await _finish_create(cq.message, state, admin,
+                             package_id=int(cq.data.split(":", 1)[1]))
 
     @dp.message(NewUser.data_limit)
     async def step_limit(msg: Message, state: FSMContext) -> None:
@@ -175,51 +275,30 @@ def build_dispatcher(
                 raise ValueError
         except ValueError:
             return await msg.answer("⚠️ Please enter a whole number (e.g. 30 or 0).")
+        admin = await admin_of(msg)
+        if admin is None:
+            await state.clear()
+            return await deny(msg)
         data = await state.get_data()
-        await state.clear()
-        sid = data["sid"]
-        api = registry.get(sid)
-        if api is None:
-            return await msg.answer("❌ The selected server is no longer available.")
-        name, gb = data["name"], data["limit_gb"]
-        limit_bytes = gb_to_bytes(gb) if gb > 0 else None
-        duration = days if days > 0 else None
-        try:
-            key = await api.create_key(name=name, limit_bytes=limit_bytes)
-        except OutlineError as e:
-            return await msg.answer(f"❌ Could not create the user:\n{e}")
-        try:
-            await db.add_key(sid, key["id"], name, limit_bytes, duration)
-        except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
-            try:
-                await api.delete_key(key["id"])
-            except OutlineError:
-                pass
-            return await msg.answer(f"❌ Could not create the user:\n{e}")
-        exp_txt = f"{duration} days from first connection" if duration else "No expiry"
-        await msg.answer(
-            "✅ <b>User created</b>\n\n"
-            f"👤 Name: <b>{html.escape(name)}</b>\n"
-            f"🆔 ID: <code>{key['id']}</code>\n"
-            f"💾 Data limit: {fmt_bytes(limit_bytes)}\n"
-            f"⏳ Validity: {exp_txt}\n\n"
-            f"🔗 Connection link:\n<code>{html.escape(key['accessUrl'])}</code>",
-            parse_mode="HTML", reply_markup=back_menu())
+        await _finish_create(msg, state, admin,
+                             limit_gb=data.get("limit_gb", 0), days=days)
 
     # --------------------------------------------------------------- list
     @dp.callback_query(F.data == "list")
     async def cb_list(cq: CallbackQuery) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.view")
+        if not admin:
+            return
         await cq.answer("Loading…")
-        await render_list(cq.message)
+        await render_list(cq.message, admin)
 
-    async def render_list(message: Message) -> None:
-        multi = len(registry.ids()) > 1
+    async def render_list(message: Message, admin: dict) -> None:
+        sids = [s for s in registry.ids() if can_see(admin, s)]
+        multi = len(sids) > 1
         lines = ["📋 <b>Users</b>\n"]
         rows: list[list[InlineKeyboardButton]] = []
         total = 0
-        for sid in registry.ids():
+        for sid in sids:
             api = registry.get(sid)
             sname = registry.meta(sid)["name"]
             try:
@@ -230,6 +309,9 @@ def build_dispatcher(
                 continue
             local = {k["key_id"]: k for k in await db.keys_for(sid)}
             for k in keys:
+                # a sub-admin's list is their own customers only, same as the panel
+                if not owns(admin, local.get(k["id"])):
+                    continue
                 total += 1
                 kid = k["id"]
                 name = k.get("name") or f"Key {kid}"
@@ -280,8 +362,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("key:"))
     async def cb_key(cq: CallbackQuery) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.view")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         meta = await db.get_key(sid, kid)
         disabled = bool(meta and meta.get("disabled"))
@@ -291,8 +374,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("link:"))
     async def cb_link(cq: CallbackQuery) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.view")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         api = registry.get(sid)
         try:
@@ -307,8 +391,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("rename:"))
     async def cb_rename(cq: CallbackQuery, state: FSMContext) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.edit")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         await state.set_state(EditKey.rename)
         await state.update_data(sid=sid, kid=kid)
@@ -334,8 +419,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("limit:"))
     async def cb_limit(cq: CallbackQuery, state: FSMContext) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.edit")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         await state.set_state(EditKey.limit)
         await state.update_data(sid=sid, kid=kid)
@@ -374,8 +460,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("disable:"))
     async def cb_disable(cq: CallbackQuery) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.edit")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         api = registry.get(sid)
         if not await db.get_key(sid, kid):
@@ -390,8 +477,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("enable:"))
     async def cb_enable(cq: CallbackQuery) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.edit")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         api = registry.get(sid)
         meta = await db.get_key(sid, kid) or {}
@@ -408,8 +496,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("del:"))
     async def cb_del(cq: CallbackQuery) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.delete")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         api = registry.get(sid)
         try:
@@ -418,12 +507,13 @@ def build_dispatcher(
         except OutlineError as e:
             return await cq.answer(f"Error: {e}", show_alert=True)
         await cq.answer("User deleted ✅", show_alert=True)
-        await render_list(cq.message)
+        await render_list(cq.message, admin)
 
     @dp.callback_query(F.data.startswith("extend:"))
     async def cb_extend(cq: CallbackQuery) -> None:
-        if not await is_admin(cq.from_user.id):
-            return await deny(cq)
+        admin = await gate(cq, "keys.edit")
+        if not admin:
+            return
         sid, kid = parse_cb(cq.data)
         api = registry.get(sid)
         meta = await db.get_key(sid, kid)
@@ -445,6 +535,6 @@ def build_dispatcher(
             except OutlineError as e:
                 return await cq.answer(f"Extended, but enabling failed: {e}", show_alert=True)
         await cq.answer("Extended by 30 days ✅", show_alert=True)
-        await render_list(cq.message)
+        await render_list(cq.message, admin)
 
     return dp

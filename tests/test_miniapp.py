@@ -207,3 +207,120 @@ async def test_tma_edit_requires_admin(app):
     r = await c.put("/tma/api/keys/s1/1/name", headers=_hdr(bad), json={"name": "x"})
     assert r.status_code == 403
     await c.aclose()
+
+
+# ------------------------------------------- Telegram now carries panel rights
+async def _link_sub(deps, tg_id, caps="keys.view", servers="s1", credit=0, discount=0):
+    from outline_panel.core import security
+    h, s = security.hash_password("x")
+    aid = await deps.db.add_admin("sara", h, s, caps=caps, servers=servers)
+    await deps.db.update_admin(aid, telegram_id=tg_id,
+                               credit_enabled=1 if credit else 0,
+                               discount_pct=discount)
+    if credit:
+        await deps.db.credit_admin(aid, credit, reason="topup")
+    return aid
+
+
+def _as(tg_id, name="Sara"):
+    return {"Authorization": "tma " + make_init_data(user={"id": tg_id, "first_name": name})}
+
+
+async def test_unlinked_bot_admin_still_has_full_access(app):
+    """777 is in bot_admin_ids but linked to nobody — it must keep working
+    exactly as it did before admins existed, or every bot user breaks on deploy."""
+    c = await _client(app)
+    me = (await c.get("/tma/api/bootstrap", headers=_hdr())).json()["me"]
+    assert me["isOwner"] is True and "keys.create" in me["caps"]
+    await c.aclose()
+
+
+async def test_a_linked_sub_admin_gets_only_their_caps(app):
+    from outline_panel.web import deps
+    await _link_sub(deps, 888, caps="keys.view")
+    c = await _client(app)
+    me = (await c.get("/tma/api/bootstrap", headers=_as(888))).json()["me"]
+    assert me["isOwner"] is False and me["caps"] == ["keys.view"]
+
+    assert (await c.get("/tma/api/keys", headers=_as(888))).status_code == 200
+    assert (await c.post("/tma/api/keys", headers=_as(888),
+                         json={"server": "s1", "name": "X"})).status_code == 403
+    assert (await c.delete("/tma/api/keys/s1/1", headers=_as(888))).status_code == 403
+    await c.aclose()
+
+
+async def test_telegram_respects_server_scope(app):
+    from outline_panel.web import deps
+    deps.reg.servers["s2"] = {"id": "s2", "name": "Berlin", "api_url": "https://x/y",
+                              "cert_sha256": None, "api": FakeOutline()}
+    await _link_sub(deps, 888, caps="keys.view,keys.create", servers="s1")
+    c = await _client(app)
+    boot = (await c.get("/tma/api/bootstrap", headers=_as(888))).json()
+    assert [s["id"] for s in boot["servers"]] == ["s1"]      # s2 does not exist to her
+    assert (await c.post("/tma/api/keys", headers=_as(888),
+                         json={"server": "s2", "name": "X"})).status_code == 404
+    await c.aclose()
+
+
+async def test_a_disabled_admin_loses_telegram_too(app):
+    from outline_panel.web import deps
+    aid = await _link_sub(deps, 888)
+    c = await _client(app)
+    assert (await c.get("/tma/api/keys", headers=_as(888))).status_code == 200
+    await deps.db.update_admin(aid, disabled=1)
+    assert (await c.get("/tma/api/keys", headers=_as(888))).status_code == 403
+    await c.aclose()
+
+
+async def test_telegram_cannot_create_around_the_price_list(app):
+    """The whole point: a free-form create over Telegram would hand a reseller
+    unlimited free keys and never touch their credit."""
+    from outline_panel.web import deps
+    aid = await _link_sub(deps, 888, caps="keys.view,keys.create", credit=100_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _client(app)
+
+    # no package named → refused, not silently created free-form
+    r = await c.post("/tma/api/keys", headers=_as(888),
+                     json={"server": "s1", "name": "X", "limit_gb": 500, "days": 3650})
+    assert r.status_code == 400 and "package" in r.json()["detail"].lower()
+    assert (await deps.db.get_admin(aid))["credit"] == 100_000
+
+    # with a package: charged, and the package decides the size
+    r = await c.post("/tma/api/keys", headers=_as(888),
+                     json={"server": "s1", "name": "X", "package_id": pid,
+                           "limit_gb": 500, "days": 3650})
+    assert r.status_code == 200
+    assert r.json()["limit"] == 5 * 1024 ** 3
+    assert (await deps.db.get_admin(aid))["credit"] == 70_000
+    await c.aclose()
+
+
+async def test_telegram_shows_the_discounted_price_list(app):
+    from outline_panel.web import deps
+    await _link_sub(deps, 888, caps="keys.view,keys.create", credit=100_000, discount=10)
+    await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _client(app)
+    d = (await c.get("/tma/api/packages", headers=_as(888))).json()
+    assert d["creditEnabled"] is True and d["credit"] == 100_000
+    assert d["packages"][0]["price"] == 27_000 and d["packages"][0]["affordable"] is True
+    await c.aclose()
+
+
+async def test_telegram_sees_only_their_own_users(app):
+    from outline_panel.web import deps
+    aid = await _link_sub(deps, 888, caps="keys.view,keys.create")
+    c = await _client(app)
+    # the list is built from what Outline returns, matched against our rows —
+    # so the fake needs the keys too, not just the DB
+    fake = deps.reg.servers["s1"]["api"]
+    fake.keys = [{"id": "1", "name": "Hers", "accessUrl": "ss://a", "dataLimit": {}},
+                 {"id": "2", "name": "Owner's", "accessUrl": "ss://b", "dataLimit": {}}]
+    await deps.db.add_key("s1", "1", "Hers", None, None, owner_admin_id=aid)
+    await deps.db.add_key("s1", "2", "Owner's", None, None)
+    names = [k["name"] for k in (await c.get("/tma/api/keys", headers=_as(888))).json()["keys"]]
+    assert names == ["Hers"]
+    # the unlinked bot admin (the owner) sees both
+    allk = [k["name"] for k in (await c.get("/tma/api/keys", headers=_hdr())).json()["keys"]]
+    assert sorted(allk) == ["Hers", "Owner's"]
+    await c.aclose()

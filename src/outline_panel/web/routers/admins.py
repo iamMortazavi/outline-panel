@@ -32,6 +32,7 @@ def _public(row: dict) -> dict:
         "creditEnabled": bool(row["credit_enabled"]),
         "credit": int(row["credit"] or 0),
         "discountPct": int(row["discount_pct"] or 0),
+        "telegramId": row["telegram_id"],
     }
 
 
@@ -51,6 +52,18 @@ def _clean_servers(servers: list[str]) -> str:
     return ",".join(dict.fromkeys(servers))
 
 
+async def _check_telegram(tg_id: int | None, self_id: int | None) -> None:
+    """One Telegram account cannot be two admins — the bot resolves by this id,
+    so a duplicate would silently hand someone the wrong rights."""
+    if tg_id is None:
+        return
+    other = await db.get_admin_by_telegram(tg_id)
+    if other and other["id"] != self_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"That Telegram ID is already linked to {other['username']}")
+
+
 class AdminBody(BaseModel):
     username: str = Field(min_length=2, max_length=40, pattern=r"^[A-Za-z0-9._-]+$")
     password: str = Field(min_length=6, max_length=200)
@@ -59,6 +72,7 @@ class AdminBody(BaseModel):
     credit_enabled: bool = False
     discount_pct: int = Field(default=0, ge=0, le=100)
     credit: int = Field(default=0, ge=0)     # opening balance, via the ledger
+    telegram_id: int | None = None           # their numeric id, from /id in the bot
 
 
 class CreditBody(BaseModel):
@@ -71,6 +85,7 @@ class AdminEdit(BaseModel):
     caps: list[str] | None = None
     credit_enabled: bool | None = None
     discount_pct: int | None = Field(default=None, ge=0, le=100)
+    telegram_id: int | None = None
     servers: list[str] | None = None
     disabled: bool | None = None
 
@@ -94,8 +109,10 @@ async def create_admin(body: AdminBody):
         raise HTTPException(status_code=400, detail="Pick at least one server")
     h, s = security.hash_password(body.password)
     aid = await db.add_admin(body.username, h, s, caps=caps, servers=servers)
+    await _check_telegram(body.telegram_id, None)
     await db.update_admin(aid, credit_enabled=1 if body.credit_enabled else 0,
-                          discount_pct=body.discount_pct)
+                          discount_pct=body.discount_pct,
+                          telegram_id=body.telegram_id)
     if body.credit:
         # through the ledger, never straight into the column, so the statement
         # accounts for every Toman from the first one
@@ -131,6 +148,9 @@ async def edit_admin(admin_id: int, body: AdminEdit):
         fields["credit_enabled"] = 1 if body.credit_enabled else 0
     if body.discount_pct is not None:
         fields["discount_pct"] = body.discount_pct
+    if "telegram_id" in body.model_fields_set:
+        await _check_telegram(body.telegram_id, admin_id)
+        fields["telegram_id"] = body.telegram_id
     await db.update_admin(admin_id, **fields)
     return _public(await db.get_admin(admin_id))
 

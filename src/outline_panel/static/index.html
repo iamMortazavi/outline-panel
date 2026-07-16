@@ -343,7 +343,12 @@ function renderKpi(){
   const box=$('#kpi');if(!box)return;const sc=scoped();
   const total=sc.length,online=sc.filter(isOnline).length,active=sc.filter(k=>!k.disabled&&!k.pending).length,pending=sc.filter(k=>k.pending).length;
   const transfer=S.stats&&S.stats.available?fmtBytes(S.stats.dataBytes):'—';
-  box.innerHTML=kpiCard('Total keys',total)+kpiCard('Online now',online+'',{accent:online>0,pulse:online>0,color:'var(--acc)'})+kpiCard('Active',active)+kpiCard('Pending',pending,{color:'var(--warn)'})+kpiCard('Transfer · 30d',transfer);
+  // A reseller's balance belongs next to their user count: it is the number
+  // that decides whether they can sell anything at all.
+  const credit=(S.me&&S.me.creditEnabled)
+    ? kpiCard('My credit',fmtToman(S.me.credit),{color:S.me.credit>0?'var(--acc)':'var(--danger)'})
+    : '';
+  box.innerHTML=credit+kpiCard('Total keys',total)+kpiCard('Online now',online+'',{accent:online>0,pulse:online>0,color:'var(--acc)'})+kpiCard('Active',active)+kpiCard('Pending',pending,{color:'var(--warn)'})+kpiCard('Transfer · 30d',transfer);
 }
 
 function renderToolbar(){
@@ -578,11 +583,11 @@ function modalDetail(k){const b=kBits(k),now=Date.now()/1000;
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:11px;font-size:12.5px">Copy</button>
         <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">QR</button>
-        <button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">Edit</button></div>
-      <div style="display:flex;gap:8px;margin-top:8px">
+        ${can('keys.edit')?`<button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">Edit</button>`:''}</div>
+      ${!can('keys.edit')?'':`<div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn-sec" data-act="toggle" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px;${k.disabled?'background:rgba(var(--acc-rgb),.12);color:var(--acc);border-color:rgba(var(--acc-rgb),.32)':''}">${k.disabled?'Enable key':'Disable key'}</button>
         <button class="btn-sec" data-act="resetkey" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">Reset usage</button>
-        <button class="btn-danger" data-act="delkey" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:none;width:auto;padding:11px 16px;font-size:12.5px">Delete</button></div>
+        ${can('keys.delete')?`<button class="btn-danger" data-act="delkey" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:none;width:auto;padding:11px 16px;font-size:12.5px">Delete</button>`:''}</div>`}
       <div style="height:24px"></div>
     </div>`);
 }
@@ -837,6 +842,7 @@ function _adminForm(d,a){
     <div class="field"><label class="lab">Servers they can use</label>${servers}</div>
     <div class="field"><label class="lab">What they can do</label>${caps}</div>
     <div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="acr" ${a&&a.creditEnabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">Sell from packages, on credit<div style="font-size:11.5px;color:var(--dim);margin-top:2px">Off: they create users freely, like today.</div></span></label></div>
+    <div class="field"><label class="lab">Telegram ID <span style="color:var(--faint);font-weight:400">(optional)</span></label><input id="atg" class="inp" type="number" value="${a&&a.telegramId?a.telegramId:''}" placeholder="They get it by sending /id to the bot" /><div class="desc" style="margin-top:7px;font-size:11.5px">Links their Telegram to this account, so the bot and Mini App give them exactly these rights.</div></div>
     <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
       <div class="field"><label class="lab">Discount %</label><input id="adsc" class="inp" type="number" min="0" max="100" value="${a?a.discountPct:0}" /></div>
       <div class="field"><label class="lab">${a?'Balance':'Opening credit · Toman'}</label>${a?`<div class="inp mono" style="display:flex;align-items:center;color:var(--acc)">${esc(fmtToman(a.credit))}</div>`:'<input id="acrd" class="inp" type="number" min="0" placeholder="0" />'}</div></div>
@@ -857,7 +863,8 @@ async function modalAdminAdd(){
                 servers:_picked(ov,'asrv'),caps:_picked(ov,'acap'),
                 credit_enabled:ov.querySelector('#acr').checked,
                 discount_pct:parseInt(ov.querySelector('#adsc').value||'0',10)||0,
-                credit:parseInt(ov.querySelector('#acrd').value||'0',10)||0};
+                credit:parseInt(ov.querySelector('#acrd').value||'0',10)||0,
+                telegram_id:parseInt(ov.querySelector('#atg').value||'0',10)||null};
     if(!body.username){er.textContent='Enter a username.';return;}
     if(body.password.length<6){er.textContent='Password must be at least 6 characters.';return;}
     if(!body.servers.length){er.textContent='Pick at least one server.';return;}
@@ -880,7 +887,8 @@ async function modalAdminEdit(id){
     const body={servers:_picked(ov,'asrv'),caps:_picked(ov,'acap'),
                 disabled:ov.querySelector('#adis').checked,
                 credit_enabled:ov.querySelector('#acr').checked,
-                discount_pct:parseInt(ov.querySelector('#adsc').value||'0',10)||0};
+                discount_pct:parseInt(ov.querySelector('#adsc').value||'0',10)||0,
+                telegram_id:parseInt(ov.querySelector('#atg').value||'0',10)||null};
     if(pw){if(pw.length<6){er.textContent='Password must be at least 6 characters.';return;}body.password=pw;}
     if(!body.servers.length){er.textContent='Pick at least one server.';return;}
     const b=ov.querySelector('#ago');b.disabled=true;b.innerHTML='<span class="spin"></span>';
@@ -920,7 +928,8 @@ async function modalServerDetail(s){
     <div class="field"><label class="lab">Outline server name</label><input id="dn" class="inp" value="${esc(st.name||'')}" /></div>
     <div class="field"><label class="lab">Default data limit · all keys · GB</label><input id="dg" class="inp" type="number" min="0" value="${gl}" placeholder="No global limit" /></div>
     <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">Metrics sharing</label><div style="font-size:12px;color:var(--dim);max-width:220px">Live bandwidth, online users &amp; ISP locations.</div></div><div class="toggle ${st.metricsEnabled?'on':''}" id="dm"><div class="tk"></div><div class="kn"></div></div></div></div>
-    <div id="de" class="err"></div><button class="btn" id="dsave">Save</button><div style="height:10px"></div><button class="btn-danger" id="drm">Remove this server</button>`;
+    <div id="de" class="err"></div>${can('servers.manage')?'<button class="btn" id="dsave">Save</button><div style="height:10px"></div><button class="btn-danger" id="drm">Remove this server</button>':'<div class="desc">You can see this server but not change it.</div>'}`;
+  if(!can('servers.manage'))return;   // nothing below is reachable for them
   let metrics=!!st.metricsEnabled;const tg=ov.querySelector('#dm');
   tg.onclick=async()=>{metrics=!metrics;tg.classList.toggle('on',metrics);try{await api('/api/servers/'+s.id+'/settings/metrics',{method:'PUT',body:JSON.stringify({enabled:metrics})});toast('Metrics '+(metrics?'enabled':'disabled'));}catch(e){toast(e.message,1);metrics=!metrics;tg.classList.toggle('on',metrics);}};
   ov.querySelector('#dsave').onclick=async()=>{const label=ov.querySelector('#dl').value.trim();const oname=ov.querySelector('#dn').value.trim();const lg=parseFloat(ov.querySelector('#dg').value||'0')||0;const b=ov.querySelector('#dsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';const er=ov.querySelector('#de');

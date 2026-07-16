@@ -175,6 +175,10 @@ class DB:
                 await self._db.execute(
                     f"ALTER TABLE admins ADD COLUMN {col} INTEGER DEFAULT 0"
                 )
+        # migration: which Telegram user this admin is, so the bot and Mini App
+        # can apply the same rights the dashboard does. NULL = not linked.
+        if "telegram_id" not in acols:
+            await self._db.execute("ALTER TABLE admins ADD COLUMN telegram_id INTEGER")
         # resale packages + the credit ledger
         await self._db.execute(_PACKAGES_SCHEMA)
         await self._db.execute(_LEDGER_SCHEMA)
@@ -407,6 +411,13 @@ class DB:
         row = await cur.fetchone()
         return dict(row) if row else None
 
+    async def get_admin_by_telegram(self, telegram_id: int) -> dict | None:
+        cur = await self.conn.execute(
+            "SELECT * FROM admins WHERE telegram_id = ?", (int(telegram_id),)
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
     async def get_owner(self) -> dict | None:
         cur = await self.conn.execute(
             "SELECT * FROM admins WHERE is_owner = 1 ORDER BY id LIMIT 1"
@@ -422,8 +433,8 @@ class DB:
         """Update only the named columns. Unknown ones are ignored, so a caller
         can pass a whole request body without smuggling in `is_owner`."""
         allowed = ("username", "pw_hash", "pw_salt", "caps", "servers", "disabled",
-                   "credit_enabled", "discount_pct")   # never "credit": it moves
-                                                       # only through the ledger
+                   "credit_enabled", "discount_pct", "telegram_id")
+                   # never "credit": it moves only through the ledger
         cols = [c for c in allowed if c in fields]
         if not cols:
             return
@@ -581,7 +592,7 @@ class DB:
                  "reset_ts", "sub_token", "created_ts", "owner_admin_id")
     _ADMIN_COLS = ("id", "username", "pw_hash", "pw_salt", "is_owner", "caps",
                    "servers", "disabled", "created_ts", "credit",
-                   "credit_enabled", "discount_pct")
+                   "credit_enabled", "discount_pct", "telegram_id")
     _PACKAGE_COLS = ("id", "name", "gb", "days", "monthly_gb", "price", "created_ts")
     _LEDGER_COLS = ("id", "admin_id", "delta", "balance_after", "reason",
                     "package_id", "package_name", "price_before_discount",

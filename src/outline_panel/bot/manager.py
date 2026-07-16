@@ -19,11 +19,16 @@ log = logging.getLogger("bot.manager")
 
 
 class BotManager:
-    def __init__(self, db, registry, get_admin_ids, get_webapp_url=None):
+    def __init__(self, db, registry, get_admin_ids, get_webapp_url=None,
+                 resolve_admin=None, create_key=None):
         self.db = db
         self.registry = registry
         self.get_admin_ids = get_admin_ids
         self.get_webapp_url = get_webapp_url
+        # Injected so the bot decides access and creates keys with the same code
+        # the panel does; importing web.deps from here would be a cycle.
+        self.resolve_admin = resolve_admin
+        self.create_key = create_key
         self._bot: Bot | None = None
         self._dp = None
         self._task: asyncio.Task | None = None
@@ -65,7 +70,8 @@ class BotManager:
         bot = Bot(token)
         me = await bot.get_me()  # validates the token
         dp = build_dispatcher(self.db, self.registry, self.get_admin_ids,
-                              self.notify, self.get_webapp_url)
+                              self.notify, self.get_webapp_url,
+                              self.resolve_admin, self.create_key)
         self._bot, self._dp, self._username = bot, dp, me.username
         # Persistent chat menu button → opens the Mini App (best effort).
         wa_url = await self._resolve_webapp_url()

@@ -53,6 +53,22 @@ class SettingsStore:
         raw = await self.get(BOT_ADMIN_IDS, "") or ""
         return {int(x) for x in raw.split(",") if x.strip().isdecimal()}
 
+    async def admin_for_telegram(self, uid: int | None) -> dict | None:
+        """The panel admin behind a Telegram user, or None.
+
+        A linked admin wins. Otherwise an id in the bot's own admin list is
+        treated as the owner, which is exactly what it meant before admins
+        existed — so nobody's bot access breaks the day this ships.
+        """
+        if uid is None:
+            return None
+        linked = await self.db.get_admin_by_telegram(int(uid))
+        if linked:
+            return None if linked["disabled"] else linked
+        if int(uid) in await self.get_admin_ids():
+            return await self.db.get_owner()
+        return None
+
     async def get_webapp_url(self) -> str | None:
         """Public HTTPS base URL of the panel, or None. The Mini App lives at
         ``<base>/tma``. Telegram only opens HTTPS Web App URLs."""
