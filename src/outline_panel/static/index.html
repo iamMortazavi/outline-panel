@@ -387,7 +387,7 @@ function tableView(list){
     return `<div data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="display:grid;grid-template-columns:26px 2.1fr 1fr 1.8fr .8fr 1.05fr 1.5fr;gap:13px;padding:14px 18px;border-bottom:1px solid var(--panel2);cursor:pointer;align-items:center;background:${sel?'rgba(var(--acc-rgb),.06)':'transparent'}">
       <div data-act="sel" data-id="${esc(k.id)}" data-stop="1" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div style="min-width:0"><div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k.name)}</div>
-        <div class="mono" style="font-size:11px;color:var(--dim);margin-top:3px;display:flex;align-items:center;gap:7px">#${esc(k.id)}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint)"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
+        <div class="mono" style="font-size:11px;color:var(--dim);margin-top:3px;display:flex;align-items:center;gap:7px">#${esc(k.id)}${isOwner()&&k.ownerName?`<span style="padding:1px 6px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)">${esc(k.ownerName)}</span>`:''}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint)"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
       <div><span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${b.st.t}</span></div>
       <div style="min-width:0"><div style="height:6px;border-radius:99px;background:var(--panel2);overflow:hidden"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
         <div class="mono" style="font-size:11px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.usage)}</div></div>
@@ -411,7 +411,7 @@ function cardView(list,narrow){
     return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
         <div style="min-width:0"><div style="font-weight:700;font-size:16px;letter-spacing:-.2px;word-break:break-word;line-height:1.2">${esc(k.name)}</div>
-          <div class="mono" style="font-size:11px;color:var(--dim);margin-top:5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">#${esc(k.id)}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 6px"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
+          <div class="mono" style="font-size:11px;color:var(--dim);margin-top:5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">#${esc(k.id)}${isOwner()&&k.ownerName?`<span style="padding:1px 6px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)">${esc(k.ownerName)}</span>`:''}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 6px"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
         <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap;flex:none"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${b.st.t}</span></div>
       <div style="height:7px;border-radius:99px;background:var(--panel2);overflow:hidden;margin:16px 0 7px"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
       <div class="mono" style="font-size:12px;color:var(--muted)">${esc(b.usage)}</div>
@@ -563,8 +563,9 @@ function modalDetail(k){const b=kBits(k),now=Date.now()/1000;
     </div>`);
 }
 function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.monthlyBytes?(k.monthlyBytes/1073741824):'';const multi=S.servers.length>1;
-  const ov=openSheet(`<div class="h2">Manage key</div><p class="mono desc" style="font-size:13px">#${esc(k.id)}${multi?'  ·  '+esc(srvName(k.serverId)):''}  ·  created ${fmtDate(k.createdTs)}</p>
+  const ov=openSheet(`<div class="h2">Manage key</div><p class="mono desc" style="font-size:13px">#${esc(k.id)}${multi?'  ·  '+esc(srvName(k.serverId)):''}  ·  created ${fmtDate(k.createdTs)}${isOwner()&&k.ownerName?'  ·  '+esc(k.ownerName):''}</p>
     <div class="field"><label class="lab">Name</label><input id="mn" class="inp" value="${esc(k.name)}" /></div>
+    ${isOwner()?`<div class="field"><label class="lab">Belongs to</label><select id="mow" class="inp" style="cursor:pointer"></select><div class="desc" style="margin-top:7px;font-size:11.5px">Moves this user onto that admin's page. Only admins with access to this server are listed.</div></div>`:''}
     <div class="field"><label class="lab">Data limit · GB (0 = unlimited)</label><input id="ml" class="inp" type="number" min="0" value="${lim}" placeholder="Unlimited" /></div>
     <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="mq" class="inp" type="number" min="0" value="${mon}" placeholder="Auto-renew off" /></div>
     ${(S.me&&S.me.creditEnabled)?'<div class="field"><label class="lab">Renew</label><div id="mrn"><div class="desc">Loading packages…</div></div></div>':`<div class="field"><label class="lab">Validity · add or reduce</label>
@@ -578,6 +579,7 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div id="me" class="err"></div><button class="btn" id="msave">Save changes</button><div style="height:10px"></div>
     <button class="btn-danger" id="mdel">Delete key</button>`);
   const kb='/api/servers/'+k.serverId+'/keys/'+k.id;let disabled=k.disabled;
+  if(ov.querySelector('#mow'))_ownerPicker(ov,k);
   if(ov.querySelector('#mrn'))_renewPicker(ov,k,kb);
   if(ov.querySelector('#mxgo'))ov.querySelector('#mxgo').onclick=async()=>{const d=parseInt(ov.querySelector('#mx').value||'0',10)||0;const er=ov.querySelector('#me');er.textContent='';
     if(!d){er.textContent='Enter a number of days to add or reduce.';return;}
@@ -590,7 +592,10 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     const b=ov.querySelector('#msave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{if(name!==k.name)await api(kb+'/name',{method:'PUT',body:JSON.stringify({name})});await api(kb+'/limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});
       const curMon=k.monthlyBytes?(k.monthlyBytes/1073741824):0;if(mg!==curMon)await api(kb+'/monthly',{method:'PUT',body:JSON.stringify({monthly_gb:mg})});
-      toast('Changes saved');closeModal();await refreshKeys();renderList();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}};
+      const ow=ov.querySelector('#mow');
+      if(ow&&ow.value!==String(k.ownerAdminId==null?'':k.ownerAdminId))
+        await api(kb+'/owner',{method:'PUT',body:JSON.stringify({admin_id:ow.value===''?null:+ow.value})});
+      toast('Changes saved');closeModal();await loadAll();renderApp();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}};
   ov.querySelector('#mdel').onclick=async()=>{if(!confirm('Delete “'+k.name+'”? This cannot be undone.'))return;try{await api(kb,{method:'DELETE'});toast('Key deleted');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
 }
 function openSubSheet(k,info){
@@ -626,6 +631,16 @@ function modalSettings(){
     $('#rowBot').onclick=()=>modalBot();
     api('/api/settings/bot').then(b=>{const d=$('#botDot'),su=$('#botSub');if(d)d.style.background=b.running?'var(--acc)':'var(--danger)';if(su)su.textContent=b.running?('Active · @'+(b.username||'bot')):(b.configured?'Configured · stopped':'Not configured');}).catch(()=>{});
   }
+}
+async function _ownerPicker(ov,k){
+  const sel=ov.querySelector('#mow');
+  sel.innerHTML='<option value="">'+esc((S.me&&S.me.username)||'admin')+' (you)</option>';
+  try{const d=await api('/api/admins');
+    d.admins.filter(a=>!a.isOwner&&a.servers.includes(k.serverId))
+      .forEach(a=>{const o=document.createElement('option');o.value=a.id;
+        o.textContent=a.username+(a.disabled?' · disabled':'');sel.appendChild(o);});
+  }catch(e){/* the select still offers "you" */}
+  sel.value=k.ownerAdminId==null?'':String(k.ownerAdminId);
 }
 async function _renewPicker(ov,k,kb){
   let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('#mrn').innerHTML=`<div class="err">${esc(e.message)}</div>`;return;}

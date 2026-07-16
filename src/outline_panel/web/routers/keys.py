@@ -17,10 +17,13 @@ from ..deps import (
     can_see,
     db,
     enforce_scope,
+    is_owner,
     on_credit,
+    owns,
     price_for,
     reg,
     require,
+    require_owner,
     scoped_ids,
     sids_or_404,
 )
@@ -47,7 +50,7 @@ async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
     return conn
 
 
-async def keys_for_server(sid: str) -> dict:
+async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
     m = reg.meta(sid)
     if m is None:  # server removed between snapshot and fetch
         return {"serverId": sid, "serverName": None, "keys": [], "error": "Server removed"}
@@ -66,7 +69,12 @@ async def keys_for_server(sid: str) -> dict:
     out = []
     for k in keys:
         kid = k["id"]
-        meta = local.get(kid, {})
+        meta = local.get(kid)
+        # A sub-admin's page is their own customers only. Two resellers on one
+        # server must not see, edit or delete each other's users.
+        if not owns(admin, meta):
+            continue
+        meta = meta or {}
         c = conn.get(str(kid), {})
         # Disabled keys report dataLimit=0 on Outline; show the stored limit.
         if meta.get("disabled"):
@@ -86,6 +94,8 @@ async def keys_for_server(sid: str) -> dict:
             "expiry": meta.get("expiry_ts"),
             "monthlyBytes": meta.get("monthly_bytes"),
             "createdTs": meta.get("created_ts"),
+            "ownerAdminId": meta.get("owner_admin_id"),
+            "ownerName": names.get(meta.get("owner_admin_id")) or names.get(None),
             "durationDays": duration,
             "activated": activated,
             "pending": duration is not None and not activated,
@@ -101,7 +111,11 @@ async def keys_for_server(sid: str) -> dict:
 async def list_keys(server: str | None = None,
                    admin: dict = Depends(require("keys.view"))):
     sids = sids_or_404(server, admin)
-    results = await asyncio.gather(*[keys_for_server(s) for s in sids])
+    # one lookup for the whole list rather than per key
+    names = {a["id"]: a["username"] for a in await db.all_admins()}
+    owner = await db.get_owner()
+    names[None] = owner["username"] if owner else "owner"
+    results = await asyncio.gather(*[keys_for_server(s, admin, names) for s in sids])
     keys = [k for r in results for k in r["keys"]]
     keys.sort(key=lambda x: (x["serverName"] or "", int(x["id"]) if str(x["id"]).isdigit() else 0))
     errors = [
@@ -249,7 +263,8 @@ async def _reverse(admin: dict, bought: tuple[dict, int, int] | None, sid: str,
 
 # --------------------------------------------------------------------- routes
 async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
-                         monthly_gb: float = 0, start_now: bool = False) -> dict:
+                         monthly_gb: float = 0, start_now: bool = False,
+                         owner_admin_id: int | None = None) -> dict:
     """Create a key on Outline and persist its local metadata.
 
     Shared by the dashboard route and the Telegram Mini App. Raises
@@ -269,7 +284,8 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
     except OutlineError as e:
         raise HTTPException(status_code=502, detail=str(e))
     try:
-        await db.add_key(sid, key["id"], name, limit_bytes, duration)
+        await db.add_key(sid, key["id"], name, limit_bytes, duration,
+                         owner_admin_id=owner_admin_id)
         now = int(time.time())
         if duration and start_now:
             # Activating here is all it takes: the scheduler only adopts keys
@@ -295,17 +311,18 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
 @router.post("/servers/{sid}/keys")
 async def create_key(sid: str, body: CreateBody,
                      admin: dict = Depends(require("keys.create"))):
+    mine = None if is_owner(admin) else admin["id"]
     bought = await _buy(admin, body.package_id, sid)
     if not bought:
         return await create_key_for(sid, body.name, body.limit_gb, body.days,
-                                    body.monthly_gb, body.start_now)
+                                    body.monthly_gb, body.start_now, mine)
     pkg, _price, entry = bought
     try:
         # The package decides what the user gets — the body's own limit/days
         # are ignored rather than merged, or the buyer picks their own size.
         key = await create_key_for(sid, body.name, pkg["gb"] or 0,
                                    pkg["days"] or 0, pkg["monthly_gb"] or 0,
-                                   body.start_now)
+                                   body.start_now, mine)
     except BaseException as e:
         await _reverse(admin, bought, sid, f"create failed: {e}")
         raise
@@ -529,7 +546,8 @@ async def sub_add_server(token: str, target: str,
     except OutlineError as e:
         raise HTTPException(status_code=502, detail=str(e))
     try:
-        await db.add_key(target, key["id"], name, limit_bytes, duration)
+        await db.add_key(target, key["id"], name, limit_bytes, duration,
+                         owner_admin_id=primary.get("owner_admin_id"))
         if primary.get("activated_ts"):
             await db.activate(target, key["id"], int(primary["activated_ts"]),
                               int(primary["expiry_ts"] or 0))
@@ -560,6 +578,38 @@ async def sub_remove_server(token: str, target: str,
         if m["server_id"] == target:
             await db.set_sub_token(target, m["key_id"], None)
     return await _sub_info(token, admin)
+
+
+class OwnerBody(BaseModel):
+    # null hands the key back to the panel owner
+    admin_id: int | None = None
+
+
+@router.put("/servers/{sid}/keys/{kid}/owner", dependencies=[Depends(require_owner)])
+async def set_key_owner(sid: str, kid: str, body: OwnerBody):
+    """Move a user onto another admin's page.
+
+    Owner-only: ownership decides who may see and bill a customer, so letting a
+    reseller reassign one would let them hand it off — or put it out of reach.
+    """
+    await ensure_local(sid, kid)
+    target = None
+    if body.admin_id is not None:
+        target = await db.get_admin(body.admin_id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="Unknown admin")
+    if target is None or target["is_owner"]:
+        await db.set_key_owner(sid, kid, None)   # the owner is stored as NULL
+        return {"ok": True, "ownerAdminId": None}
+    # "only if I gave them access": handing a user to an admin who cannot reach
+    # the server would strand it — invisible to them, and no longer on your page.
+    if not can_see(target, sid):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{target['username']} does not have access to this server",
+        )
+    await db.set_key_owner(sid, kid, target["id"])
+    return {"ok": True, "ownerAdminId": target["id"]}
 
 
 @router.delete("/servers/{sid}/keys/{kid}", dependencies=[Depends(require("keys.delete"))])

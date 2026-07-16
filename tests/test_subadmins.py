@@ -112,14 +112,16 @@ async def test_unfiltered_list_means_my_servers_only(app):
     """?server= omitted must mean "all of mine", not all of them."""
     application, deps, fakes = app
     owner = await _login(application, "admin", "pw")
-    await owner.post("/api/servers/s1/keys", json={"name": "Tokyo1", "limit_gb": 0, "days": 0})
+    k1 = (await owner.post("/api/servers/s1/keys",
+                           json={"name": "Tokyo1", "limit_gb": 0, "days": 0})).json()["id"]
     await owner.post("/api/servers/s2/keys", json={"name": "Berlin1", "limit_gb": 0, "days": 0})
     assert len((await owner.get("/api/keys")).json()["keys"]) == 2
 
-    await _mk_sub(deps, caps="keys.view", servers="s1")
+    aid = await _mk_sub(deps, caps="keys.view", servers="s1")
+    await deps.db.set_key_owner("s1", k1, aid)   # hers now
     c = await _login(application, "sara", "sara-pw")
     names = [k["name"] for k in (await c.get("/api/keys")).json()["keys"]]
-    assert names == ["Tokyo1"]
+    assert names == ["Tokyo1"]                   # not Berlin1: not her server
     await owner.aclose()
     await c.aclose()
 
@@ -133,7 +135,8 @@ async def test_sub_mirror_cannot_reach_an_out_of_scope_server(app):
                             json={"name": "A", "limit_gb": 0, "days": 0})).json()["id"]
     token = (await owner.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
 
-    await _mk_sub(deps, caps="keys.view,keys.edit", servers="s1")
+    aid = await _mk_sub(deps, caps="keys.view,keys.edit", servers="s1")
+    await deps.db.set_key_owner("s1", kid, aid)   # the sub is hers to mirror
     c = await _login(application, "sara", "sara-pw")
     assert (await c.post(f"/api/sub/{token}/servers/s2")).status_code == 404
     assert len(fakes["s2"].keys) == 0  # nothing was created over there
@@ -153,7 +156,8 @@ async def test_each_capability_is_enforced(app):
     kid = (await owner.post("/api/servers/s1/keys",
                             json={"name": "A", "limit_gb": 0, "days": 0})).json()["id"]
 
-    await _mk_sub(deps, caps="keys.view", servers="s1")  # view only
+    aid = await _mk_sub(deps, caps="keys.view", servers="s1")  # view only
+    await deps.db.set_key_owner("s1", kid, aid)                # and it is hers
     c = await _login(application, "sara", "sara-pw")
     assert (await c.get("/api/keys")).status_code == 200
     assert (await c.get("/api/stats")).status_code == 200
@@ -520,3 +524,145 @@ async def test_credit_cannot_be_set_directly_through_the_editor(app):
     assert (await deps.db.get_admin(aid))["credit"] == 50_000     # ignored
     assert await deps.db.ledger_sum(aid) == 50_000
     await c.aclose()
+
+
+# ------------------------------------------------------------- key ownership
+async def test_a_sub_admin_sees_only_their_own_users(app):
+    """Two resellers on one server must not see each other's customers."""
+    application, deps, _ = app
+    owner = await _login(application, "admin", "pw")
+    mine = (await owner.post("/api/servers/s1/keys",
+                             json={"name": "Owner's", "limit_gb": 0, "days": 0})).json()["id"]
+    a_id = await _mk_sub(deps, username="a", caps="keys.view,keys.create", servers="s1")
+    b_id = await _mk_sub(deps, username="b", caps="keys.view,keys.create", servers="s1")
+
+    ca = await _login(application, "a", "sara-pw")
+    cb = await _login(application, "b", "sara-pw")
+    ka = (await ca.post("/api/servers/s1/keys",
+                        json={"name": "A's customer", "limit_gb": 0, "days": 0})).json()["id"]
+    await cb.post("/api/servers/s1/keys", json={"name": "B's customer", "limit_gb": 0, "days": 0})
+
+    assert [k["name"] for k in (await ca.get("/api/keys")).json()["keys"]] == ["A's customer"]
+    assert [k["name"] for k in (await cb.get("/api/keys")).json()["keys"]] == ["B's customer"]
+    # the owner sees all three, each labelled with who it belongs to
+    allk = (await owner.get("/api/keys")).json()["keys"]
+    assert sorted((k["name"], k["ownerName"]) for k in allk) == sorted(
+        [("A's customer", "a"), ("B's customer", "b"), ("Owner's", "admin")])
+    assert next(k for k in allk if k["id"] == ka)["ownerAdminId"] == a_id
+    assert next(k for k in allk if k["id"] == mine)["ownerAdminId"] is None
+    assert b_id
+    await owner.aclose()
+    await ca.aclose()
+    await cb.aclose()
+
+
+async def test_another_admins_user_does_not_exist_for_you(app):
+    """404, not 403: a reseller should not even learn the key is there."""
+    application, deps, _ = app
+    owner = await _login(application, "admin", "pw")
+    kid = (await owner.post("/api/servers/s1/keys",
+                            json={"name": "Owner's", "limit_gb": 0, "days": 0})).json()["id"]
+    await _mk_sub(deps, username="a", caps="keys.view,keys.edit,keys.delete", servers="s1")
+    c = await _login(application, "a", "sara-pw")
+
+    assert (await c.put(f"/api/servers/s1/keys/{kid}/name",
+                        json={"name": "stolen"})).status_code == 404
+    assert (await c.post(f"/api/servers/s1/keys/{kid}/disable")).status_code == 404
+    assert (await c.post(f"/api/servers/s1/keys/{kid}/extend",
+                         json={"days": 30})).status_code == 404
+    assert (await c.post(f"/api/servers/s1/keys/{kid}/sub")).status_code == 404
+    assert (await c.delete(f"/api/servers/s1/keys/{kid}")).status_code == 404
+    # and it really is untouched
+    assert (await deps.db.get_key("s1", kid))["name"] == "Owner's"
+    await owner.aclose()
+    await c.aclose()
+
+
+async def test_owner_transfers_a_user_onto_an_admins_page(app):
+    application, deps, _ = app
+    owner = await _login(application, "admin", "pw")
+    kid = (await owner.post("/api/servers/s1/keys",
+                            json={"name": "Handover", "limit_gb": 0, "days": 0})).json()["id"]
+    aid = await _mk_sub(deps, username="a", caps="keys.view,keys.edit", servers="s1")
+    c = await _login(application, "a", "sara-pw")
+    assert (await c.get("/api/keys")).json()["keys"] == []          # not hers yet
+
+    r = await owner.put(f"/api/servers/s1/keys/{kid}/owner", json={"admin_id": aid})
+    assert r.status_code == 200 and r.json()["ownerAdminId"] == aid
+
+    keys = (await c.get("/api/keys")).json()["keys"]                # now it is
+    assert [k["name"] for k in keys] == ["Handover"]
+    assert (await c.put(f"/api/servers/s1/keys/{kid}/name",
+                        json={"name": "Renamed"})).status_code == 200
+
+    # and back again
+    assert (await owner.put(f"/api/servers/s1/keys/{kid}/owner",
+                            json={"admin_id": None})).json()["ownerAdminId"] is None
+    assert (await c.get("/api/keys")).json()["keys"] == []
+    await owner.aclose()
+    await c.aclose()
+
+
+async def test_cannot_transfer_to_an_admin_without_access(app):
+    """"If I've given them access, of course" — handing a user to an admin who
+    cannot reach the server would strand it: invisible to them, gone from you."""
+    application, deps, _ = app
+    owner = await _login(application, "admin", "pw")
+    kid = (await owner.post("/api/servers/s1/keys",
+                            json={"name": "X", "limit_gb": 0, "days": 0})).json()["id"]
+    berlin_only = await _mk_sub(deps, username="b", caps="keys.view", servers="s2")
+
+    r = await owner.put(f"/api/servers/s1/keys/{kid}/owner", json={"admin_id": berlin_only})
+    assert r.status_code == 400 and "access" in r.json()["detail"].lower()
+    assert (await deps.db.get_key("s1", kid))["owner_admin_id"] is None   # unmoved
+    assert (await owner.put(f"/api/servers/s1/keys/{kid}/owner",
+                            json={"admin_id": 9999})).status_code == 404
+    await owner.aclose()
+
+
+async def test_only_the_owner_may_transfer(app):
+    """Ownership decides who bills a customer, so a reseller must not reassign."""
+    application, deps, _ = app
+    a_id = await _mk_sub(deps, username="a", caps="keys.view,keys.create,keys.edit",
+                         servers="s1")
+    await _mk_sub(deps, username="b", caps="keys.view", servers="s1")
+    c = await _login(application, "a", "sara-pw")
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "Mine", "limit_gb": 0, "days": 0})).json()["id"]
+    assert (await deps.db.get_key("s1", kid))["owner_admin_id"] == a_id
+
+    r = await c.put(f"/api/servers/s1/keys/{kid}/owner", json={"admin_id": None})
+    assert r.status_code == 403
+    assert (await deps.db.get_key("s1", kid))["owner_admin_id"] == a_id
+    await c.aclose()
+
+
+async def test_a_mirrored_sub_belongs_to_whoever_owns_the_primary(app):
+    application, deps, _ = app
+    aid = await _mk_sub(deps, username="a", caps="keys.view,keys.create,keys.edit",
+                        servers="s1,s2")
+    c = await _login(application, "a", "sara-pw")
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "Multi", "limit_gb": 0, "days": 0})).json()["id"]
+    token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
+    assert (await c.post(f"/api/sub/{token}/servers/s2")).status_code == 200
+
+    members = await deps.db.get_keys_by_sub_token(token)
+    assert len(members) == 2
+    assert all(m["owner_admin_id"] == aid for m in members)   # both hers
+    assert len((await c.get("/api/keys")).json()["keys"]) == 2
+    await c.aclose()
+
+
+async def test_ownership_survives_a_backup_roundtrip(app):
+    application, deps, _ = app
+    owner = await _login(application, "admin", "pw")
+    aid = await _mk_sub(deps, username="a", caps="keys.view", servers="s1")
+    kid = (await owner.post("/api/servers/s1/keys",
+                            json={"name": "X", "limit_gb": 0, "days": 0})).json()["id"]
+    await owner.put(f"/api/servers/s1/keys/{kid}/owner", json={"admin_id": aid})
+
+    dump = (await owner.get("/api/backup")).json()
+    assert (await owner.post("/api/restore", json=dump)).status_code == 200
+    assert (await deps.db.get_key("s1", kid))["owner_admin_id"] == aid
+    await owner.aclose()

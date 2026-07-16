@@ -57,6 +57,9 @@ class FakeOutline:
         self._check()
         self.limits.pop(kid, None)
 
+    async def rename_key(self, kid, name):
+        self.keys[kid]["name"] = name
+
     async def get_server_metrics(self, since="30d"):
         from outline_panel.core.outline_api import OutlineError
         raise OutlineError("off")

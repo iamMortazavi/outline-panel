@@ -113,17 +113,36 @@ async def require_owner(admin: dict = Depends(current_admin)) -> dict:
     return admin
 
 
+def owns(admin: dict, meta: dict | None) -> bool:
+    """Whether this admin's page a key belongs on.
+
+    NULL owner means the panel owner's — that is how every key created before
+    ownership existed stays theirs, with no backfill. A key Outline knows about
+    but the panel has no row for is unattributed, so it is the owner's too.
+    """
+    if is_owner(admin):
+        return True
+    if meta is None:
+        return False
+    return meta.get("owner_admin_id") == admin["id"]
+
+
 async def enforce_scope(request: Request,
                         admin: dict = Depends(current_admin)) -> None:
-    """Router-level guard for every route carrying a `{sid}`.
+    """Router-level guard for every route carrying a `{sid}` and/or a `{kid}`.
 
-    Attaching this once per router covers all of them, so a new server-scoped
-    route is in scope by construction rather than by remembering. Out-of-scope
-    servers 404: to a sub-admin they simply do not exist.
+    Attaching this once per router covers all of them, so a new server- or
+    key-scoped route is guarded by construction rather than by remembering.
+    Out-of-scope servers and other admins' users 404: to a sub-admin they
+    simply do not exist.
     """
     sid = request.path_params.get("sid")
     if sid and not can_see(admin, sid):
         raise HTTPException(status_code=404, detail="Unknown server")
+    kid = request.path_params.get("kid")
+    if sid and kid and not is_owner(admin):
+        if not owns(admin, await db.get_key(sid, kid)):
+            raise HTTPException(status_code=404, detail="Unknown key")
 
 
 def api_or_404(sid: str) -> OutlineAPI:

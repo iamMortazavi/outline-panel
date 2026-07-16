@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS keys (
     reset_ts      INTEGER,
     sub_token     TEXT,
     created_ts    INTEGER,
+    owner_admin_id INTEGER,
     PRIMARY KEY (server_id, key_id)
 );
 """
@@ -154,6 +155,12 @@ class DB:
                 await self._db.execute(f"ALTER TABLE keys ADD COLUMN {col} INTEGER")
         if "sub_token" not in kcols:
             await self._db.execute("ALTER TABLE keys ADD COLUMN sub_token TEXT")
+        # migration: which admin a key belongs to. NULL = the panel owner's,
+        # so every key that already exists stays theirs with no backfill.
+        if "owner_admin_id" not in kcols:
+            await self._db.execute(
+                "ALTER TABLE keys ADD COLUMN owner_admin_id INTEGER"
+            )
         # runtime settings table (password hash, bot token, 2FA, ...)
         await self._db.execute(_SETTINGS_SCHEMA)
         # panel logins (owner + sub-admins)
@@ -234,16 +241,22 @@ class DB:
     async def add_key(
         self, server_id: str, key_id: str, name: str,
         limit_bytes: int | None, duration_days: int | None,
+        owner_admin_id: int | None = None,
     ) -> None:
         async with self._lock:
             await self.conn.execute(
                 "INSERT OR REPLACE INTO keys "
                 "(server_id, key_id, name, limit_bytes, duration_days, "
-                " activated_ts, expiry_ts, disabled, created_ts) "
-                "VALUES (?, ?, ?, ?, ?, NULL, NULL, 0, ?)",
-                (server_id, key_id, name, limit_bytes, duration_days, int(time.time())),
+                " activated_ts, expiry_ts, disabled, created_ts, owner_admin_id) "
+                "VALUES (?, ?, ?, ?, ?, NULL, NULL, 0, ?, ?)",
+                (server_id, key_id, name, limit_bytes, duration_days,
+                 int(time.time()), owner_admin_id),
             )
             await self.conn.commit()
+
+    async def set_key_owner(self, server_id: str, key_id: str,
+                            owner_admin_id: int | None) -> None:
+        await self._update(server_id, key_id, "owner_admin_id", owner_admin_id)
 
     async def get_key(self, server_id: str, key_id: str) -> dict | None:
         cur = await self.conn.execute(
@@ -565,7 +578,7 @@ class DB:
     _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts")
     _KEY_COLS = ("server_id", "key_id", "name", "limit_bytes", "duration_days",
                  "activated_ts", "expiry_ts", "disabled", "monthly_bytes",
-                 "reset_ts", "sub_token", "created_ts")
+                 "reset_ts", "sub_token", "created_ts", "owner_admin_id")
     _ADMIN_COLS = ("id", "username", "pw_hash", "pw_salt", "is_owner", "caps",
                    "servers", "disabled", "created_ts", "credit",
                    "credit_enabled", "discount_pct")
