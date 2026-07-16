@@ -12,7 +12,18 @@ from pydantic import BaseModel, Field
 from ...core import security
 from ...core.outline_api import OutlineAPI, OutlineError
 from ...core.utils import MONTH_SECONDS, gb_to_bytes
-from ..deps import api_or_404, can_see, db, enforce_scope, reg, require, scoped_ids, sids_or_404
+from ..deps import (
+    api_or_404,
+    can_see,
+    db,
+    enforce_scope,
+    on_credit,
+    price_for,
+    reg,
+    require,
+    scoped_ids,
+    sids_or_404,
+)
 
 log = logging.getLogger("web.keys")
 router = APIRouter(prefix="/api", tags=["keys"],
@@ -119,12 +130,15 @@ async def enable_on_outline(api: OutlineAPI, kid: str, meta: dict) -> None:
 # --------------------------------------------------------------------- models
 class CreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    limit_gb: float = Field(ge=0)
-    days: int = Field(ge=0)
+    limit_gb: float = Field(ge=0, default=0)
+    days: int = Field(ge=0, default=0)
     monthly_gb: float = Field(ge=0, default=0)
     # False: the countdown waits for the user's first connection (the default,
     # so an unused key isn't burning its validity). True: it starts right now.
     start_now: bool = False
+    # Credit-enabled admins must buy a package; the fields above are then
+    # ignored, since the package decides what the user gets.
+    package_id: int | None = None
 
 
 class NameBody(BaseModel):
@@ -141,7 +155,96 @@ class MonthlyBody(BaseModel):
 
 class ExtendBody(BaseModel):
     # positive extends validity (and re-enables); negative shortens it.
-    days: int = Field(ge=-3650, le=3650)
+    days: int = Field(default=0, ge=-3650, le=3650)
+    # A credit admin renews by buying another package instead of naming days.
+    package_id: int | None = None
+
+
+async def _buy(admin: dict, package_id: int | None, sid: str,
+               kid: str | None = None) -> tuple[dict, int, int] | None:
+    """Charge `admin` for a package, or raise. Returns (package, price, entry id).
+
+    Returns None when the caller is not on credit, meaning "no purchase, use
+    the free-form path". Reserving BEFORE the Outline call is deliberate: the
+    caller must reverse it if the call fails (see _reverse), because a check
+    that does not also take the money lets two tabs both pass it.
+    """
+    if not on_credit(admin):
+        return None
+    if package_id is None:
+        raise HTTPException(status_code=400, detail="Pick a package")
+    pkg = await db.get_package(package_id)
+    if pkg is None:
+        raise HTTPException(status_code=404, detail="Unknown package")
+    price = price_for(pkg, admin)
+    entry = await db.charge(admin["id"], price, reason="purchase",
+                            package_id=pkg["id"], package_name=pkg["name"],
+                            price_before_discount=int(pkg["price"]),
+                            server_id=sid, key_id=kid)
+    if entry is None:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Not enough credit: {pkg['name']} costs {price:,} but you "
+                   f"have {int(admin.get('credit') or 0):,}",
+        )
+    return pkg, price, entry
+
+
+async def _apply_package(sid: str, kid: str, pkg: dict) -> dict:
+    """Add a package's time and volume to an existing key (a renewal).
+
+    limit_bytes is the *cumulative ceiling* Outline counts against, never a
+    plan size, so adding to it is the correct operation. Outline is told first
+    and the DB committed after — a 502 must not move the dates, or the retry
+    charges twice and extends twice.
+    """
+    api = api_or_404(sid)
+    meta = await ensure_local(sid, kid)
+    now = int(time.time())
+
+    cur_limit = meta.get("limit_bytes")
+    if pkg["gb"] is None or cur_limit is None:
+        new_limit = None          # unlimited either way; never take away access
+    else:
+        new_limit = int(cur_limit) + gb_to_bytes(pkg["gb"])
+    try:
+        if new_limit is None:
+            await api.remove_data_limit(kid)
+        else:
+            await api.set_data_limit(kid, new_limit)
+    except OutlineError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    await db.set_limit(sid, kid, new_limit)
+    days = int(pkg["days"] or 0)
+    if days:
+        if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
+            # still pending: the clock has not started, so lengthen the term
+            await db.set_duration(sid, kid, int(meta["duration_days"]) + days)
+        else:
+            base = max(meta.get("expiry_ts") or 0, now)
+            await db.set_expiry(sid, kid, base + days * 86400)
+    if meta.get("disabled"):
+        await db.set_disabled(sid, kid, False)
+    return {"ok": True, "limit": new_limit}
+
+
+async def _reverse(admin: dict, bought: tuple[dict, int, int] | None, sid: str,
+                   note: str) -> None:
+    """Give back a charge for a sale that did not happen.
+
+    "No refunds" is about an admin deleting a user they sold. Nothing was
+    bought here, so keeping the money would just be an error.
+    """
+    if not bought:
+        return
+    pkg, price, _entry = bought
+    try:
+        await db.credit_admin(admin["id"], price, reason="reversal",
+                              package_id=pkg["id"], package_name=pkg["name"],
+                              server_id=sid, note=note)
+    except Exception:  # noqa: BLE001 — never mask the original failure
+        log.exception("could not reverse a charge for admin %s", admin["id"])
 
 
 # --------------------------------------------------------------------- routes
@@ -189,10 +292,26 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
             "pending": duration is not None and not start_now}
 
 
-@router.post("/servers/{sid}/keys", dependencies=[Depends(require("keys.create"))])
-async def create_key(sid: str, body: CreateBody):
-    return await create_key_for(sid, body.name, body.limit_gb, body.days,
-                                body.monthly_gb, body.start_now)
+@router.post("/servers/{sid}/keys")
+async def create_key(sid: str, body: CreateBody,
+                     admin: dict = Depends(require("keys.create"))):
+    bought = await _buy(admin, body.package_id, sid)
+    if not bought:
+        return await create_key_for(sid, body.name, body.limit_gb, body.days,
+                                    body.monthly_gb, body.start_now)
+    pkg, _price, entry = bought
+    try:
+        # The package decides what the user gets — the body's own limit/days
+        # are ignored rather than merged, or the buyer picks their own size.
+        key = await create_key_for(sid, body.name, pkg["gb"] or 0,
+                                   pkg["days"] or 0, pkg["monthly_gb"] or 0,
+                                   body.start_now)
+    except BaseException as e:
+        await _reverse(admin, bought, sid, f"create failed: {e}")
+        raise
+    # now that the key exists, point the charge at what it bought
+    await db.tag_ledger(entry, sid, key["id"])
+    return key
 
 
 @router.put("/servers/{sid}/keys/{kid}/name", dependencies=[Depends(require("keys.edit"))])
@@ -275,10 +394,23 @@ async def enable_key(sid: str, kid: str):
     return {"ok": True}
 
 
-@router.post("/servers/{sid}/keys/{kid}/extend", dependencies=[Depends(require("keys.edit"))])
-async def extend_key(sid: str, kid: str, body: ExtendBody):
+@router.post("/servers/{sid}/keys/{kid}/extend")
+async def extend_key(sid: str, kid: str, body: ExtendBody,
+                     admin: dict = Depends(require("keys.edit"))):
     """Adjust a key's validity: positive `days` extends (and re-enables a
-    disabled key), negative `days` shortens it (clamped to expire-now)."""
+    disabled key), negative `days` shortens it (clamped to expire-now).
+
+    A credit admin renews by buying a package instead: any time or volume that
+    reaches a user is paid for, so they cannot extend their way around the
+    price list.
+    """
+    bought = await _buy(admin, body.package_id, sid, kid)
+    if bought:
+        try:
+            return await _apply_package(sid, kid, bought[0])
+        except BaseException as e:
+            await _reverse(admin, bought, sid, f"renew failed: {e}")
+            raise
     if body.days == 0:
         raise HTTPException(status_code=400, detail="days must not be zero")
     api = api_or_404(sid)

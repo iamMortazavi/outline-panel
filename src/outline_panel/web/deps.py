@@ -80,6 +80,22 @@ def has_cap(admin: dict, cap: str) -> bool:
     return is_owner(admin) or cap in _csv(admin.get("caps"))
 
 
+def on_credit(admin: dict) -> bool:
+    """Whether this admin buys from the price list. The owner never does, and
+    an admin left outside the credit system keeps the free-form form."""
+    return not is_owner(admin) and bool(admin.get("credit_enabled"))
+
+
+def price_for(pkg: dict, admin: dict) -> int:
+    """What this admin pays for this package, after their personal discount.
+
+    One base price per package plus a per-admin percentage — the single place
+    that math happens, so the picker and the charge can never disagree.
+    """
+    pct = max(0, min(100, int(admin.get("discount_pct") or 0)))
+    return round(int(pkg["price"]) * (100 - pct) / 100)
+
+
 def require(*caps: str):
     """Dependency factory: every listed capability is required."""
     async def _check(admin: dict = Depends(current_admin)) -> dict:

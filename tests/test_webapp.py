@@ -350,18 +350,22 @@ async def test_restore_failure_keeps_the_panel(app):
     await c.aclose()
 
 
-async def test_restore_without_settings_is_rejected(app):
-    """import_all wipes settings, so a payload without them would restore a
-    panel whose admin password is gone — no password could ever log in again."""
+async def test_restore_requires_every_table_it_wipes(app):
+    """import_all empties each of these, so a payload missing one silently
+    erases it: no settings meant no password, no admins means no logins, and
+    no ledger means nobody's credit was ever accounted for."""
     await app.db.set_setting("admin_password_hash", "deadbeef")
     c = await _client(app)
-    r = await c.post("/api/restore", json={"servers": [], "keys": []})
-    assert r.status_code == 400
+    full = {"servers": [], "keys": [], "settings": {"x": "1"}, "admins": [],
+            "packages": [], "ledger": []}
+    for missing in full:
+        payload = {k: v for k, v in full.items() if k != missing}
+        r = await c.post("/api/restore", json=payload)
+        assert r.status_code == 400, f"a backup without {missing!r} was accepted"
+        assert missing in r.json()["detail"]
     assert await app.db.get_setting("admin_password_hash") == "deadbeef"
-    # a complete backup still restores
-    ok = await c.post("/api/restore",
-                      json={"servers": [], "keys": [], "settings": {"x": "1"}})
-    assert ok.status_code == 200
+
+    assert (await c.post("/api/restore", json=full)).status_code == 200
     await c.aclose()
 
 

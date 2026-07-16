@@ -29,6 +29,9 @@ def _public(row: dict) -> dict:
         "servers": [s for s in (row["servers"] or "").split(",") if s],
         "disabled": bool(row["disabled"]),
         "createdTs": row["created_ts"],
+        "creditEnabled": bool(row["credit_enabled"]),
+        "credit": int(row["credit"] or 0),
+        "discountPct": int(row["discount_pct"] or 0),
     }
 
 
@@ -53,11 +56,21 @@ class AdminBody(BaseModel):
     password: str = Field(min_length=6, max_length=200)
     caps: list[str] = []
     servers: list[str] = []
+    credit_enabled: bool = False
+    discount_pct: int = Field(default=0, ge=0, le=100)
+    credit: int = Field(default=0, ge=0)     # opening balance, via the ledger
+
+
+class CreditBody(BaseModel):
+    delta: int          # + top-up, - correction. Both are the same code path.
+    note: str = Field(default="", max_length=200)
 
 
 class AdminEdit(BaseModel):
     password: str | None = Field(default=None, min_length=6, max_length=200)
     caps: list[str] | None = None
+    credit_enabled: bool | None = None
+    discount_pct: int | None = Field(default=None, ge=0, le=100)
     servers: list[str] | None = None
     disabled: bool | None = None
 
@@ -81,6 +94,13 @@ async def create_admin(body: AdminBody):
         raise HTTPException(status_code=400, detail="Pick at least one server")
     h, s = security.hash_password(body.password)
     aid = await db.add_admin(body.username, h, s, caps=caps, servers=servers)
+    await db.update_admin(aid, credit_enabled=1 if body.credit_enabled else 0,
+                          discount_pct=body.discount_pct)
+    if body.credit:
+        # through the ledger, never straight into the column, so the statement
+        # accounts for every Toman from the first one
+        await db.credit_admin(aid, body.credit, reason="topup",
+                              note="opening balance")
     return _public(await db.get_admin(aid))
 
 
@@ -107,8 +127,36 @@ async def edit_admin(admin_id: int, body: AdminEdit):
         fields["servers"] = servers
     if body.disabled is not None:
         fields["disabled"] = 1 if body.disabled else 0
+    if body.credit_enabled is not None:
+        fields["credit_enabled"] = 1 if body.credit_enabled else 0
+    if body.discount_pct is not None:
+        fields["discount_pct"] = body.discount_pct
     await db.update_admin(admin_id, **fields)
     return _public(await db.get_admin(admin_id))
+
+
+@router.post("/{admin_id}/credit")
+async def add_credit(admin_id: int, body: CreditBody):
+    """Top up (or correct) a balance. Never sets it: an absolute write would
+    have no trace of what changed or why."""
+    row = await db.get_admin(admin_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown admin")
+    if body.delta == 0:
+        raise HTTPException(status_code=400, detail="Enter an amount")
+    if int(row["credit"] or 0) + body.delta < 0:
+        raise HTTPException(status_code=400, detail="That would go below zero")
+    reason = "topup" if body.delta > 0 else "adjust"
+    bal = await db.credit_admin(admin_id, body.delta, reason=reason,
+                                note=body.note or None)
+    return {"ok": True, "credit": bal}
+
+
+@router.get("/{admin_id}/ledger")
+async def admin_ledger(admin_id: int):
+    if await db.get_admin(admin_id) is None:
+        raise HTTPException(status_code=404, detail="Unknown admin")
+    return {"entries": await db.ledger_for(admin_id)}
 
 
 @router.delete("/{admin_id}")

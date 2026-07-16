@@ -34,7 +34,10 @@ async def download_backup():
 async def restore_backup(payload: dict):
     # "settings" is not optional: import_all wipes the table, so a payload
     # without it would restore a panel with no admin password — unloggable-into.
-    for field in ("servers", "keys", "settings"):
+    # Every table import_all wipes must be present, or the restore silently
+    # erases it: no settings meant no admin password, and now no admins/ledger
+    # would mean no logins and no record of anyone's credit.
+    for field in ("servers", "keys", "settings", "admins", "packages", "ledger"):
         if payload.get(field) is None:
             raise HTTPException(status_code=400,
                                 detail=f"Not a valid backup file (missing {field})")

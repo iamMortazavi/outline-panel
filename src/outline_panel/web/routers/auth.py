@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from ...core import config, security
 from ...core.settings import OWNER_USERNAME, TOTP_ENABLED, TOTP_SECRET
-from ..deps import CAPS, COOKIE_NAME, _csv, current_admin, settings, signer
+from ..deps import CAPS, COOKIE_NAME, _csv, current_admin, db, on_credit, settings, signer
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -116,4 +116,13 @@ async def me(admin: dict = Depends(current_admin)):
         "isOwner": bool(admin["is_owner"]),
         "caps": list(CAPS) if admin["is_owner"] else _csv(admin["caps"]),
         "servers": _csv(admin["servers"]),
+        "creditEnabled": on_credit(admin),
+        "credit": int(admin["credit"] or 0),
+        "discountPct": int(admin["discount_pct"] or 0),
     }
+
+
+@router.get("/me/ledger")
+async def my_ledger(admin: dict = Depends(current_admin)):
+    """An admin is spending money; they get to see where it went."""
+    return {"entries": await db.ledger_for(admin["id"])}

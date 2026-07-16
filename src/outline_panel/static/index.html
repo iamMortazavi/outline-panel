@@ -462,9 +462,47 @@ function openDrawer(inner){
 function keyById(id){return S.keys.find(k=>String(k.id)===String(id));}
 function renderQR(box,text){if(!box)return;if(typeof QRCode==='undefined'){box.parentElement.innerHTML='<div class="desc">QR unavailable offline.</div>';return;}new QRCode(box,{text,width:188,height:188,colorDark:'#0a0d12',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}
 
-function modalCreate(){
+const _srvOpts=()=>S.servers.map(s=>`<option value="${esc(s.id)}" ${s.reachable?'':'disabled'}>${esc(s.name)}${s.reachable?'':' · offline'}</option>`).join('');
+// A credit admin sells from the price list; everyone else keeps the free form.
+function modalCreate(){return (S.me&&S.me.creditEnabled)?modalCreateBuy():modalCreateFree();}
+function _pkgRow(p,cls){
+  return `<label class="srow" style="cursor:${p.affordable?'pointer':'not-allowed'};padding:12px 13px;opacity:${p.affordable?1:.45}"><input type="radio" name="${cls}" class="${cls}" value="${p.id}" ${p.affordable?'':'disabled'} style="width:17px;height:17px;accent-color:var(--acc)" /><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(pkgSize(p))} · ${esc(pkgTerm(p))}</div></div><span class="mono" style="font-size:12.5px;color:${p.affordable?'var(--acc)':'var(--danger)'}">${esc(fmtToman(p.price))}</span></label>`;
+}
+async function modalCreateBuy(){
   const multi=S.servers.length>1;
-  const srvOpts=S.servers.map(s=>`<option value="${esc(s.id)}" ${s.reachable?'':'disabled'}>${esc(s.name)}${s.reachable?'':' · offline'}</option>`).join('');
+  const ov=openSheet('<div class="h2">New user</div><p class="desc">Loading packages…</p>');
+  let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">New user</div><p class="err">${esc(e.message)}</p>`;return;}
+  const rows=d.packages.map(p=>_pkgRow(p,'cpk')).join('')
+    ||'<div class="desc">No packages are available yet. Ask the owner to add one.</div>';
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">New user</div>
+    <p class="desc">Pick a package. Its price comes out of your credit — you have <span class="mono" style="color:var(--acc)">${esc(fmtToman(d.credit))}</span>${d.discountPct?` · your discount ${d.discountPct}%`:''}.</p>
+    ${multi?'<div class="field"><label class="lab">Server</label><select id="cs" class="inp" style="cursor:pointer">'+_srvOpts()+'</select></div>':''}
+    <div class="field"><label class="lab">Name</label><input id="cn" class="inp" placeholder="e.g. Mohsen — iPhone" /></div>
+    <div class="field"><label class="lab">Package</label>${rows}</div>
+    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">Start countdown now</label><div style="font-size:12px;color:var(--dim);max-width:230px" id="csd">Off: the clock starts on the user's first connection.</div></div><div class="toggle" id="cst"><div class="tk"></div><div class="kn"></div></div></div></div>
+    <div id="ce" class="err"></div><button class="btn" id="cgo">Create user</button>`;
+  ov.querySelector('#cn').focus();
+  let startNow=false;const stg=ov.querySelector('#cst');
+  stg.onclick=()=>{startNow=!startNow;stg.classList.toggle('on',startNow);
+    ov.querySelector('#csd').textContent=startNow?'On: the clock starts the moment the key is created.':"Off: the clock starts on the user's first connection.";};
+  ov.querySelector('#cgo').onclick=async()=>{
+    const sid=multi?ov.querySelector('#cs').value:(S.servers[0]&&S.servers[0].id);
+    const name=ov.querySelector('#cn').value.trim();
+    const pick=[...ov.querySelectorAll('.cpk')].find(x=>x.checked);
+    const er=ov.querySelector('#ce');er.textContent='';
+    if(!sid){er.textContent='No server available.';return;}
+    if(!name){er.textContent='Please enter a name.';return;}
+    if(!pick){er.textContent='Pick a package.';return;}
+    const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',
+          body:JSON.stringify({name,package_id:+pick.value,start_now:startNow})});
+      await loadAll();renderApp();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create user';}
+  };
+}
+function modalCreateFree(){
+  const multi=S.servers.length>1;
+  const srvOpts=_srvOpts();
   const ov=openSheet(`<div class="h2">Create a new key</div><p class="desc">Generate one Outline access key for a single user.</p>
     ${multi?'<div class="field"><label class="lab">Server</label><select id="cs" class="inp" style="cursor:pointer">'+srvOpts+'</select></div>':''}
     <div class="field"><label class="lab">Name</label><input id="cn" class="inp" placeholder="e.g. Mohsen — iPhone" /></div>
@@ -529,9 +567,9 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div class="field"><label class="lab">Name</label><input id="mn" class="inp" value="${esc(k.name)}" /></div>
     <div class="field"><label class="lab">Data limit · GB (0 = unlimited)</label><input id="ml" class="inp" type="number" min="0" value="${lim}" placeholder="Unlimited" /></div>
     <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="mq" class="inp" type="number" min="0" value="${mon}" placeholder="Auto-renew off" /></div>
-    <div class="field"><label class="lab">Validity · add or reduce</label>
+    ${(S.me&&S.me.creditEnabled)?'<div class="field"><label class="lab">Renew</label><div id="mrn"><div class="desc">Loading packages…</div></div></div>':`<div class="field"><label class="lab">Validity · add or reduce</label>
       <div style="display:flex;gap:8px"><input id="mx" class="inp" type="number" min="-3650" max="3650" placeholder="Days — positive extends, negative shortens" /><button class="btn-sec" id="mxgo" style="width:auto;padding:0 18px">Apply</button></div>
-      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">${[[-30,'−30d'],[-7,'−7d'],[7,'+7d'],[30,'+30d'],[90,'+90d'],[365,'+1y']].map(([d,l])=>`<span class="chip" data-chip="mx" data-v="${d}" style="flex:1;min-width:52px;text-align:center">${l}</span>`).join('')}</div></div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">${[[-30,'−30d'],[-7,'−7d'],[7,'+7d'],[30,'+30d'],[90,'+90d'],[365,'+1y']].map(([d,l])=>`<span class="chip" data-chip="mx" data-v="${d}" style="flex:1;min-width:52px;text-align:center">${l}</span>`).join('')}</div></div>`}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
       <button class="btn-sec" data-act="config" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="width:auto;padding:11px 14px">⤓ Config</button>
       <button class="btn-sec" id="msub" style="width:auto;padding:11px 14px">🔗 Subscription</button>
@@ -540,7 +578,8 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div id="me" class="err"></div><button class="btn" id="msave">Save changes</button><div style="height:10px"></div>
     <button class="btn-danger" id="mdel">Delete key</button>`);
   const kb='/api/servers/'+k.serverId+'/keys/'+k.id;let disabled=k.disabled;
-  ov.querySelector('#mxgo').onclick=async()=>{const d=parseInt(ov.querySelector('#mx').value||'0',10)||0;const er=ov.querySelector('#me');er.textContent='';
+  if(ov.querySelector('#mrn'))_renewPicker(ov,k,kb);
+  if(ov.querySelector('#mxgo'))ov.querySelector('#mxgo').onclick=async()=>{const d=parseInt(ov.querySelector('#mx').value||'0',10)||0;const er=ov.querySelector('#me');er.textContent='';
     if(!d){er.textContent='Enter a number of days to add or reduce.';return;}
     if(Math.abs(d)>3650){er.textContent='At most 3650 days at a time.';return;}
     try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
@@ -576,6 +615,7 @@ function modalSettings(){
   const panel=[
     can('bot.manage')?'<div class="srow" id="rowBot"><span class="sdot" id="botDot" style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--danger)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">Telegram bot</div><div class="mono" id="botSub" style="font-size:11.5px;color:var(--dim);margin-top:2px">Loading…</div></div><span style="color:var(--dim)">›</span></div>':'',
     isOwner()?srow('admins','var(--acc)','Admins','Sub-admins, their servers &amp; rights'):'',
+    isOwner()?srow('packages','var(--acc)','Packages','What admins on credit may sell'):'',
     isOwner()?srow('security','var(--acc)','Security','Password &amp; two-factor'):'',
     isOwner()?srow('backup','var(--acc)','Backup &amp; restore','Download or restore all data'):'',
   ].filter(Boolean).join('');
@@ -587,6 +627,96 @@ function modalSettings(){
     api('/api/settings/bot').then(b=>{const d=$('#botDot'),su=$('#botSub');if(d)d.style.background=b.running?'var(--acc)':'var(--danger)';if(su)su.textContent=b.running?('Active · @'+(b.username||'bot')):(b.configured?'Configured · stopped':'Not configured');}).catch(()=>{});
   }
 }
+async function _renewPicker(ov,k,kb){
+  let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('#mrn').innerHTML=`<div class="err">${esc(e.message)}</div>`;return;}
+  const rows=d.packages.map(p=>_pkgRow(p,'mpk')).join('')||'<div class="desc">No packages available.</div>';
+  ov.querySelector('#mrn').innerHTML=`<div class="desc" style="margin:0 0 8px">Renewing adds the package's time and data. You have <span class="mono" style="color:var(--acc)">${esc(fmtToman(d.credit))}</span>.</div>${rows}
+    <button class="btn-sec" id="mrgo" style="width:100%;margin-top:9px">Renew with this package</button>`;
+  ov.querySelector('#mrgo').onclick=async()=>{
+    const pick=[...ov.querySelectorAll('.mpk')].find(x=>x.checked);
+    const er=ov.querySelector('#me');er.textContent='';
+    if(!pick){er.textContent='Pick a package.';return;}
+    const b=ov.querySelector('#mrgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({package_id:+pick.value})});
+      toast('Renewed');closeModal();await loadAll();renderApp();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Renew with this package';}
+  };
+}
+
+/* ---------- packages (owner defines, admins buy) ---------- */
+const fmtToman=n=>Number(n||0).toLocaleString('en-US')+' T';
+const pkgSize=p=>p.gb==null?'Unlimited data':(p.gb+' GB');
+const pkgTerm=p=>p.days?(p.days+' days'):'No expiry';
+async function modalPackages(){
+  const ov=openSheet('<div class="h2">Packages</div><p class="desc">Loading…</p>',{wide:true});
+  let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">Packages</div><p class="err">${esc(e.message)}</p><button class="btn-sec" data-act="settings">Back</button>`;return;}
+  const rows=d.packages.map(p=>`<div class="srow" data-act="pkgedit" data-id="${p.id}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--acc)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(pkgSize(p))} · ${esc(pkgTerm(p))}${p.monthlyGb?' · '+p.monthlyGb+' GB/month':''}</div></div><span class="mono" style="font-size:12px;color:var(--acc)">${esc(fmtToman(p.basePrice))}</span><span style="color:var(--dim)">›</span></div>`).join('')||'<div class="desc">No packages yet. Admins on credit cannot sell until you add one.</div>';
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">Packages</div><p class="desc">What your admins may sell. They pay the price out of their credit; each admin's discount applies on top.</p>
+    ${rows}<div style="height:6px"></div><button class="btn" data-act="pkgadd">+ Add a package</button>
+    <div style="height:10px"></div><button class="btn-sec" data-act="settings">Back</button>`;
+}
+function _pkgForm(p){
+  return `<div class="field"><label class="lab">Name</label><input id="pn" class="inp" value="${p?esc(p.name):''}" placeholder="e.g. 5 GB · 1 month" /></div>
+    <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+      <div class="field"><label class="lab">Data · GB (0 = unlimited)</label><input id="pg" class="inp" type="number" min="0" step="0.5" value="${p&&p.gb!=null?p.gb:''}" placeholder="0 = unlimited" /></div>
+      <div class="field"><label class="lab">Days (0 = no expiry)</label><input id="pd" class="inp" type="number" min="0" value="${p&&p.days?p.days:''}" placeholder="0 = no expiry" /></div></div>
+    <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="pm" class="inp" type="number" min="0" step="0.5" value="${p&&p.monthlyGb?p.monthlyGb:''}" placeholder="Auto-renew off" /></div>
+    <div class="field"><label class="lab">Price · Toman</label><input id="pp" class="inp" type="number" min="0" value="${p?p.basePrice:''}" placeholder="e.g. 30000" /></div>
+    <div id="perr" class="err"></div>`;
+}
+function _pkgBody(ov){
+  const num=id=>parseFloat(ov.querySelector(id).value||'0')||0;
+  return {name:ov.querySelector('#pn').value.trim(),gb:num('#pg')||null,
+          days:parseInt(ov.querySelector('#pd').value||'0',10)||null,
+          monthly_gb:num('#pm')||null,price:parseInt(ov.querySelector('#pp').value||'0',10)||0};
+}
+async function modalPackageAdd(){
+  const ov=openSheet(`<div class="h2">Add a package</div><p class="desc">Leave data or days at 0 for unlimited.</p>
+    ${_pkgForm(null)}<button class="btn" id="pgo">Create package</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="packages">Cancel</button>`,{wide:true});
+  ov.querySelector('#pn').focus();
+  ov.querySelector('#pgo').onclick=async()=>{
+    const b=_pkgBody(ov),er=ov.querySelector('#perr');er.textContent='';
+    if(!b.name){er.textContent='Enter a name.';return;}
+    const btn=ov.querySelector('#pgo');btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
+    try{await api('/api/packages',{method:'POST',body:JSON.stringify(b)});toast('Package added');modalPackages();}
+    catch(e){er.textContent=e.message;btn.disabled=false;btn.textContent='Create package';}
+  };
+}
+async function modalPackageEdit(id){
+  const d=await api('/api/packages');const p=d.packages.find(x=>String(x.id)===String(id));
+  if(!p)return modalPackages();
+  const ov=openSheet(`<div class="h2">${esc(p.name)}</div><p class="desc">Editing the price does not change what was already sold.</p>
+    ${_pkgForm(p)}<button class="btn" id="pgo">Save changes</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="packages">Back</button><div style="height:10px"></div>
+    <button class="btn-danger" id="pdel">Delete package</button>`,{wide:true});
+  ov.querySelector('#pgo').onclick=async()=>{
+    const b=_pkgBody(ov),er=ov.querySelector('#perr');er.textContent='';
+    if(!b.name){er.textContent='Enter a name.';return;}
+    const btn=ov.querySelector('#pgo');btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
+    try{await api('/api/packages/'+p.id,{method:'PUT',body:JSON.stringify(b)});toast('Saved');modalPackages();}
+    catch(e){er.textContent=e.message;btn.disabled=false;btn.textContent='Save changes';}
+  };
+  ov.querySelector('#pdel').onclick=async()=>{
+    if(!confirm('Delete “'+p.name+'”? Past sales keep their history.'))return;
+    try{await api('/api/packages/'+p.id,{method:'DELETE'});toast('Package deleted');modalPackages();}
+    catch(e){toast(e.message,1);}
+  };
+}
+
+const LEDGER_LABEL={topup:'Credit added',purchase:'Sold',reversal:'Refunded (sale failed)',adjust:'Correction'};
+async function modalLedger(adminId,who){
+  const url=adminId?('/api/admins/'+adminId+'/ledger'):'/api/me/ledger';
+  const ov=openSheet('<div class="h2">Statement</div><p class="desc">Loading…</p>',{wide:true});
+  let d;try{d=await api(url);}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">Statement</div><p class="err">${esc(e.message)}</p>`;return;}
+  const rows=d.entries.map(e=>{
+    const up=e.delta>0;
+    return `<div class="srow" style="cursor:default"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${up?'var(--acc)':'var(--dim)'}"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">${esc(LEDGER_LABEL[e.reason]||e.reason)}${e.package_name?' · '+esc(e.package_name):''}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(fmtDate(e.created_ts))}${e.key_id?' · user #'+esc(e.key_id):''}${e.note?' · '+esc(e.note):''}</div></div><div style="text-align:right"><div class="mono" style="font-size:12.5px;color:${up?'var(--ok,var(--acc))':'var(--text)'}">${up?'+':''}${esc(fmtToman(e.delta))}</div><div class="mono" style="font-size:11px;color:var(--faint);margin-top:2px">${esc(fmtToman(e.balance_after))}</div></div></div>`;
+  }).join('')||'<div class="desc">Nothing yet.</div>';
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">Statement</div><p class="desc">${who?'Every movement of '+esc(who)+'’s credit.':'Every movement of your credit.'}</p>
+    ${rows}<div style="height:10px"></div><button class="btn-sec" data-act="${adminId?'adminedit':'close'}" ${adminId?`data-id="${adminId}"`:''}>Back</button>`;
+}
+
 /* ---------- admins (owner only) ---------- */
 const CAP_LABELS={'keys.view':'See users & stats','keys.create':'Create users',
   'keys.edit':'Edit users','keys.delete':'Delete users',
@@ -610,6 +740,11 @@ function _adminForm(d,a){
     <div class="field"><label class="lab">Password${a?' (leave blank to keep)':''}</label><input id="apw" class="inp" type="password" placeholder="${a?'••••••••':'At least 6 characters'}" autocomplete="new-password" /></div>
     <div class="field"><label class="lab">Servers they can use</label>${servers}</div>
     <div class="field"><label class="lab">What they can do</label>${caps}</div>
+    <div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="acr" ${a&&a.creditEnabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">Sell from packages, on credit<div style="font-size:11.5px;color:var(--dim);margin-top:2px">Off: they create users freely, like today.</div></span></label></div>
+    <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
+      <div class="field"><label class="lab">Discount %</label><input id="adsc" class="inp" type="number" min="0" max="100" value="${a?a.discountPct:0}" /></div>
+      <div class="field"><label class="lab">${a?'Balance':'Opening credit · Toman'}</label>${a?`<div class="inp mono" style="display:flex;align-items:center;color:var(--acc)">${esc(fmtToman(a.credit))}</div>`:'<input id="acrd" class="inp" type="number" min="0" placeholder="0" />'}</div></div>
+    ${a?`<div class="field"><label class="lab">Add or correct credit · Toman</label><div style="display:flex;gap:8px"><input id="atop" class="inp" type="number" placeholder="e.g. 500000 or -50000" /><button class="btn-sec" id="atopgo" style="width:auto;padding:0 18px">Apply</button></div><div class="desc" style="margin-top:7px;font-size:11.5px">Every change is recorded. <a id="aledger" style="color:var(--acc);cursor:pointer">See statement</a></div></div>`:''}
     ${a?`<div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="adis" ${a.disabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">Disabled (signs them out immediately)</span></label></div>`:''}
     <div id="aerr" class="err"></div>`;
 }
@@ -623,7 +758,10 @@ async function modalAdminAdd(){
   ov.querySelector('#ago').onclick=async()=>{
     const er=ov.querySelector('#aerr');er.textContent='';
     const body={username:ov.querySelector('#aun').value.trim(),password:ov.querySelector('#apw').value,
-                servers:_picked(ov,'asrv'),caps:_picked(ov,'acap')};
+                servers:_picked(ov,'asrv'),caps:_picked(ov,'acap'),
+                credit_enabled:ov.querySelector('#acr').checked,
+                discount_pct:parseInt(ov.querySelector('#adsc').value||'0',10)||0,
+                credit:parseInt(ov.querySelector('#acrd').value||'0',10)||0};
     if(!body.username){er.textContent='Enter a username.';return;}
     if(body.password.length<6){er.textContent='Password must be at least 6 characters.';return;}
     if(!body.servers.length){er.textContent='Pick at least one server.';return;}
@@ -644,13 +782,23 @@ async function modalAdminEdit(id){
     const er=ov.querySelector('#aerr');er.textContent='';
     const pw=ov.querySelector('#apw').value;
     const body={servers:_picked(ov,'asrv'),caps:_picked(ov,'acap'),
-                disabled:ov.querySelector('#adis').checked};
+                disabled:ov.querySelector('#adis').checked,
+                credit_enabled:ov.querySelector('#acr').checked,
+                discount_pct:parseInt(ov.querySelector('#adsc').value||'0',10)||0};
     if(pw){if(pw.length<6){er.textContent='Password must be at least 6 characters.';return;}body.password=pw;}
     if(!body.servers.length){er.textContent='Pick at least one server.';return;}
     const b=ov.querySelector('#ago');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{await api('/api/admins/'+a.id,{method:'PUT',body:JSON.stringify(body)});toast('Saved');modalAdmins();}
     catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}
   };
+  ov.querySelector('#atopgo').onclick=async()=>{
+    const d2=parseInt(ov.querySelector('#atop').value||'0',10)||0;
+    const er=ov.querySelector('#aerr');er.textContent='';
+    if(!d2){er.textContent='Enter an amount to add (or a negative one to correct).';return;}
+    try{await api('/api/admins/'+a.id+'/credit',{method:'POST',body:JSON.stringify({delta:d2,note:''})});
+      toast('Credit updated');modalAdminEdit(a.id);}catch(e){er.textContent=e.message;}
+  };
+  ov.querySelector('#aledger').onclick=()=>modalLedger(a.id,a.username);
   ov.querySelector('#adel').onclick=async()=>{
     if(!confirm('Delete “'+a.username+'”? They are signed out immediately.'))return;
     try{await api('/api/admins/'+a.id,{method:'DELETE'});toast('Admin deleted');modalAdmins();}
@@ -752,6 +900,9 @@ document.addEventListener('click',e=>{
     case 'create':closeModal();modalCreate();break;
     case 'settings':closeModal();modalSettings();break;
     case 'admins':closeModal();modalAdmins();break;
+    case 'packages':closeModal();modalPackages();break;
+    case 'pkgadd':closeModal();modalPackageAdd();break;
+    case 'pkgedit':closeModal();modalPackageEdit(d.id);break;
     case 'adminadd':closeModal();modalAdminAdd();break;
     case 'adminedit':closeModal();modalAdminEdit(d.id);break;
     case 'signout':signOut();break;

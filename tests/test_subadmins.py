@@ -299,3 +299,224 @@ async def test_editing_an_admin_takes_effect_immediately(app):
                             json={"name": "A", "limit_gb": 0, "days": 0})).status_code == 200
     await sara.aclose()
     await c.aclose()
+
+
+# ------------------------------------------------------- credit & packages
+async def _credit_sub(deps, credit=100_000, discount=0, caps="keys.view,keys.create,keys.edit"):
+    from outline_panel.core import security
+    h, s = security.hash_password("sara-pw")
+    aid = await deps.db.add_admin("cara", h, s, caps=caps, servers="s1")
+    await deps.db.conn.execute(
+        "UPDATE admins SET credit_enabled = 1, discount_pct = ? WHERE id = ?",
+        (discount, aid))
+    await deps.db.conn.commit()
+    if credit:
+        await deps.db.credit_admin(aid, credit, reason="topup")
+    return aid
+
+
+async def test_credit_admin_buys_a_package(app):
+    application, deps, fakes = app
+    aid = await _credit_sub(deps, credit=100_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _login(application, "cara", "sara-pw")
+
+    r = await c.post("/api/servers/s1/keys",
+                     json={"name": "U1", "package_id": pid})
+    assert r.status_code == 200, r.text
+    assert r.json()["limit"] == 5 * 1024 ** 3        # the package decided, not her
+    assert r.json()["durationDays"] == 30
+    assert (await deps.db.get_admin(aid))["credit"] == 70_000
+    row = (await deps.db.ledger_for(aid))[0]
+    assert row["reason"] == "purchase" and row["delta"] == -30_000
+    assert row["key_id"] == r.json()["id"]
+    await c.aclose()
+
+
+async def test_the_package_overrides_what_the_admin_asks_for(app):
+    """Otherwise the picker is decoration and she sells herself 500 GB."""
+    application, deps, fakes = app
+    await _credit_sub(deps, credit=100_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _login(application, "cara", "sara-pw")
+    r = await c.post("/api/servers/s1/keys",
+                     json={"name": "U1", "package_id": pid,
+                           "limit_gb": 500, "days": 3650, "monthly_gb": 999})
+    assert r.json()["limit"] == 5 * 1024 ** 3
+    assert r.json()["durationDays"] == 30
+    await c.aclose()
+
+
+async def test_credit_admin_must_pick_a_package(app):
+    application, deps, _ = app
+    await _credit_sub(deps, credit=100_000)
+    c = await _login(application, "cara", "sara-pw")
+    r = await c.post("/api/servers/s1/keys", json={"name": "U1", "limit_gb": 5, "days": 30})
+    assert r.status_code == 400 and "package" in r.json()["detail"].lower()
+    await c.aclose()
+
+
+async def test_zero_credit_cannot_sell(app):
+    application, deps, _ = app
+    aid = await _credit_sub(deps, credit=30_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _login(application, "cara", "sara-pw")
+    assert (await c.post("/api/servers/s1/keys",
+                         json={"name": "U1", "package_id": pid})).status_code == 200
+    r = await c.post("/api/servers/s1/keys", json={"name": "U2", "package_id": pid})
+    assert r.status_code == 402 and "credit" in r.json()["detail"].lower()
+    assert (await deps.db.get_admin(aid))["credit"] == 0
+    await c.aclose()
+
+
+async def test_discount_applies(app):
+    application, deps, _ = app
+    aid = await _credit_sub(deps, credit=100_000, discount=25)
+    pid = await deps.db.add_package("Odd price", 5, 30, 33_333)
+    c = await _login(application, "cara", "sara-pw")
+
+    pkgs = (await c.get("/api/packages")).json()
+    assert pkgs["packages"][0]["price"] == 25_000       # round(33333*0.75)
+    assert pkgs["packages"][0]["basePrice"] == 33_333
+    assert pkgs["packages"][0]["affordable"] is True
+
+    await c.post("/api/servers/s1/keys", json={"name": "U1", "package_id": pid})
+    assert (await deps.db.get_admin(aid))["credit"] == 75_000
+    row = (await deps.db.ledger_for(aid))[0]
+    assert row["delta"] == -25_000 and row["price_before_discount"] == 33_333
+    await c.aclose()
+
+
+async def test_a_failed_sale_gives_the_credit_back(app):
+    """Nothing was bought, so keeping the money would just be a bug."""
+    application, deps, fakes = app
+    aid = await _credit_sub(deps, credit=100_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _login(application, "cara", "sara-pw")
+
+    async def boom(name=None, limit_bytes=None):
+        from outline_panel.core.outline_api import OutlineError
+        raise OutlineError("server down")
+    fakes["s1"].create_key = boom
+
+    r = await c.post("/api/servers/s1/keys", json={"name": "U1", "package_id": pid})
+    assert r.status_code == 502
+    assert (await deps.db.get_admin(aid))["credit"] == 100_000   # made whole
+    reasons = [x["reason"] for x in await deps.db.ledger_for(aid)]
+    assert reasons == ["reversal", "purchase", "topup"]          # and it is visible
+    assert await deps.db.ledger_sum(aid) == 100_000
+    await c.aclose()
+
+
+async def test_renewing_costs_another_package(app):
+    application, deps, _ = app
+    aid = await _credit_sub(deps, credit=100_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _login(application, "cara", "sara-pw")
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "U1", "package_id": pid})).json()["id"]
+    assert (await deps.db.get_admin(aid))["credit"] == 70_000
+
+    r = await c.post(f"/api/servers/s1/keys/{kid}/extend", json={"package_id": pid})
+    assert r.status_code == 200
+    assert (await deps.db.get_admin(aid))["credit"] == 40_000     # charged again
+    meta = await deps.db.get_key("s1", kid)
+    assert meta["limit_bytes"] == 10 * 1024 ** 3                  # 5 + 5 added
+    assert meta["duration_days"] == 60                            # still pending: 30 + 30
+    await c.aclose()
+
+
+async def test_credit_admin_cannot_extend_for_free(app):
+    """Free-form days would be a way around the price list entirely."""
+    application, deps, _ = app
+    await _credit_sub(deps, credit=100_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _login(application, "cara", "sara-pw")
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "U1", "package_id": pid})).json()["id"]
+    r = await c.post(f"/api/servers/s1/keys/{kid}/extend", json={"days": 3650})
+    assert r.status_code == 400 and "package" in r.json()["detail"].lower()
+    await c.aclose()
+
+
+async def test_owner_and_exempt_admins_are_untouched(app):
+    """The credit system is opt-in; everyone else keeps the free-form form."""
+    application, deps, _ = app
+    owner = await _login(application, "admin", "pw")
+    r = await owner.post("/api/servers/s1/keys",
+                         json={"name": "O1", "limit_gb": 7, "days": 5})
+    assert r.status_code == 200 and r.json()["limit"] == 7 * 1024 ** 3
+
+    await _mk_sub(deps, username="free", caps="keys.create", servers="s1")
+    c = await _login(application, "free", "sara-pw")
+    r = await c.post("/api/servers/s1/keys", json={"name": "F1", "limit_gb": 9, "days": 5})
+    assert r.status_code == 200 and r.json()["limit"] == 9 * 1024 ** 3
+    await owner.aclose()
+    await c.aclose()
+
+
+async def test_packages_are_owner_only_to_edit(app):
+    application, deps, _ = app
+    await _credit_sub(deps, credit=1)
+    c = await _login(application, "cara", "sara-pw")
+    assert (await c.get("/api/packages")).status_code == 200      # may read the list
+    assert (await c.post("/api/packages",
+                         json={"name": "Free", "gb": 999, "days": 999,
+                               "price": 0})).status_code == 403
+    assert (await c.put("/api/packages/1",
+                        json={"name": "x", "price": 0})).status_code == 403
+    assert (await c.delete("/api/packages/1")).status_code == 403
+    await c.aclose()
+
+
+async def test_owner_tops_up_and_reads_the_statement(app):
+    application, deps, _ = app
+    aid = await _credit_sub(deps, credit=0)
+    c = await _login(application, "admin", "pw")
+
+    r = await c.post(f"/api/admins/{aid}/credit",
+                     json={"delta": 500_000, "note": "cash"})
+    assert r.status_code == 200 and r.json()["credit"] == 500_000
+    r = await c.post(f"/api/admins/{aid}/credit", json={"delta": -100_000, "note": "fix"})
+    assert r.json()["credit"] == 400_000
+    # a correction may not push a balance below zero
+    assert (await c.post(f"/api/admins/{aid}/credit",
+                         json={"delta": -999_999})).status_code == 400
+    assert (await c.post(f"/api/admins/{aid}/credit", json={"delta": 0})).status_code == 400
+
+    entries = (await c.get(f"/api/admins/{aid}/ledger")).json()["entries"]
+    assert [e["reason"] for e in entries] == ["adjust", "topup"]
+    assert entries[0]["balance_after"] == 400_000
+    await c.aclose()
+
+
+async def test_an_admin_can_read_their_own_statement(app):
+    application, deps, _ = app
+    await _credit_sub(deps, credit=100_000)
+    pid = await deps.db.add_package("5 GB", 5, 30, 30_000)
+    c = await _login(application, "cara", "sara-pw")
+    await c.post("/api/servers/s1/keys", json={"name": "U1", "package_id": pid})
+
+    me = (await c.get("/api/me")).json()
+    assert me["creditEnabled"] is True and me["credit"] == 70_000
+
+    entries = (await c.get("/api/me/ledger")).json()["entries"]
+    assert entries[0]["reason"] == "purchase" and entries[0]["delta"] == -30_000
+    assert entries[0]["key_id"] is not None      # which user the money bought
+    # but someone else's statement is not hers to read
+    assert (await c.get("/api/admins/1/ledger")).status_code == 403
+    await c.aclose()
+
+
+async def test_credit_cannot_be_set_directly_through_the_editor(app):
+    """Money moves only through the ledger; an editor field that writes the
+    column would leave a balance nobody can account for."""
+    application, deps, _ = app
+    aid = await _credit_sub(deps, credit=50_000)
+    c = await _login(application, "admin", "pw")
+    r = await c.put(f"/api/admins/{aid}", json={"servers": ["s1"], "caps": ["keys.view"],
+                                                "credit": 999_999})
+    assert r.status_code == 200
+    assert (await deps.db.get_admin(aid))["credit"] == 50_000     # ignored
+    assert await deps.db.ledger_sum(aid) == 50_000
+    await c.aclose()

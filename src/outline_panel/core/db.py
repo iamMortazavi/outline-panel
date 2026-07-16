@@ -74,6 +74,42 @@ CREATE TABLE IF NOT EXISTS admins (
 """
 
 
+# What a sub-admin may sell. `price` is the base in Toman, before the admin's
+# personal discount.
+_PACKAGES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS packages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    gb         REAL,
+    days       INTEGER,
+    monthly_gb REAL,
+    price      INTEGER NOT NULL,
+    created_ts INTEGER
+);
+"""
+
+# Every movement of credit, ever. `admins.credit` is the atomic guard the
+# purchase checks against; this is the answer to "where did my money go".
+# package_name/price are SNAPSHOTS: history must survive renaming or deleting
+# a package, so nothing here joins back to `packages`.
+_LEDGER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS credit_ledger (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    admin_id      INTEGER NOT NULL,
+    delta         INTEGER NOT NULL,
+    balance_after INTEGER NOT NULL,
+    reason        TEXT NOT NULL,
+    package_id    INTEGER,
+    package_name  TEXT,
+    price_before_discount INTEGER,
+    server_id     TEXT,
+    key_id        TEXT,
+    note          TEXT,
+    created_ts    INTEGER
+);
+"""
+
+
 class DB:
     def __init__(self, path: str):
         self.path = path
@@ -122,6 +158,22 @@ class DB:
         await self._db.execute(_SETTINGS_SCHEMA)
         # panel logins (owner + sub-admins)
         await self._db.execute(_ADMINS_SCHEMA)
+        # migration: credit columns on older admins tables. credit_enabled
+        # defaults to 0, so every admin that already exists keeps its current
+        # behaviour — opting in is a deliberate act.
+        cur = await self._db.execute("PRAGMA table_info(admins)")
+        acols = [r[1] for r in await cur.fetchall()]
+        for col in ("credit", "credit_enabled", "discount_pct"):
+            if col not in acols:
+                await self._db.execute(
+                    f"ALTER TABLE admins ADD COLUMN {col} INTEGER DEFAULT 0"
+                )
+        # resale packages + the credit ledger
+        await self._db.execute(_PACKAGES_SCHEMA)
+        await self._db.execute(_LEDGER_SCHEMA)
+        await self._db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ledger_admin ON credit_ledger(admin_id)"
+        )
         await self._db.commit()
 
     async def close(self) -> None:
@@ -356,7 +408,9 @@ class DB:
     async def update_admin(self, admin_id: int, **fields) -> None:
         """Update only the named columns. Unknown ones are ignored, so a caller
         can pass a whole request body without smuggling in `is_owner`."""
-        allowed = ("username", "pw_hash", "pw_salt", "caps", "servers", "disabled")
+        allowed = ("username", "pw_hash", "pw_salt", "caps", "servers", "disabled",
+                   "credit_enabled", "discount_pct")   # never "credit": it moves
+                                                       # only through the ledger
         cols = [c for c in allowed if c in fields]
         if not cols:
             return
@@ -374,13 +428,151 @@ class DB:
             )
             await self.conn.commit()
 
+    # packages --------------------------------------------------------------
+    async def add_package(self, name: str, gb: float | None, days: int | None,
+                          price: int, monthly_gb: float | None = None) -> int:
+        async with self._lock:
+            cur = await self.conn.execute(
+                "INSERT INTO packages (name, gb, days, monthly_gb, price, created_ts)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (name, gb, days, monthly_gb, int(price), int(time.time())),
+            )
+            await self.conn.commit()
+            return cur.lastrowid
+
+    async def get_package(self, pkg_id: int) -> dict | None:
+        cur = await self.conn.execute("SELECT * FROM packages WHERE id = ?", (pkg_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def all_packages(self) -> list[dict]:
+        cur = await self.conn.execute("SELECT * FROM packages ORDER BY price, id")
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def update_package(self, pkg_id: int, **fields) -> None:
+        allowed = ("name", "gb", "days", "monthly_gb", "price")
+        cols = [c for c in allowed if c in fields]
+        if not cols:
+            return
+        async with self._lock:
+            await self.conn.execute(
+                f"UPDATE packages SET {', '.join(c + ' = ?' for c in cols)} WHERE id = ?",
+                [fields[c] for c in cols] + [pkg_id],
+            )
+            await self.conn.commit()
+
+    async def delete_package(self, pkg_id: int) -> None:
+        # The ledger snapshots what was sold, so history survives this.
+        async with self._lock:
+            await self.conn.execute("DELETE FROM packages WHERE id = ?", (pkg_id,))
+            await self.conn.commit()
+
+    # credit ----------------------------------------------------------------
+    async def charge(self, admin_id: int, amount: int, **entry) -> int | None:
+        """Take `amount` off an admin's credit and return the ledger row id, or
+        None if they cannot afford it. Never overdraws.
+
+        The check IS the write: `WHERE credit >= ?` decides it inside SQLite, so
+        two concurrent sales cannot both pass a separate `credit > 0` test and
+        drive the balance negative. That holds no matter how many workers run,
+        which a read-then-write guarded only by our asyncio lock would not.
+        """
+        async with self._lock:
+            try:
+                cur = await self.conn.execute(
+                    "UPDATE admins SET credit = credit - ? "
+                    "WHERE id = ? AND credit_enabled = 1 AND credit >= ?",
+                    (int(amount), admin_id, int(amount)),
+                )
+                if cur.rowcount == 0:
+                    await self.conn.rollback()
+                    return None
+                _bal, entry_id = await self._ledger(admin_id, -int(amount), **entry)
+                await self.conn.commit()
+                return entry_id
+            except BaseException:
+                await self.conn.rollback()
+                raise
+
+    async def credit_admin(self, admin_id: int, delta: int, **entry) -> int:
+        """Give credit back (a reversal) or top up. Returns the new balance.
+
+        Unconditional on purpose: a reversal must always land, or a failed sale
+        would quietly keep the money.
+        """
+        async with self._lock:
+            try:
+                await self.conn.execute(
+                    "UPDATE admins SET credit = credit + ? WHERE id = ?",
+                    (int(delta), admin_id),
+                )
+                bal, _id = await self._ledger(admin_id, int(delta), **entry)
+                await self.conn.commit()
+                return bal
+            except BaseException:
+                await self.conn.rollback()
+                raise
+
+    async def _ledger(self, admin_id: int, delta: int, reason: str = "adjust",
+                      package_id: int | None = None, package_name: str | None = None,
+                      price_before_discount: int | None = None,
+                      server_id: str | None = None, key_id: str | None = None,
+                      note: str | None = None) -> tuple[int, int]:
+        """Record one movement; returns (balance_after, row id). Caller holds
+        the lock and commits."""
+        cur = await self.conn.execute(
+            "SELECT credit FROM admins WHERE id = ?", (admin_id,)
+        )
+        row = await cur.fetchone()
+        bal = int(row["credit"] or 0) if row else 0
+        cur = await self.conn.execute(
+            "INSERT INTO credit_ledger (admin_id, delta, balance_after, reason,"
+            " package_id, package_name, price_before_discount, server_id, key_id,"
+            " note, created_ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (admin_id, delta, bal, reason, package_id, package_name,
+             price_before_discount, server_id, key_id, note, int(time.time())),
+        )
+        return bal, cur.lastrowid
+
+    async def tag_ledger(self, entry_id: int, server_id: str, key_id: str) -> None:
+        """Point a purchase at the key it bought. The charge happens before the
+        key exists, so the statement would otherwise say what was sold but not
+        to whom."""
+        async with self._lock:
+            await self.conn.execute(
+                "UPDATE credit_ledger SET server_id = ?, key_id = ? WHERE id = ?",
+                (server_id, key_id, entry_id),
+            )
+            await self.conn.commit()
+
+    async def ledger_for(self, admin_id: int, limit: int = 200) -> list[dict]:
+        cur = await self.conn.execute(
+            "SELECT * FROM credit_ledger WHERE admin_id = ?"
+            " ORDER BY id DESC LIMIT ?", (admin_id, limit),
+        )
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def ledger_sum(self, admin_id: int) -> int:
+        """The balance the ledger implies. Must equal admins.credit — the drift
+        between them is the thing worth testing."""
+        cur = await self.conn.execute(
+            "SELECT COALESCE(SUM(delta), 0) AS s FROM credit_ledger WHERE admin_id = ?",
+            (admin_id,),
+        )
+        return int((await cur.fetchone())["s"])
+
     # backup / restore ------------------------------------------------------
     _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts")
     _KEY_COLS = ("server_id", "key_id", "name", "limit_bytes", "duration_days",
                  "activated_ts", "expiry_ts", "disabled", "monthly_bytes",
                  "reset_ts", "sub_token", "created_ts")
     _ADMIN_COLS = ("id", "username", "pw_hash", "pw_salt", "is_owner", "caps",
-                   "servers", "disabled", "created_ts")
+                   "servers", "disabled", "created_ts", "credit",
+                   "credit_enabled", "discount_pct")
+    _PACKAGE_COLS = ("id", "name", "gb", "days", "monthly_gb", "price", "created_ts")
+    _LEDGER_COLS = ("id", "admin_id", "delta", "balance_after", "reason",
+                    "package_id", "package_name", "price_before_discount",
+                    "server_id", "key_id", "note", "created_ts")
 
     async def export_all(self) -> dict:
         return {
@@ -389,7 +581,13 @@ class DB:
             "keys": await self.all_keys(),
             "settings": await self.all_settings(),
             "admins": await self.all_admins(),
+            "packages": await self.all_packages(),
+            "ledger": await self.all_ledger(),
         }
+
+    async def all_ledger(self) -> list[dict]:
+        cur = await self.conn.execute("SELECT * FROM credit_ledger ORDER BY id")
+        return [dict(r) for r in await cur.fetchall()]
 
     async def import_all(self, data: dict) -> None:
         """Replace servers/keys/settings with ``data``, all-or-nothing.
@@ -402,12 +600,16 @@ class DB:
         keys = data.get("keys") or []
         settings = data.get("settings") or {}
         admins = data.get("admins") or []
+        packages = data.get("packages") or []
+        ledger = data.get("ledger") or []
         async with self._lock:
             try:
                 await self.conn.execute("DELETE FROM servers")
                 await self.conn.execute("DELETE FROM keys")
                 await self.conn.execute("DELETE FROM settings")
                 await self.conn.execute("DELETE FROM admins")
+                await self.conn.execute("DELETE FROM packages")
+                await self.conn.execute("DELETE FROM credit_ledger")
                 for s in servers:
                     cols = [c for c in self._SERVER_COLS if c in s]
                     await self.conn.execute(
@@ -428,6 +630,20 @@ class DB:
                         f"INSERT INTO admins ({','.join(cols)}) "
                         f"VALUES ({','.join('?' * len(cols))})",
                         [a.get(c) for c in cols],
+                    )
+                for pk in packages:
+                    cols = [c for c in self._PACKAGE_COLS if c in pk]
+                    await self.conn.execute(
+                        f"INSERT INTO packages ({','.join(cols)}) "
+                        f"VALUES ({','.join('?' * len(cols))})",
+                        [pk.get(c) for c in cols],
+                    )
+                for le in ledger:
+                    cols = [c for c in self._LEDGER_COLS if c in le]
+                    await self.conn.execute(
+                        f"INSERT INTO credit_ledger ({','.join(cols)}) "
+                        f"VALUES ({','.join('?' * len(cols))})",
+                        [le.get(c) for c in cols],
                     )
                 for key, val in settings.items():
                     await self.conn.execute(
