@@ -57,6 +57,25 @@ class BrokenOutline(FakeOutline):
         raise OutlineError("server down")
 
 
+class DeadOutline(FakeOutline):
+    """Works until ``dead`` is set, then every call fails — a server that went
+    down after its keys were created."""
+
+    dead = False
+
+    async def get_key(self, kid):
+        if self.dead:
+            from outline_panel.core.outline_api import OutlineError
+            raise OutlineError("server down")
+        return await super().get_key(kid)
+
+    async def get_transfer_metrics(self):
+        if self.dead:
+            from outline_panel.core.outline_api import OutlineError
+            raise OutlineError("server down")
+        return await super().get_transfer_metrics()
+
+
 class App:
     """Bundle of the freshly-loaded app module + its deps for a test."""
 
@@ -237,14 +256,44 @@ async def test_subscription_browser_vs_client(app):
     page = await pub.get(f"/sub/{token}", headers={
         "Accept": "text/html", "User-Agent": "Mozilla/5.0"})
     assert page.status_code == 200 and "/static/vendor/qrcode.js" in page.text
-    # a VPN client gets the raw base64 sub even with an html Accept
+    # a VPN client gets the raw base64 sub — what it actually sends
     raw = await pub.get(f"/sub/{token}", headers={
-        "Accept": "text/html", "User-Agent": "v2rayNG/1.8"})
+        "Accept": "*/*", "User-Agent": "v2rayNG/1.8"})
     assert raw.status_code == 200 and "subscription-userinfo" in raw.headers
-    # the JSON usage summary that powers the page
-    info = (await pub.get(f"/sub/{token}/info")).json()
+    # ...and still does if it asks for html without claiming to be a browser
+    raw2 = await pub.get(f"/sub/{token}", headers={
+        "Accept": "text/html", "User-Agent": "v2rayNG/1.8"})
+    assert raw2.status_code == 200 and "subscription-userinfo" in raw2.headers
+    # ?format=raw is the escape hatch for a client that spoofs a browser
+    esc = await pub.get(f"/sub/{token}?format=raw", headers={
+        "Accept": "text/html", "User-Agent": "Mozilla/5.0"})
+    assert esc.status_code == 200 and "subscription-userinfo" in esc.headers
+    # the JSON usage summary that powers the page — never cached, it carries the keys
+    r = await pub.get(f"/sub/{token}/info")
+    assert r.headers["cache-control"] == "no-store"
+    info = r.json()
     assert info["name"] == "Ali" and info["unlimited"] is False
     assert info["total"] == 10 * 1024 ** 3 and len(info["servers"]) == 1
+    await pub.aclose()
+    await c.aclose()
+
+
+async def test_subscription_all_servers_down(app):
+    """An unresolvable subscription must fail, not render as an empty plan:
+    ``total==0`` is how the page spells "unlimited"."""
+    fake = DeadOutline()
+    _register(app, "s1", "Tokyo", fake)
+    await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
+    c = await _client(app)
+    kid = (await c.post("/api/servers/s1/keys",
+                        json={"name": "Ali", "limit_gb": 10, "days": 0})).json()["id"]
+    token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
+    fake.dead = True
+
+    pub = await _client(app, login=False)
+    raw = await pub.get(f"/sub/{token}", headers={"Accept": "*/*", "User-Agent": "v2rayNG"})
+    assert raw.status_code == 502
+    assert (await pub.get(f"/sub/{token}/info")).status_code == 502
     await pub.aclose()
     await c.aclose()
 

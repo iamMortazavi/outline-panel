@@ -17,11 +17,10 @@ from __future__ import annotations
 
 import base64
 import re
-import time
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ...core.outline_api import OutlineError
 from ..deps import STATIC_DIR, db, reg
@@ -30,13 +29,6 @@ router = APIRouter(tags=["subscription"])
 
 # How often (hours) clients should re-fetch the subscription.
 _UPDATE_INTERVAL_HOURS = 12
-
-# User-Agent fragments of known VPN clients — they must always get the raw sub.
-_CLIENT_UAS = (
-    "v2ray", "clash", "sing-box", "singbox", "shadowrocket", "streisand",
-    "nekobox", "nekoray", "hiddify", "outline", "surfboard", "quantumult",
-    "loon", "stash", "v2box", "foxray", "karing", "sn-proxy", "passwall",
-)
 
 
 def _ss_with_label(access_url: str, label: str) -> str:
@@ -47,26 +39,26 @@ def _ss_with_label(access_url: str, label: str) -> str:
 
 
 def _wants_html(request: Request) -> bool:
+    # ponytail: only a browser sends both a Mozilla UA and Accept: text/html — VPN
+    # clients send Accept: */*. A client that spoofs both can use ?format=raw.
     fmt = request.query_params.get("format", "").lower()
-    if fmt in ("html", "page"):
+    if fmt == "html":
         return True
-    if fmt in ("raw", "sub", "base64", "txt"):
+    if fmt == "raw":
         return False
     ua = request.headers.get("user-agent", "").lower()
-    if any(c in ua for c in _CLIENT_UAS):
-        return False
     return "text/html" in request.headers.get("accept", "").lower() and "mozilla" in ua
 
 
 async def _collect(token: str) -> dict:
-    """Resolve a subscription token into clean ss:// lines + a usage summary."""
+    """Resolve a subscription token into a usage summary (``servers[*].url`` are
+    the clean ``ss://`` lines the raw sub is built from)."""
     members = await db.get_keys_by_sub_token(token)
     if not members:
         raise HTTPException(status_code=404, detail="Unknown subscription")
 
     multi = len({m["server_id"] for m in members}) > 1
     usage_by_server: dict[str, dict] = {}
-    lines: list[str] = []
     servers: list[dict] = []
     title = None
     download = total = expire = 0
@@ -90,7 +82,6 @@ async def _collect(token: str) -> dict:
                               f"{name} · {sname}" if multi else name)
         if not line:
             continue
-        lines.append(line)
         used = int(usage_by_server[sid].get(str(kid), 0))
         lim = m.get("limit_bytes")
         exp = m.get("expiry_ts")
@@ -102,22 +93,23 @@ async def _collect(token: str) -> dict:
         if exp:
             expire = max(expire, int(exp))
         servers.append({
-            "server": sname, "name": name, "used": used, "limit": lim,
-            "expiry": exp, "disabled": bool(m.get("disabled")), "url": line,
+            "server": sname, "used": used, "limit": lim,
+            "disabled": bool(m.get("disabled")), "url": line,
         })
 
+    # Every caller needs this: a summary with no servers is not "0 bytes of an
+    # unlimited plan", it's a subscription we failed to resolve. Say so.
+    if not servers:
+        raise HTTPException(status_code=502, detail="No reachable server for this subscription")
+
     return {
-        "lines": lines,
-        "info": {
-            "name": title or "subscription",
-            "used": download,
-            "total": 0 if any_unlimited else total,
-            "unlimited": any_unlimited,
-            "expire": expire or 0,
-            "updateInterval": _UPDATE_INTERVAL_HOURS,
-            "now": int(time.time()),
-            "servers": servers,
-        },
+        "name": title or "subscription",
+        "used": download,
+        "total": 0 if any_unlimited else total,
+        "unlimited": any_unlimited,
+        "expire": expire or 0,
+        "updateInterval": _UPDATE_INTERVAL_HOURS,
+        "servers": servers,
     }
 
 
@@ -127,11 +119,9 @@ async def subscription(token: str, request: Request):
     if _wants_html(request):
         return FileResponse(STATIC_DIR / "sub.html")
 
-    data = await _collect(token)
-    if not data["lines"]:
-        raise HTTPException(status_code=502, detail="No reachable server for this subscription")
-    info = data["info"]
-    payload = base64.b64encode("\n".join(data["lines"]).encode()).decode()
+    info = await _collect(token)
+    urls = [s["url"] for s in info["servers"]]
+    payload = base64.b64encode("\n".join(urls).encode()).decode()
     userinfo = f"upload=0; download={info['used']}; total={info['total']}"
     if info["expire"]:
         userinfo += f"; expire={info['expire']}"
@@ -149,4 +139,5 @@ async def subscription(token: str, request: Request):
 @router.get("/sub/{token}/info")
 async def subscription_info(token: str):
     """JSON usage summary that powers the browser page (token is the secret)."""
-    return (await _collect(token))["info"]
+    # Carries the same ss:// key material as the raw sub — no-store, same as it.
+    return JSONResponse(await _collect(token), headers={"Cache-Control": "no-store"})

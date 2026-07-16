@@ -5,17 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0a0d12" />
 <title>Subscription</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- System fonts only: this page is opened when the tunnel is down, on networks
+     that block Google. No external request may gate the render. -->
 <script src="/static/vendor/qrcode.js"></script>
 <style>
   :root{
     --bg:#0a0d12;--panel:#10151d;--panel2:#151b25;--line:#1f2733;--line2:#2a3340;
     --text:#eef2f8;--muted:#9aa6b6;--faint:#6b7689;--acc:#37d4e6;--acc-rgb:55,212,230;
     --ink:#04141a;--ok:#5fe0a0;--warn:#f6c453;--danger:#ff6b7a;
-    --mono:'IBM Plex Mono',ui-monospace,monospace;--sans:'Hanken Grotesk',system-ui,sans-serif;
-    --display:'Bricolage Grotesque','Hanken Grotesk',system-ui,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
+    --display:var(--sans);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
@@ -141,7 +141,6 @@ async function boot(){
   }catch(e){fail('Could not load subscription');}
 }
 boot();
-setInterval(()=>{if(!document.hidden&&!document.getElementById('scrim').classList.contains('on'))boot();},30000);
 </script>
 </body>
 </html>
