@@ -88,6 +88,7 @@ const root=$('#root'), modalRoot=$('#modalRoot');
 const api=async(p,o={})=>{const r=await fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...o});
   let d=null;try{d=await r.json();}catch(_){}
   // session expired/revoked anywhere (incl. silent polls) → bounce to login once
+  if(r.status===403){toast((d&&d.detail)||'You do not have permission for this',1);throw new Error((d&&d.detail)||'Forbidden');}
   if(r.status===401){if(pollT){clearInterval(pollT);pollT=null;}if(S.screen!=='login')showLogin();throw new Error((d&&d.detail)||'Session expired');}
   if(!r.ok)throw new Error((d&&d.detail)||('HTTP '+r.status));return d;};
 let toastT;function toast(m,bad){const t=$('#toast');t.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:'+(bad?'var(--danger)':'var(--acc)')+'"></span>'+esc(m);
@@ -111,10 +112,14 @@ function srvShort(id){const s=S.servers.find(x=>x.id===id);if(!s)return id;retur
 function srvDot(id){const s=S.servers.find(x=>x.id===id);return s&&s.reachable?'var(--acc)':'var(--danger)';}
 
 /* ---------- state ---------- */
-const S={screen:'login',servers:[],keys:[],errors:[],stats:null,
+const S={screen:'login',servers:[],keys:[],errors:[],stats:null,me:null,
   srvFilter:'all',statusFilter:'all',sort:localStorage.getItem('oc_sort')||'recent',
   view:localStorage.getItem('oc_view')||'table',search:'',selected:{},srvMenuOpen:false,
   bwSamples:[],bannerDismissed:false,totpEnabled:false};
+// What the signed-in admin may do. The server enforces all of this on its own;
+// hiding controls here only spares people buttons that would 403.
+const can=c=>!!(S.me&&S.me.caps.includes(c));
+const isOwner=()=>!!(S.me&&S.me.isOwner);
 let pollT=null;
 // poll-side change detection: only touch the DOM when the underlying data
 // actually changed, so a 5s tick with no new metrics causes zero re-render.
@@ -134,6 +139,8 @@ function showLogin(needTotp){
         <span style="font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-.3px">Outline<span style="color:var(--muted);font-weight:600"> Control</span></span></div>
       <h1 style="font-family:var(--display);font-weight:700;font-size:32px;letter-spacing:-.8px;margin:0 0 8px;text-align:center">Welcome back.</h1>
       <p class="desc" style="text-align:center;margin-bottom:30px">Sign in to manage your servers and keys.</p>
+      <label class="lab">Username</label>
+      <input id="un" class="inp" value="admin" autocomplete="username" autocapitalize="off" spellcheck="false" style="padding:14px;font-size:16px;margin-bottom:14px" />
       <label class="lab">Password</label>
       <input id="pw" class="inp" type="password" placeholder="••••••••••" autocomplete="current-password" style="padding:14px;font-size:16px" />
       <div id="totpWrap" class="${needTotp?'':'hidden'}" style="margin-top:14px"><label class="lab">Two-factor code</label>
@@ -144,28 +151,33 @@ function showLogin(needTotp){
     </div></div>`;
   const go=()=>doLogin();
   $('#loginBtn').onclick=go;
+  $('#un').addEventListener('keydown',e=>{if(e.key==='Enter')$('#pw').focus();});
   $('#pw').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
   $('#totp')?.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
   if(needTotp)$('#totp').focus();else $('#pw').focus();
 }
 async function doLogin(){
-  const pw=$('#pw').value,tot=($('#totp')?.value||'').trim(),b=$('#loginBtn');
+  const un=$('#un').value.trim(),pw=$('#pw').value,tot=($('#totp')?.value||'').trim(),b=$('#loginBtn');
   $('#loginErr').textContent='';b.disabled=true;b.innerHTML='<span class="spin"></span>';
-  try{await api('/api/login',{method:'POST',body:JSON.stringify({password:pw,totp:tot||null})});await enterApp();}
-  catch(e){if(/2fa code required/i.test(e.message)){if($('#totpWrap').classList.contains('hidden')){showLogin(true);$('#pw').value=pw;}$('#loginErr').textContent='Enter your two-factor code.';}
+  try{await api('/api/login',{method:'POST',body:JSON.stringify({username:un,password:pw,totp:tot||null})});await enterApp();}
+  catch(e){if(/2fa code required/i.test(e.message)){if($('#totpWrap').classList.contains('hidden')){showLogin(true);$('#un').value=un;$('#pw').value=pw;}$('#loginErr').textContent='Enter your two-factor code.';}
     else{$('#loginErr').textContent=e.message;b.disabled=false;b.textContent='Sign in →';}}
 }
 async function signOut(){try{await api('/api/logout',{method:'POST'});}catch(_){}showLogin();}
 
 /* ---------- data ---------- */
 async function loadAll(){
-  // Servers is the critical endpoint; stats/keys are best-effort so a single
-  // slow/unavailable server can't blank the whole dashboard.
-  const [sv,st,ks]=await Promise.allSettled([api('/api/servers'),api('/api/stats'),api('/api/keys')]);
+  // /me and servers are critical; stats/keys are best-effort so a single
+  // slow/unavailable server can't blank the whole dashboard — and so an admin
+  // without keys.view (whose /api/keys 403s) still gets a working shell.
+  const [me,sv,st,ks]=await Promise.allSettled([api('/api/me'),api('/api/servers'),api('/api/stats'),api('/api/keys')]);
+  if(me.status!=='fulfilled')throw me.reason||new Error('Not authenticated');
+  S.me=me.value;   // re-read every load: the owner can change caps mid-session
   if(sv.status!=='fulfilled')throw sv.reason||new Error('Failed to load servers');
   S.servers=sv.value.servers||[];
   if(st.status==='fulfilled'){S.stats=st.value;pushBw();}
   if(ks.status==='fulfilled'){S.keys=ks.value.keys||[];S.errors=ks.value.errors||[];}
+  else{S.keys=[];S.errors=[];}
 }
 let _keysBusy=false,_statsBusy=false;
 async function refreshKeys(){if(_keysBusy)return;_keysBusy=true;try{const ks=await api('/api/keys');S.keys=ks.keys||[];S.errors=ks.errors||[];}catch(_){}finally{_keysBusy=false;}}
@@ -252,7 +264,7 @@ function renderApp(){
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg>
         <input id="search" data-inp="search" value="${esc(S.search)}" placeholder="Search keys…" class="inp" style="padding:9px 64px 9px 36px;font-size:13.5px" />
         <kbd data-act="palette" title="Command palette" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer">⌘K</kbd></div>
-      <button class="btn" data-act="create" style="${narrow?'display:none':'width:auto;flex:none;white-space:nowrap;padding:9px 15px;display:flex;align-items:center;gap:7px;font-size:13.5px'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>New key</button>
+      ${!can('keys.create')?'':`<button class="btn" data-act="create" style="${narrow?'display:none':'width:auto;flex:none;white-space:nowrap;padding:9px 15px;display:flex;align-items:center;gap:7px;font-size:13.5px'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>New key</button>`}
       <button class="icon-btn" data-act="settings" aria-label="Settings" style="padding:10px;color:var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
       <button data-act="signout" style="${narrow?'display:none':'background:none;border:1px solid var(--line2);color:var(--faint);padding:9px 13px;border-radius:11px;cursor:pointer;font-size:13px'}">Sign out</button>
     </div>
@@ -260,7 +272,7 @@ function renderApp(){
   <div style="max-width:1400px;margin:0 auto;padding:${narrow?'16px 16px 96px':'22px 22px 80px'}">
     <div id="shell"></div>
   </div>
-  ${narrow?`<button class="btn" data-act="create" style="position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:35;width:auto;display:flex;align-items:center;gap:8px;padding:14px 20px;border-radius:99px;box-shadow:0 12px 30px rgba(var(--acc-rgb),.28)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>New key</button>`:''}
+  ${narrow&&can('keys.create')?`<button class="btn" data-act="create" style="position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:35;width:auto;display:flex;align-items:center;gap:8px;padding:14px 20px;border-radius:99px;box-shadow:0 12px 30px rgba(var(--acc-rgb),.28)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>New key</button>`:''}
   `;
   // shell layout
   const wide=W>=1100, mid=W>=720&&W<1100;
@@ -560,14 +572,90 @@ function modalConfig(k){
 }
 function modalSettings(){
   const rows=S.servers.map(s=>`<div class="srow" data-act="srvdetail" data-id="${esc(s.id)}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${s.reachable?'var(--acc)':'var(--danger)'};box-shadow:0 0 8px ${s.reachable?'var(--acc)':'var(--danger)'}"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(s.name)}</div><div class="mono" style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(s.host||'')}${s.version?' · v'+esc(s.version):''}${s.reachable?'':' · unreachable'}</div></div><span class="mono" style="font-size:11.5px;color:var(--faint)">${S.keys.filter(k=>k.serverId===s.id).length} keys</span><span style="color:var(--dim)">›</span></div>`).join('')||'<div class="desc">No servers yet.</div>';
+  const srow=(act,dot,title,sub)=>`<div class="srow" data-act="${act}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${dot}"></span><div style="flex:1"><div style="font-size:14px;font-weight:600">${title}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${sub}</div></div><span style="color:var(--dim)">›</span></div>`;
+  const panel=[
+    can('bot.manage')?'<div class="srow" id="rowBot"><span class="sdot" id="botDot" style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--danger)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">Telegram bot</div><div class="mono" id="botSub" style="font-size:11.5px;color:var(--dim);margin-top:2px">Loading…</div></div><span style="color:var(--dim)">›</span></div>':'',
+    isOwner()?srow('admins','var(--acc)','Admins','Sub-admins, their servers &amp; rights'):'',
+    isOwner()?srow('security','var(--acc)','Security','Password &amp; two-factor'):'',
+    isOwner()?srow('backup','var(--acc)','Backup &amp; restore','Download or restore all data'):'',
+  ].filter(Boolean).join('');
   openSheet(`<div class="h2">Servers &amp; settings</div><p class="desc">Manage your Outline servers, and configure the panel.</p>
-    ${rows}<div style="height:6px"></div><button class="btn" data-act="addserver">+ Add a server</button>
-    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:24px 0 12px">Panel</div>
-    <div class="srow" id="rowBot"><span class="sdot" id="botDot" style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--danger)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">Telegram bot</div><div class="mono" id="botSub" style="font-size:11.5px;color:var(--dim);margin-top:2px">Loading…</div></div><span style="color:var(--dim)">›</span></div>
-    <div class="srow" data-act="security"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--acc)"></span><div style="flex:1"><div style="font-size:14px;font-weight:600">Security</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">Password &amp; two-factor</div></div><span style="color:var(--dim)">›</span></div>
-    <div class="srow" data-act="backup"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--acc)"></span><div style="flex:1"><div style="font-size:14px;font-weight:600">Backup &amp; restore</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">Download or restore all data</div></div><span style="color:var(--dim)">›</span></div>`,{wide:true});
-  $('#rowBot').onclick=()=>modalBot();
-  api('/api/settings/bot').then(b=>{const d=$('#botDot'),su=$('#botSub');if(d)d.style.background=b.running?'var(--acc)':'var(--danger)';if(su)su.textContent=b.running?('Active · @'+(b.username||'bot')):(b.configured?'Configured · stopped':'Not configured');}).catch(()=>{});
+    ${rows}<div style="height:6px"></div>${can('servers.manage')?'<button class="btn" data-act="addserver">+ Add a server</button>':''}
+    ${panel?`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:24px 0 12px">Panel</div>${panel}`:''}`,{wide:true});
+  if($('#rowBot')){
+    $('#rowBot').onclick=()=>modalBot();
+    api('/api/settings/bot').then(b=>{const d=$('#botDot'),su=$('#botSub');if(d)d.style.background=b.running?'var(--acc)':'var(--danger)';if(su)su.textContent=b.running?('Active · @'+(b.username||'bot')):(b.configured?'Configured · stopped':'Not configured');}).catch(()=>{});
+  }
+}
+/* ---------- admins (owner only) ---------- */
+const CAP_LABELS={'keys.view':'See users & stats','keys.create':'Create users',
+  'keys.edit':'Edit users','keys.delete':'Delete users',
+  'servers.manage':'Manage servers','bot.manage':'Telegram bot'};
+async function modalAdmins(){
+  const ov=openSheet('<div class="h2">Admins</div><p class="desc">Loading…</p>',{wide:true});
+  let d;try{d=await api('/api/admins');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">Admins</div><p class="err">${esc(e.message)}</p><button class="btn-sec" data-act="settings">Back</button>`;return;}
+  const rows=d.admins.map(a=>{
+    const sub=a.isOwner?'Full access to everything'
+      :(a.servers.map(id=>{const s=(d.servers.find(x=>x.id===id)||{});return s.name||id;}).join(', ')+' · '+(a.caps.length?a.caps.length+' right'+(a.caps.length>1?'s':''):'no rights'));
+    return `<div class="srow" ${a.isOwner?'':`data-act="adminedit" data-id="${a.id}"`} style="${a.isOwner?'cursor:default':''}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${a.disabled?'var(--danger)':'var(--acc)'}"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(a.username)}${a.isOwner?' <span class="mono" style="font-size:10px;color:var(--faint)">OWNER</span>':''}${a.disabled?' <span class="mono" style="font-size:10px;color:var(--danger)">DISABLED</span>':''}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(sub)}</div></div>${a.isOwner?'':'<span style="color:var(--dim)">›</span>'}</div>`;
+  }).join('');
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">Admins</div><p class="desc">Give someone a login limited to certain servers and rights. The owner always keeps full access.</p>
+    ${rows}<div style="height:6px"></div><button class="btn" data-act="adminadd">+ Add an admin</button>
+    <div style="height:10px"></div><button class="btn-sec" data-act="settings">Back</button>`;
+}
+function _adminForm(d,a){
+  const servers=d.servers.map(s=>`<label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" class="asrv" value="${esc(s.id)}" ${a&&a.servers.includes(s.id)?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">${esc(s.name)}</span></label>`).join('')||'<div class="desc">No servers yet.</div>';
+  const caps=d.caps.map(c=>`<label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" class="acap" value="${esc(c)}" ${a&&a.caps.includes(c)?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">${esc(CAP_LABELS[c]||c)}</span></label>`).join('');
+  return `<div class="field"><label class="lab">Username</label><input id="aun" class="inp" ${a?`value="${esc(a.username)}" disabled`:'placeholder="e.g. sara"'} autocapitalize="off" spellcheck="false" /></div>
+    <div class="field"><label class="lab">Password${a?' (leave blank to keep)':''}</label><input id="apw" class="inp" type="password" placeholder="${a?'••••••••':'At least 6 characters'}" autocomplete="new-password" /></div>
+    <div class="field"><label class="lab">Servers they can use</label>${servers}</div>
+    <div class="field"><label class="lab">What they can do</label>${caps}</div>
+    ${a?`<div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="adis" ${a.disabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">Disabled (signs them out immediately)</span></label></div>`:''}
+    <div id="aerr" class="err"></div>`;
+}
+const _picked=(ov,cls)=>[...ov.querySelectorAll('.'+cls)].filter(x=>x.checked).map(x=>x.value);
+async function modalAdminAdd(){
+  const d=await api('/api/admins');
+  const ov=openSheet(`<div class="h2">Add an admin</div><p class="desc">They sign in with this username and password.</p>
+    ${_adminForm(d,null)}<button class="btn" id="ago">Create admin</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="admins">Cancel</button>`,{wide:true});
+  ov.querySelector('#aun').focus();
+  ov.querySelector('#ago').onclick=async()=>{
+    const er=ov.querySelector('#aerr');er.textContent='';
+    const body={username:ov.querySelector('#aun').value.trim(),password:ov.querySelector('#apw').value,
+                servers:_picked(ov,'asrv'),caps:_picked(ov,'acap')};
+    if(!body.username){er.textContent='Enter a username.';return;}
+    if(body.password.length<6){er.textContent='Password must be at least 6 characters.';return;}
+    if(!body.servers.length){er.textContent='Pick at least one server.';return;}
+    const b=ov.querySelector('#ago');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/admins',{method:'POST',body:JSON.stringify(body)});toast('Admin created');modalAdmins();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create admin';}
+  };
+}
+async function modalAdminEdit(id){
+  const d=await api('/api/admins');
+  const a=d.admins.find(x=>String(x.id)===String(id));
+  if(!a)return modalAdmins();
+  const ov=openSheet(`<div class="h2">${esc(a.username)}</div><p class="desc">Changes apply immediately, on their next request.</p>
+    ${_adminForm(d,a)}<button class="btn" id="ago">Save changes</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="admins">Back</button><div style="height:10px"></div>
+    <button class="btn-danger" id="adel">Delete admin</button>`,{wide:true});
+  ov.querySelector('#ago').onclick=async()=>{
+    const er=ov.querySelector('#aerr');er.textContent='';
+    const pw=ov.querySelector('#apw').value;
+    const body={servers:_picked(ov,'asrv'),caps:_picked(ov,'acap'),
+                disabled:ov.querySelector('#adis').checked};
+    if(pw){if(pw.length<6){er.textContent='Password must be at least 6 characters.';return;}body.password=pw;}
+    if(!body.servers.length){er.textContent='Pick at least one server.';return;}
+    const b=ov.querySelector('#ago');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/admins/'+a.id,{method:'PUT',body:JSON.stringify(body)});toast('Saved');modalAdmins();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}
+  };
+  ov.querySelector('#adel').onclick=async()=>{
+    if(!confirm('Delete “'+a.username+'”? They are signed out immediately.'))return;
+    try{await api('/api/admins/'+a.id,{method:'DELETE'});toast('Admin deleted');modalAdmins();}
+    catch(e){toast(e.message,1);}
+  };
 }
 function modalAddServer(){
   const ov=openSheet(`<div class="h2">Add a server</div><p class="desc">Paste the API URL, or the full Outline Manager access config (JSON with apiUrl and certSha256).</p>
@@ -663,6 +751,9 @@ document.addEventListener('click',e=>{
     case 'close':closeModal();break;
     case 'create':closeModal();modalCreate();break;
     case 'settings':closeModal();modalSettings();break;
+    case 'admins':closeModal();modalAdmins();break;
+    case 'adminadd':closeModal();modalAdminAdd();break;
+    case 'adminedit':closeModal();modalAdminEdit(d.id);break;
     case 'signout':signOut();break;
     case 'srvmenu':S.srvMenuOpen=!S.srvMenuOpen;renderSrv();break;
     case 'srvpick':S.srvFilter=d.id;S.srvMenuOpen=false;renderSrv();renderList();renderRail();break;
@@ -698,16 +789,20 @@ document.addEventListener('click',e=>{const c=e.target.closest('[data-chip]');if
 const _ic=p=>`<svg class="ci" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 function paletteCommands(){
   const c=[
-    {label:'New key',hint:'N',icon:_ic('<path d="M12 5v14M5 12h14"/>'),kw:'create add',run:()=>modalCreate()},
+    {need:'keys.create',label:'New key',hint:'N',icon:_ic('<path d="M12 5v14M5 12h14"/>'),kw:'create add',run:()=>modalCreate()},
     {label:'Search keys',hint:'/',icon:_ic('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),kw:'find',run:()=>setTimeout(()=>($('#search')||$('#msearch'))?.focus(),60)},
     {label:'Toggle table / card view',icon:_ic('<path d="M3 6h18M3 12h18M3 18h18"/>'),kw:'layout',run:()=>{S.view=S.view==='table'?'cards':'table';localStorage.setItem('oc_view',S.view);renderList();}},
-    {label:'Add server',icon:_ic('<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 8h.01M7 17h.01"/>'),kw:'server',run:()=>modalAddServer()},
+    {need:'servers.manage',label:'Add server',icon:_ic('<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 8h.01M7 17h.01"/>'),kw:'server',run:()=>modalAddServer()},
     {label:'Settings',icon:_ic('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 12.6H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 6"/>'),kw:'config',run:()=>modalSettings()},
-    {label:'Security & two-factor',icon:_ic('<path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7z"/>'),kw:'2fa password',run:()=>modalSecurity()},
-    {label:'Backup & restore',icon:_ic('<path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>'),kw:'export import',run:()=>modalBackup()},
+    {need:'owner',label:'Security & two-factor',icon:_ic('<path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7z"/>'),kw:'2fa password',run:()=>modalSecurity()},
+    {need:'owner',label:'Backup & restore',icon:_ic('<path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>'),kw:'export import',run:()=>modalBackup()},
     {label:'Keyboard shortcuts',hint:'?',icon:_ic('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M8 13h8"/>'),kw:'help keys',run:()=>openShortcuts()},
     {label:'Sign out',icon:_ic('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),kw:'logout',run:()=>signOut()},
   ];
+  // drop what this admin cannot do — the palette is a shortcut to the same
+  // actions, so it must hide the same things the chrome does
+  const allowed=c.filter(x=>!x.need||(x.need==='owner'?isOwner():can(x.need)));
+  c.length=0;c.push(...allowed);
   const sf=_ic('<path d="M3 4h18M6 12h12M10 20h4"/>');
   c.push({label:'Show all servers',icon:sf,kw:'filter',run:()=>{S.srvFilter='all';renderSrv();renderList();renderRail();}});
   (S.servers||[]).forEach(s=>c.push({label:'Filter · '+s.name,icon:sf,kw:'filter server',run:()=>{S.srvFilter=s.id;S.srvMenuOpen=false;renderSrv();renderList();renderRail();}}));

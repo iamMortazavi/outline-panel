@@ -24,6 +24,7 @@ from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_ENABLED, BOT_TOKEN
 from .deps import STATIC_DIR, botmgr, db, reg, settings
 from .routers import (
+    admins,
     auth,
     backup,
     keys,
@@ -105,10 +106,12 @@ async def security_headers(request: Request, call_next):
 
 
 app.include_router(auth.router)
+app.include_router(admins.router)
 app.include_router(servers.router)
 app.include_router(keys.router)
 app.include_router(stats.router)
 app.include_router(settings_router.router)
+app.include_router(settings_router.bot_router)
 app.include_router(backup.router)
 app.include_router(subscription.router)
 app.include_router(miniapp.router)

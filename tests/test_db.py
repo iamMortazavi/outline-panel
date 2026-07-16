@@ -79,3 +79,56 @@ async def test_legacy_single_server_migration():
     # new columns exist after migration
     assert "monthly_bytes" in rows[0] and "reset_ts" in rows[0]
     await d.close()
+
+
+# ------------------------------------------------------------------ admins
+async def test_admin_crud(db):
+    aid = await db.add_admin("sara", "h", "s", caps="keys.view", servers="s1")
+    row = await db.get_admin(aid)
+    assert row["username"] == "sara" and row["is_owner"] == 0
+    assert row["caps"] == "keys.view" and row["servers"] == "s1"
+    assert row["disabled"] == 0 and row["created_ts"] is not None
+
+    assert (await db.get_admin_by_username("sara"))["id"] == aid
+    assert (await db.get_admin_by_username("SARA"))["id"] == aid  # NOCASE
+    assert await db.get_admin_by_username("nobody") is None
+
+    await db.update_admin(aid, caps="keys.view,keys.create", disabled=1)
+    row = await db.get_admin(aid)
+    assert row["caps"] == "keys.view,keys.create" and row["disabled"] == 1
+
+    await db.delete_admin(aid)
+    assert await db.get_admin(aid) is None
+
+
+async def test_update_admin_cannot_smuggle_is_owner(db):
+    """update_admin takes a whole request body, so it must ignore is_owner —
+    otherwise editing your own profile is a privilege escalation."""
+    aid = await db.add_admin("sara", "h", "s")
+    await db.update_admin(aid, is_owner=1, caps="keys.view")
+    row = await db.get_admin(aid)
+    assert row["is_owner"] == 0      # ignored
+    assert row["caps"] == "keys.view"  # the legitimate field still applied
+
+
+async def test_owner_cannot_be_deleted(db):
+    oid = await db.add_admin("admin", None, None, is_owner=True)
+    await db.delete_admin(oid)
+    assert await db.get_admin(oid) is not None
+    assert (await db.get_owner())["username"] == "admin"
+
+
+async def test_admins_survive_backup_roundtrip(db):
+    """A table the restore wipes but never refills is the lockout bug again."""
+    await db.add_admin("admin", None, None, is_owner=True)
+    await db.add_admin("sara", "h", "s", caps="keys.view", servers="s1")
+    dump = await db.export_all()
+    assert len(dump["admins"]) == 2
+
+    await db.import_all({"servers": [], "keys": [], "settings": {}, "admins": []})
+    assert await db.all_admins() == []
+
+    await db.import_all(dump)
+    names = sorted(a["username"] for a in await db.all_admins())
+    assert names == ["admin", "sara"]
+    assert (await db.get_owner())["username"] == "admin"

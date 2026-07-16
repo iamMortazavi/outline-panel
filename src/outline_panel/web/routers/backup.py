@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from ...core.settings import BOT_ENABLED, BOT_TOKEN
-from ..deps import botmgr, db, reg, require_session, settings
+from ..deps import botmgr, db, reg, require_owner, settings
 
 log = logging.getLogger("webapp")
 
 router = APIRouter(prefix="/api", tags=["backup"],
-                   dependencies=[Depends(require_session)])
+                   dependencies=[Depends(require_owner)])
 
 
 @router.get("/backup")

@@ -14,10 +14,16 @@ from ...core.settings import (
     TOTP_SECRET,
     WEBAPP_URL,
 )
-from ..deps import botmgr, require_session, settings
+from ..deps import botmgr, require, require_owner, settings
 
+# Owner-only by default, so a route added here is locked unless someone opts it
+# out on purpose. The bot section is the one delegatable part, so it gets its
+# own router rather than a per-route escape hatch (a router-level dependency
+# cannot be relaxed further down).
 router = APIRouter(prefix="/api/settings", tags=["settings"],
-                   dependencies=[Depends(require_session)])
+                   dependencies=[Depends(require_owner)])
+bot_router = APIRouter(prefix="/api/settings", tags=["settings"],
+                       dependencies=[Depends(require("bot.manage"))])
 
 
 @router.get("")
@@ -95,7 +101,7 @@ async def _bot_status() -> dict:
     }
 
 
-@router.get("/bot")
+@bot_router.get("/bot")
 async def get_bot():
     return await _bot_status()
 
@@ -104,7 +110,7 @@ class BotTokenBody(BaseModel):
     token: str = Field(min_length=20)
 
 
-@router.post("/bot/test")
+@bot_router.post("/bot/test")
 async def test_bot(body: BotTokenBody):
     try:
         username = await botmgr.validate_token(body.token.strip())
@@ -120,7 +126,7 @@ class BotBody(BaseModel):
     webappUrl: str = ""               # public https base for the Mini App
 
 
-@router.put("/bot")
+@bot_router.put("/bot")
 async def set_bot(body: BotBody):
     if body.token and body.token.strip():
         await settings.set(BOT_TOKEN, body.token.strip())

@@ -118,6 +118,7 @@ async def app():
     from outline_panel.web import app as appmod
     from outline_panel.web import deps
     await deps.db.init()
+    await deps.settings.bootstrap()  # creates the owner login
     await deps.settings.set(BOT_TOKEN, TOKEN)
     await deps.settings.set(BOT_ADMIN_IDS, "777")
     deps.reg.servers["s1"] = {"id": "s1", "name": "Tokyo", "api_url": "https://x/y",

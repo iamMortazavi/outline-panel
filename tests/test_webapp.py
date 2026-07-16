@@ -99,6 +99,7 @@ async def app(monkeypatch):
     from outline_panel.web import app as appmod
     from outline_panel.web import deps
     await deps.db.init()
+    await deps.settings.bootstrap()  # creates the owner login
     yield App(appmod.app, deps)
     await deps.db.close()
 

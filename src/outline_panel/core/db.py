@@ -55,6 +55,24 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+# Panel logins. The owner (is_owner=1) always exists and always has every right;
+# `servers`/`caps` are csv and only constrain sub-admins. The owner's password
+# lives in `settings` (admin_password_hash/salt) so the reset-password CLI keeps
+# working — pw_hash/pw_salt here are for sub-admins only.
+_ADMINS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS admins (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    pw_hash    TEXT,
+    pw_salt    TEXT,
+    is_owner   INTEGER DEFAULT 0,
+    caps       TEXT DEFAULT '',
+    servers    TEXT DEFAULT '',
+    disabled   INTEGER DEFAULT 0,
+    created_ts INTEGER
+);
+"""
+
 
 class DB:
     def __init__(self, path: str):
@@ -102,6 +120,8 @@ class DB:
             await self._db.execute("ALTER TABLE keys ADD COLUMN sub_token TEXT")
         # runtime settings table (password hash, bot token, 2FA, ...)
         await self._db.execute(_SETTINGS_SCHEMA)
+        # panel logins (owner + sub-admins)
+        await self._db.execute(_ADMINS_SCHEMA)
         await self._db.commit()
 
     async def close(self) -> None:
@@ -296,11 +316,71 @@ class DB:
         cur = await self.conn.execute("SELECT key, value FROM settings")
         return {r["key"]: r["value"] for r in await cur.fetchall()}
 
+    # panel logins ----------------------------------------------------------
+    async def add_admin(self, username: str, pw_hash: str, pw_salt: str,
+                        caps: str = "", servers: str = "",
+                        is_owner: bool = False) -> int:
+        async with self._lock:
+            cur = await self.conn.execute(
+                "INSERT INTO admins (username, pw_hash, pw_salt, is_owner, caps,"
+                " servers, disabled, created_ts) VALUES (?, ?, ?, ?, ?, ?, 0, ?)",
+                (username, pw_hash, pw_salt, 1 if is_owner else 0, caps, servers,
+                 int(time.time())),
+            )
+            await self.conn.commit()
+            return cur.lastrowid
+
+    async def get_admin(self, admin_id: int) -> dict | None:
+        cur = await self.conn.execute("SELECT * FROM admins WHERE id = ?", (admin_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def get_admin_by_username(self, username: str) -> dict | None:
+        cur = await self.conn.execute(
+            "SELECT * FROM admins WHERE username = ?", (username,)
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def get_owner(self) -> dict | None:
+        cur = await self.conn.execute(
+            "SELECT * FROM admins WHERE is_owner = 1 ORDER BY id LIMIT 1"
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def all_admins(self) -> list[dict]:
+        cur = await self.conn.execute("SELECT * FROM admins ORDER BY id")
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def update_admin(self, admin_id: int, **fields) -> None:
+        """Update only the named columns. Unknown ones are ignored, so a caller
+        can pass a whole request body without smuggling in `is_owner`."""
+        allowed = ("username", "pw_hash", "pw_salt", "caps", "servers", "disabled")
+        cols = [c for c in allowed if c in fields]
+        if not cols:
+            return
+        async with self._lock:
+            await self.conn.execute(
+                f"UPDATE admins SET {', '.join(c + ' = ?' for c in cols)} WHERE id = ?",
+                [fields[c] for c in cols] + [admin_id],
+            )
+            await self.conn.commit()
+
+    async def delete_admin(self, admin_id: int) -> None:
+        async with self._lock:
+            await self.conn.execute(
+                "DELETE FROM admins WHERE id = ? AND is_owner = 0", (admin_id,)
+            )
+            await self.conn.commit()
+
     # backup / restore ------------------------------------------------------
     _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts")
     _KEY_COLS = ("server_id", "key_id", "name", "limit_bytes", "duration_days",
                  "activated_ts", "expiry_ts", "disabled", "monthly_bytes",
                  "reset_ts", "sub_token", "created_ts")
+    _ADMIN_COLS = ("id", "username", "pw_hash", "pw_salt", "is_owner", "caps",
+                   "servers", "disabled", "created_ts")
 
     async def export_all(self) -> dict:
         return {
@@ -308,6 +388,7 @@ class DB:
             "servers": await self.all_servers(),
             "keys": await self.all_keys(),
             "settings": await self.all_settings(),
+            "admins": await self.all_admins(),
         }
 
     async def import_all(self, data: dict) -> None:
@@ -320,11 +401,13 @@ class DB:
         servers = data.get("servers") or []
         keys = data.get("keys") or []
         settings = data.get("settings") or {}
+        admins = data.get("admins") or []
         async with self._lock:
             try:
                 await self.conn.execute("DELETE FROM servers")
                 await self.conn.execute("DELETE FROM keys")
                 await self.conn.execute("DELETE FROM settings")
+                await self.conn.execute("DELETE FROM admins")
                 for s in servers:
                     cols = [c for c in self._SERVER_COLS if c in s]
                     await self.conn.execute(
@@ -338,6 +421,13 @@ class DB:
                         f"INSERT INTO keys ({','.join(cols)}) "
                         f"VALUES ({','.join('?' * len(cols))})",
                         [k.get(c) for c in cols],
+                    )
+                for a in admins:
+                    cols = [c for c in self._ADMIN_COLS if c in a]
+                    await self.conn.execute(
+                        f"INSERT INTO admins ({','.join(cols)}) "
+                        f"VALUES ({','.join('?' * len(cols))})",
+                        [a.get(c) for c in cols],
                     )
                 for key, val in settings.items():
                     await self.conn.execute(

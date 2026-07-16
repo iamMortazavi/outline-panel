@@ -7,10 +7,10 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from ...core.outline_api import OutlineError
-from ..deps import reg, require_session, sids_or_404
+from ..deps import current_admin, reg, require, sids_or_404
 
 router = APIRouter(prefix="/api", tags=["stats"],
-                   dependencies=[Depends(require_session)])
+                   dependencies=[Depends(require("keys.view"))])
 
 
 async def _stats_for(sid: str) -> dict:
@@ -41,8 +41,9 @@ async def _stats_for(sid: str) -> dict:
 
 
 @router.get("/stats")
-async def stats(server: str | None = None):
-    sids = sids_or_404(server)
+async def stats(server: str | None = None,
+                admin: dict = Depends(current_admin)):
+    sids = sids_or_404(server, admin)
     per = await asyncio.gather(*[_stats_for(s) for s in sids]) if sids else []
     any_avail = any(p["available"] for p in per)
     locmap: dict = {}

@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-import secrets
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from ...core import config, security
-from ...core.settings import TOTP_ENABLED, TOTP_SECRET
-from ..deps import COOKIE_NAME, require_session, settings, signer
+from ...core.settings import OWNER_USERNAME, TOTP_ENABLED, TOTP_SECRET
+from ..deps import CAPS, COOKIE_NAME, _csv, current_admin, settings, signer
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
 
 class LoginBody(BaseModel):
     password: str
+    username: str = OWNER_USERNAME  # older clients sent only a password
     totp: str | None = None
 
 
@@ -70,11 +70,13 @@ def _record_login_fail(ip: str) -> None:
 async def login(body: LoginBody, request: Request, response: Response):
     ip = _client_ip(request)
     _check_login_rate(ip)
-    if not await settings.verify_admin_password(body.password):
+    admin = await settings.verify_login(body.username, body.password)
+    if admin is None:
         _record_login_fail(ip)
-        raise HTTPException(status_code=401, detail="Wrong password")
-    # second factor, if enabled
-    if await settings.get_bool(TOTP_ENABLED):
+        raise HTTPException(status_code=401, detail="Wrong username or password")
+    # second factor, if enabled. The TOTP secret is the owner's, so it guards
+    # the owner's login only; sub-admins have their own separate passwords.
+    if admin["is_owner"] and await settings.get_bool(TOTP_ENABLED):
         secret = await settings.get(TOTP_SECRET)
         if not body.totp:
             # signal the client to prompt for a code (not a failed attempt)
@@ -90,7 +92,7 @@ async def login(body: LoginBody, request: Request, response: Response):
         proto = (request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
                  or proto)
     response.set_cookie(
-        COOKIE_NAME, signer.dumps(secrets.token_hex(8)),
+        COOKIE_NAME, signer.dumps({"aid": admin["id"]}),
         max_age=config.SESSION_MAX_AGE, httponly=True, samesite="lax",
         secure=config.cookie_secure_for(proto == "https"),
     )
@@ -103,6 +105,15 @@ async def logout(response: Response):
     return {"ok": True}
 
 
-@router.get("/me", dependencies=[Depends(require_session)])
-async def me():
-    return {"ok": True}
+@router.get("/me")
+async def me(admin: dict = Depends(current_admin)):
+    # The dashboard has nothing else to branch on: it renders every control for
+    # everyone unless told otherwise. This is UX, not the boundary.
+    return {
+        "ok": True,
+        "id": admin["id"],
+        "username": admin["username"],
+        "isOwner": bool(admin["is_owner"]),
+        "caps": list(CAPS) if admin["is_owner"] else _csv(admin["caps"]),
+        "servers": _csv(admin["servers"]),
+    }

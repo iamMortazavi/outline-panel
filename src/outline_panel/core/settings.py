@@ -21,6 +21,11 @@ TOTP_ENABLED = "totp_enabled"     # "1"/"0"
 SUB_BASE_URL = "sub_base_url"
 WEBAPP_URL = "webapp_url"         # public https base, e.g. https://panel.example.com
 
+# The owner's login name. Their password stays in ADMIN_PW_HASH/SALT above
+# rather than in their admins row, so `outline-panel-admin reset-password`
+# keeps working and there is one source of truth for it.
+OWNER_USERNAME = "admin"
+
 
 class SettingsStore:
     def __init__(self, db: DB):
@@ -67,8 +72,28 @@ class SettingsStore:
             await self.set(BOT_ADMIN_IDS, ",".join(str(i) for i in config.ADMIN_IDS))
         if await self.get(WEBAPP_URL) is None and config.WEBAPP_URL:
             await self.set(WEBAPP_URL, config.WEBAPP_URL.strip().rstrip("/"))
+        # Give the existing password an identity. Upgrading an installed panel
+        # lands here: same password, now reachable as username "admin".
+        if await self.db.get_owner() is None:
+            await self.db.add_admin(OWNER_USERNAME, None, None, is_owner=True)
 
     # password helpers ------------------------------------------------------
+    async def verify_login(self, username: str, password: str) -> dict | None:
+        """Return the admin row for a correct username+password, else None.
+
+        Attempts are bounded by the login rate limiter (auth.py), which is what
+        keeps the username-vs-password distinction from being a useful oracle.
+        """
+        row = await self.db.get_admin_by_username((username or "").strip())
+        if not row or row["disabled"]:
+            return None
+        if row["is_owner"]:
+            ok = await self.verify_admin_password(password)
+        else:
+            ok = security.verify_password(password, row["pw_hash"] or "",
+                                          row["pw_salt"] or "")
+        return row if ok else None
+
     async def verify_admin_password(self, password: str) -> bool:
         h = await self.get(ADMIN_PW_HASH)
         s = await self.get(ADMIN_PW_SALT)

@@ -26,6 +26,15 @@ from .keys import ExtendBody, LimitBody, NameBody
 
 router = APIRouter(tags=["miniapp"])
 
+# The Mini App has its own membership model: a flat list of Telegram admin IDs,
+# all with identical rights (require_tma below). Sub-admin scoping is a
+# dashboard concept and deliberately does not reach here, so calls into the
+# dashboard's key/stats functions carry a full-rights caller. Note these are
+# direct function calls, so the routes' own `dependencies=[...]` never run —
+# require_tma above is the whole gate.
+_TMA_ADMIN = {"id": 0, "username": "telegram", "is_owner": 1,
+              "caps": "", "servers": "", "disabled": 0}
+
 
 async def require_tma(authorization: str | None = Header(default=None)) -> dict:
     """Authenticate a Mini App request from its Telegram ``initData`` header."""
@@ -60,12 +69,12 @@ async def tma_bootstrap(auth: dict = Depends(require_tma)):
 
 @router.get("/tma/api/keys")
 async def tma_keys(server: str | None = None, auth: dict = Depends(require_tma)):
-    return await keys_router.list_keys(server)
+    return await keys_router.list_keys(server, _TMA_ADMIN)
 
 
 @router.get("/tma/api/stats")
 async def tma_stats(server: str | None = None, auth: dict = Depends(require_tma)):
-    return await stats_router.stats(server)
+    return await stats_router.stats(server, _TMA_ADMIN)
 
 
 class TmaCreate(BaseModel):

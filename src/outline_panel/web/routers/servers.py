@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field
 
 from ...core.outline_api import OutlineAPI, OutlineError, parse_access_config
 from ...core.utils import gb_to_bytes
-from ..deps import api_or_404, db, host, reg, require_session
+from ..deps import api_or_404, current_admin, db, enforce_scope, host, reg, require, scoped_ids
 
 router = APIRouter(prefix="/api", tags=["servers"],
-                   dependencies=[Depends(require_session)])
+                   dependencies=[Depends(enforce_scope)])
 
 
 class ServerBody(BaseModel):
@@ -49,15 +49,17 @@ async def _server_info(sid: str) -> dict:
 
 
 @router.get("/servers")
-async def list_servers():
+async def list_servers(admin: dict = Depends(current_admin)):
+    # No {sid}, so enforce_scope does not cover this one: filter by hand or the
+    # whole panel's servers leak into a scoped admin's list.
     # Probe concurrently (like stats.py): serially, N unreachable servers each
     # burn the full 15s timeout and the whole list times out behind a proxy.
     return {"servers": list(await asyncio.gather(
-        *[_server_info(sid) for sid in reg.ids()]
+        *[_server_info(sid) for sid in scoped_ids(admin)]
     ))}
 
 
-@router.post("/servers")
+@router.post("/servers", dependencies=[Depends(require("servers.manage"))])
 async def add_server(body: ServerBody):
     try:
         url, cert_sha256 = parse_access_config(body.apiUrl)
@@ -75,7 +77,7 @@ async def add_server(body: ServerBody):
     return {"ok": True, "id": sid}
 
 
-@router.put("/servers/{sid}")
+@router.put("/servers/{sid}", dependencies=[Depends(require("servers.manage"))])
 async def rename_server_local(sid: str, body: NameBody):
     if not reg.meta(sid):
         raise HTTPException(status_code=404, detail="Unknown server")
@@ -84,7 +86,7 @@ async def rename_server_local(sid: str, body: NameBody):
     return {"ok": True}
 
 
-@router.delete("/servers/{sid}")
+@router.delete("/servers/{sid}", dependencies=[Depends(require("servers.manage"))])
 async def delete_server(sid: str):
     if not reg.meta(sid):
         raise HTTPException(status_code=404, detail="Unknown server")
@@ -112,7 +114,7 @@ async def get_server_settings(sid: str):
     return out
 
 
-@router.put("/servers/{sid}/settings/metrics")
+@router.put("/servers/{sid}/settings/metrics", dependencies=[Depends(require("servers.manage"))])
 async def set_metrics(sid: str, body: MetricsBody):
     api = api_or_404(sid)
     try:
@@ -122,7 +124,7 @@ async def set_metrics(sid: str, body: MetricsBody):
     return {"ok": True}
 
 
-@router.put("/servers/{sid}/settings/global-limit")
+@router.put("/servers/{sid}/settings/global-limit", dependencies=[Depends(require("servers.manage"))])
 async def set_global_limit(sid: str, body: LimitBody):
     api = api_or_404(sid)
     try:
@@ -135,7 +137,7 @@ async def set_global_limit(sid: str, body: LimitBody):
     return {"ok": True}
 
 
-@router.put("/servers/{sid}/settings/name")
+@router.put("/servers/{sid}/settings/name", dependencies=[Depends(require("servers.manage"))])
 async def set_server_name(sid: str, body: NameBody):
     api = api_or_404(sid)
     try:
