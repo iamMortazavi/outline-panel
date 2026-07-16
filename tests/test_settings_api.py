@@ -77,3 +77,59 @@ async def test_2fa_enable_and_login(app):
     assert (await _login(c2, "pw")).status_code == 401              # needs 2FA
     assert (await _login(c2, "pw", security.totp_now(secret))).status_code == 200
     await c2.aclose()
+
+
+async def test_owner_changes_username(app):
+    application, deps = app
+    t = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(transport=t, base_url="http://x") as c:
+        await _login(c)
+        r = await c.post("/api/settings/password",
+                         json={"current": "pw", "username": "bigboss"})
+        assert r.status_code == 200 and r.json()["username"] == "bigboss"
+    async with httpx.AsyncClient(transport=t, base_url="http://x") as c2:
+        # the new name works, the old one is gone
+        assert (await c2.post("/api/login",
+                              json={"username": "bigboss", "password": "pw"})).status_code == 200
+        assert (await c2.post("/api/login",
+                              json={"username": "admin", "password": "pw"})).status_code == 401
+
+
+async def test_username_and_password_together(app):
+    application, deps = app
+    t = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(transport=t, base_url="http://x") as c:
+        await _login(c)
+        assert (await c.post("/api/settings/password",
+                             json={"current": "pw", "username": "boss",
+                                   "new": "newpass1"})).status_code == 200
+    async with httpx.AsyncClient(transport=t, base_url="http://x") as c2:
+        assert (await c2.post("/api/login",
+                              json={"username": "boss", "password": "newpass1"})).status_code == 200
+
+
+async def test_username_change_needs_the_current_password(app):
+    """A stolen session must not be able to rename the account it sits in."""
+    application, deps = app
+    t = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(transport=t, base_url="http://x") as c:
+        await _login(c)
+        assert (await c.post("/api/settings/password",
+                             json={"current": "wrong", "username": "hacked"})).status_code == 401
+        assert (await c.post("/api/settings/password",
+                             json={"current": "pw"})).status_code == 400   # nothing to change
+    async with httpx.AsyncClient(transport=t, base_url="http://x") as c2:
+        assert (await c2.post("/api/login",
+                              json={"username": "admin", "password": "pw"})).status_code == 200
+
+
+async def test_username_cannot_collide_with_a_sub_admin(app):
+    from outline_panel.core import security
+    application, deps = app
+    h, s = security.hash_password("x")
+    await deps.db.add_admin("taken", h, s, servers="s1")
+    t = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(transport=t, base_url="http://x") as c:
+        await _login(c)
+        r = await c.post("/api/settings/password", json={"current": "pw", "username": "taken"})
+        assert r.status_code == 400 and "taken" in r.json()["detail"].lower()

@@ -113,6 +113,7 @@ function srvDot(id){const s=S.servers.find(x=>x.id===id);return s&&s.reachable?'
 
 /* ---------- state ---------- */
 const S={screen:'login',servers:[],keys:[],errors:[],stats:null,me:null,
+  tab:'users',adminFilter:'all',admins:[],
   srvFilter:'all',statusFilter:'all',sort:localStorage.getItem('oc_sort')||'recent',
   view:localStorage.getItem('oc_view')||'table',search:'',selected:{},srvMenuOpen:false,
   bwSamples:[],bannerDismissed:false,totpEnabled:false};
@@ -217,7 +218,16 @@ async function enterApp(){
 }
 
 /* ---------- scoped computation ---------- */
-function scoped(){return S.keys.filter(k=>S.srvFilter==='all'||k.serverId===S.srvFilter);}
+function scoped(){return S.keys.filter(k=>
+  (S.srvFilter==='all'||k.serverId===S.srvFilter) &&
+  (S.adminFilter==='all'
+    ||(S.adminFilter==='owner'?k.ownerAdminId==null:String(k.ownerAdminId)===String(S.adminFilter))));}
+function adminFilterName(){
+  if(S.adminFilter==='all')return null;
+  if(S.adminFilter==='owner')return (S.me&&S.me.username)||'you';
+  const a=S.admins.find(x=>String(x.id)===String(S.adminFilter));
+  return a?a.username:'admin #'+S.adminFilter;
+}
 function filteredKeys(){
   const q=S.search.trim().toLowerCase();
   let list=scoped().filter(k=>{
@@ -285,12 +295,19 @@ function renderApp(){
   $('#shell').innerHTML=`<div id="kpi" style="${kpiOuter}"></div>
     <div style="${contentStyle}">
       ${narrow?'<div style="margin-bottom:14px"><div style="position:relative"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;left:13px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg><input id="msearch" data-inp="search" value="'+esc(S.search)+'" placeholder="Search keys…" class="inp" style="padding:12px 12px 12px 38px"/></div></div>':''}
+      ${isOwner()?`<div style="display:flex;gap:7px;margin-bottom:14px">${[['users','Users'],['admins','Admins']].map(([t,l])=>`<button class="chip ${S.tab===t?'sel':''}" data-act="tab" data-id="${t}" style="padding:8px 15px">${l}</button>`).join('')}</div>`:''}
       <div id="toolbar"></div><div id="banner"></div><div id="selbar"></div>
       <div id="count" style="font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin:0 2px 10px;font-weight:600"></div>
       <div id="list"></div>
     </div>
     <aside id="rail" style="${railStyle}"></aside>`;
-  renderSrv();renderKpi();renderToolbar();renderList();renderRail();
+  if(S.tab==='admins'&&isOwner()){
+    $('#kpi').style.display='none';$('#rail').style.display='none';
+    $('#count').style.display='none';
+    renderAdmins();
+  }else{
+    renderSrv();renderKpi();renderToolbar();renderList();renderRail();
+  }
 }
 
 function renderSrv(){
@@ -340,9 +357,15 @@ function renderToolbar(){
   const viewToggle=narrow?'':`<div style="display:flex;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px">
     <button data-act="view" data-id="table" aria-label="Table" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='table'?'var(--acc)':'transparent'};color:${S.view==='table'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg></button>
     <button data-act="view" data-id="cards" aria-label="Cards" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='cards'?'var(--acc)':'transparent'};color:${S.view==='cards'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></button></div>`;
+  // An active admin filter must be visible and undoable, or the list just looks
+  // mysteriously short.
+  const af=adminFilterName();
+  const afChip=af?`<button data-act="adminfilter" data-id="all" class="chip sel" style="padding:7px 12px;display:inline-flex;align-items:center;gap:7px">${esc(af)}'s users <span style="color:var(--acc)">✕</span></button>`:'';
+  const csv=`<button data-act="csv" class="btn-sec" style="width:auto;padding:8px 13px;font-size:12.5px;display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round"/></svg>CSV</button>`;
   tb.innerHTML=`<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap">
+    ${afChip}
     <div style="display:flex;gap:5px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px;${narrow?'overflow-x:auto;flex:1 1 100%':''}">${pills}</div>
-    ${narrow?'':'<div style="flex:1"></div>'}${sortSel}${viewToggle}</div>`;
+    ${narrow?'':'<div style="flex:1"></div>'}${csv}${sortSel}${viewToggle}</div>`;
 }
 
 function renderBanner(){
@@ -362,6 +385,7 @@ function renderSelbar(){
     <span style="font-size:12.5px;font-weight:700;color:var(--acc)">${ids.length} selected</span><div style="flex:1"></div>
     <button class="btn-sec" data-act="bulk" data-op="extend" style="width:auto;padding:7px 12px;font-size:12.5px">Extend +30d</button>
     <button class="btn-sec" data-act="bulk" data-op="disable" style="width:auto;padding:7px 12px;font-size:12.5px">Disable</button>
+    ${isOwner()?'<button class="btn-sec" data-act="bulk" data-op="transfer" style="width:auto;padding:7px 12px;font-size:12.5px">Transfer to…</button>':''}
     <button class="btn-danger" data-act="bulk" data-op="delete" style="width:auto;padding:7px 12px;font-size:12.5px">Delete</button>
     <button data-act="bulk" data-op="clear" style="background:none;border:1px solid var(--line2);color:var(--faint);padding:7px 11px;border-radius:9px;font-size:12.5px;cursor:pointer">Clear</button></div>`;
 }
@@ -658,6 +682,63 @@ async function _renewPicker(ov,k,kb){
   };
 }
 
+/* ---------- csv export ---------- */
+// RFC4180: quote everything and double the quotes inside. A user called
+// Ali, "VIP" would otherwise shift every column after it.
+const _csvCell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+function exportCsv(){
+  const rows=filteredKeys();
+  if(!rows.length)return toast('Nothing to export',1);
+  const gb=b=>b==null?'':(b/1073741824).toFixed(2);
+  const iso=t=>t?new Date(t*1000).toISOString().slice(0,10):'';
+  // no accessUrl: this file lands in Downloads, and it would be every user's key
+  const head=['id','name','server','owner','used_gb','limit_gb','monthly_gb',
+              'status','created','expiry','last_seen'];
+  const body=rows.map(k=>[k.id,k.name,k.serverName,k.ownerName||'',
+    gb(k.used),k.limit==null?'unlimited':gb(k.limit),k.monthlyBytes?gb(k.monthlyBytes):'',
+    k.disabled?'disabled':(k.pending?'pending':'active'),
+    iso(k.createdTs),iso(k.expiry),iso(k.lastSeen)]);
+  const csv=[head,...body].map(r=>r.map(_csvCell).join(',')).join('\r\n');
+  // BOM so Excel opens Persian names as UTF-8 instead of mojibake
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  const who=adminFilterName();
+  a.href=url;a.download='users'+(who?'-'+who.replace(/[^A-Za-z0-9._-]/g,''):'')+'-'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  toast(rows.length+' user'+(rows.length===1?'':'s')+' exported');
+}
+
+/* ---------- admins tab ---------- */
+async function renderAdmins(){
+  const el=$('#list');
+  el.innerHTML='<div style="padding:40px;text-align:center"><span class="spin"></span></div>';
+  let d;try{d=await api('/api/admins');}catch(e){el.innerHTML=`<div class="err" style="padding:20px">${esc(e.message)}</div>`;return;}
+  S.admins=d.admins;
+  const count=a=>S.keys.filter(k=>a.isOwner?k.ownerAdminId==null:k.ownerAdminId===a.id).length;
+  const rows=d.admins.map(a=>{
+    const n=count(a);
+    const where=a.isOwner?'All servers':a.servers.map(id=>{const sv=S.servers.find(x=>x.id===id);return sv?sv.name:id;}).join(', ');
+    return `<div class="card" style="padding:15px;margin-bottom:11px">
+      <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+        <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${a.disabled?'var(--danger)':'var(--acc)'}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15px">${esc(a.username)}${a.isOwner?' <span class="mono" style="font-size:10px;color:var(--faint)">OWNER</span>':''}${a.disabled?' <span class="mono" style="font-size:10px;color:var(--danger)">DISABLED</span>':''}</div>
+          <div class="mono" style="font-size:11.5px;color:var(--dim);margin-top:3px">${esc(where)}${a.creditEnabled&&a.discountPct?' · '+a.discountPct+'% off':''}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="mono" style="font-size:14px;font-weight:600;color:${a.creditEnabled?(a.credit>0?'var(--acc)':'var(--danger)'):'var(--dim)'}">${a.creditEnabled?esc(fmtToman(a.credit)):'No credit limit'}</div>
+          <div class="mono" style="font-size:11px;color:var(--faint);margin-top:3px">${n} user${n===1?'':'s'}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn-sec" data-act="adminfilter" data-id="${a.isOwner?'owner':a.id}" style="width:auto;padding:8px 13px;font-size:12.5px">See their users</button>
+        ${a.creditEnabled?`<button class="btn-sec" data-act="adminledger" data-id="${a.id}" data-name="${esc(a.username)}" style="width:auto;padding:8px 13px;font-size:12.5px">Statement</button>`:''}
+        ${a.isOwner?'':`<button class="btn-sec" data-act="adminedit" data-id="${a.id}" style="width:auto;padding:8px 13px;font-size:12.5px">Manage</button>`}
+      </div></div>`;
+  }).join('');
+  el.innerHTML=rows+'<div style="height:6px"></div><button class="btn" data-act="adminadd">+ Add an admin</button>';
+}
+
 /* ---------- packages (owner defines, admins buy) ---------- */
 const fmtToman=n=>Number(n||0).toLocaleString('en-US')+' T';
 const pkgSize=p=>p.gb==null?'Unlimited data':(p.gb+' GB');
@@ -862,15 +943,31 @@ function modalBot(){
     try{await api('/api/settings/bot',{method:'PUT',body:JSON.stringify({token:tok||null,adminIds:ids,enabled,webappUrl:wu})});toast('Saved');closeModal();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save & apply';}};
 }
 function modalSecurity(){
-  const ov=openSheet(`<div class="h2">Security</div><p class="desc">Change the panel password and set up two-factor authentication.</p>
+  const ov=openSheet(`<div class="h2">Security</div><p class="desc">Your account the panel password and set up two-factor authentication.</p>
     <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin-bottom:12px">Change password</div>
+    <div class="field"><label class="lab">Username</label><input id="pu" class="inp" value="${esc((S.me&&S.me.username)||'')}" autocapitalize="off" spellcheck="false" autocomplete="username" /></div>
     <div class="field"><label class="lab">Current password</label><input id="pc" class="inp" type="password" autocomplete="current-password" /></div>
-    <div class="field"><label class="lab">New password</label><input id="pn" class="inp" type="password" autocomplete="new-password" /></div>
-    <div id="pwerr" class="err"></div><button class="btn" id="pwsave">Update password</button>
+    <div class="field"><label class="lab">New password <span style="color:var(--faint);font-weight:400">(leave blank to keep)</span></label><input id="pn" class="inp" type="password" autocomplete="new-password" /></div>
+    <div id="pwerr" class="err"></div><button class="btn" id="pwsave">Save changes</button>
     <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:26px 0 12px">Two-factor authentication</div>
     <div id="tfa"><div class="desc">Loading…</div></div>`);
-  ov.querySelector('#pwsave').onclick=async()=>{const cur=ov.querySelector('#pc').value;const nw=ov.querySelector('#pn').value;const er=ov.querySelector('#pwerr');er.textContent='';if(nw.length<6){er.textContent='New password must be at least 6 characters.';return;}const b=ov.querySelector('#pwsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{await api('/api/settings/password',{method:'POST',body:JSON.stringify({current:cur,new:nw})});toast('Password updated');ov.querySelector('#pc').value='';ov.querySelector('#pn').value='';}catch(e){er.textContent=e.message;}finally{b.disabled=false;b.textContent='Update password';}};
+  ov.querySelector('#pwsave').onclick=async()=>{
+    const cur=ov.querySelector('#pc').value,nw=ov.querySelector('#pn').value;
+    const un=ov.querySelector('#pu').value.trim(),er=ov.querySelector('#pwerr');er.textContent='';
+    if(!cur){er.textContent='Enter your current password.';return;}
+    if(nw&&nw.length<6){er.textContent='New password must be at least 6 characters.';return;}
+    const body={current:cur};
+    if(nw)body.new=nw;
+    if(un&&un!==(S.me&&S.me.username))body.username=un;
+    if(!body.new&&!body.username){er.textContent='Nothing to change.';return;}
+    const b=ov.querySelector('#pwsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{const r=await api('/api/settings/password',{method:'POST',body:JSON.stringify(body)});
+      if(S.me)S.me.username=r.username;
+      toast(body.username?'Account updated — sign in with “'+r.username+'” next time':'Password updated');
+      ov.querySelector('#pc').value='';ov.querySelector('#pn').value='';}
+    catch(e){er.textContent=e.message;}
+    finally{b.disabled=false;b.textContent='Save changes';}
+  };
   const tfa=ov.querySelector('#tfa');
   const render=()=>api('/api/settings').then(s=>{
     if(s.totpEnabled){tfa.innerHTML='<div class="desc" style="margin-bottom:10px">2FA is <b style="color:var(--acc)">enabled</b>.</div><div class="field"><label class="lab">Password to disable</label><input id="tpw" class="inp" type="password" /></div><button class="btn-danger" id="tdis">Disable 2FA</button>';
@@ -898,7 +995,36 @@ function modalBackup(){
 
 /* ---------- actions ---------- */
 async function copyKey(id){const k=keyById(id);if(!k)return;try{await navigator.clipboard.writeText(tagUrl(k));toast('Copied to clipboard');}catch(_){prompt('Copy:',tagUrl(k));}}
-async function bulk(op){const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));if(op==='clear'){S.selected={};renderList();return;}if(!ids.length)return;
+async function bulkTransfer(){
+  const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));
+  if(!ids.length)return;
+  // Only servers the selection actually touches matter, and only admins with
+  // access to ALL of them can take the whole batch.
+  const sids=[...new Set(ids.map(id=>keyById(id).serverId))];
+  let d;try{d=await api('/api/admins');}catch(e){return toast(e.message,1);}
+  const targets=d.admins.filter(a=>!a.isOwner&&sids.every(sv=>a.servers.includes(sv)));
+  const opts='<option value="">'+esc((S.me&&S.me.username)||'admin')+' (you)</option>'+
+    targets.map(a=>`<option value="${a.id}">${esc(a.username)}</option>`).join('');
+  const ov=openSheet(`<div class="h2">Transfer ${ids.length} user${ids.length===1?'':'s'}</div>
+    <p class="desc">They move onto that admin's page and off everyone else's.${targets.length?'':' No sub-admin has access to every server in this selection.'}</p>
+    <div class="field"><label class="lab">Belongs to</label><select id="bt" class="inp" style="cursor:pointer">${opts}</select></div>
+    <div id="bterr" class="err"></div><button class="btn" id="btgo">Transfer</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="close">Cancel</button>`);
+  ov.querySelector('#btgo').onclick=async()=>{
+    const v=ov.querySelector('#bt').value;const b=ov.querySelector('#btgo');
+    b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    let done=0,failed=0;
+    for(const id of ids){const k=keyById(id);if(!k)continue;
+      try{await api('/api/servers/'+k.serverId+'/keys/'+k.id+'/owner',
+            {method:'PUT',body:JSON.stringify({admin_id:v===''?null:+v})});done++;}
+      catch(e){failed++;}}
+    S.selected={};closeModal();
+    toast(failed?(done+' moved, '+failed+' failed'):(done+' user'+(done===1?'':'s')+' transferred'),failed?1:0);
+    await loadAll();renderApp();
+  };
+}
+async function bulk(op){if(op==='transfer')return bulkTransfer();
+  const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));if(op==='clear'){S.selected={};renderList();return;}if(!ids.length)return;
   if(op==='delete'&&!confirm('Delete '+ids.length+' key(s)? This cannot be undone.'))return;
   for(const id of ids){const k=keyById(id);if(!k)continue;const kb='/api/servers/'+k.serverId+'/keys/'+k.id;try{
     if(op==='extend')await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:30})});
@@ -914,6 +1040,10 @@ document.addEventListener('click',e=>{
     case 'close':closeModal();break;
     case 'create':closeModal();modalCreate();break;
     case 'settings':closeModal();modalSettings();break;
+    case 'tab':S.tab=d.id;S.selected={};renderApp();break;
+    case 'csv':exportCsv();break;
+    case 'adminfilter':S.adminFilter=d.id;S.tab='users';renderApp();break;
+    case 'adminledger':modalLedger(d.id,d.name);break;
     case 'admins':closeModal();modalAdmins();break;
     case 'packages':closeModal();modalPackages();break;
     case 'pkgadd':closeModal();modalPackageAdd();break;

@@ -14,7 +14,7 @@ from ...core.settings import (
     TOTP_SECRET,
     WEBAPP_URL,
 )
-from ..deps import botmgr, require, require_owner, settings
+from ..deps import botmgr, current_admin, db, require, require_owner, settings
 
 # Owner-only by default, so a route added here is locked unless someone opts it
 # out on purpose. The bot section is the one delegatable part, so it gets its
@@ -35,15 +35,30 @@ async def get_settings():
 
 class PasswordBody(BaseModel):
     current: str
-    new: str = Field(min_length=6, max_length=200)
+    new: str | None = Field(default=None, min_length=6, max_length=200)
+    username: str | None = Field(default=None, min_length=2, max_length=40,
+                                 pattern=r"^[A-Za-z0-9._-]+$")
 
 
 @router.post("/password")
-async def change_password(body: PasswordBody):
+async def change_password(body: PasswordBody, admin: dict = Depends(current_admin)):
+    """Change the owner's own username and/or password.
+
+    The current password gates both: a stolen session should not be able to
+    rename the account it is sitting in, let alone lock the real owner out.
+    """
     if not await settings.verify_admin_password(body.current):
         raise HTTPException(status_code=401, detail="Current password is wrong")
-    await settings.set_admin_password(body.new)
-    return {"ok": True}
+    if body.username and body.username.lower() != admin["username"].lower():
+        taken = await db.get_admin_by_username(body.username)
+        if taken:
+            raise HTTPException(status_code=400, detail="That username is taken")
+        await db.update_admin(admin["id"], username=body.username)
+    if body.new:
+        await settings.set_admin_password(body.new)
+    if not body.new and not body.username:
+        raise HTTPException(status_code=400, detail="Nothing to change")
+    return {"ok": True, "username": (await db.get_admin(admin["id"]))["username"]}
 
 
 @router.post("/2fa/start")
