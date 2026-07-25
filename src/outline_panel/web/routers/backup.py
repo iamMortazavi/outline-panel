@@ -1,12 +1,15 @@
-"""Download / restore a full panel backup (servers, keys, settings) as JSON."""
+"""Download / restore a full panel backup (servers, keys, settings) as JSON,
+plus the scheduled on-disk snapshots."""
 
 from __future__ import annotations
 
 import logging
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
+from ...core import backup as backup_core
 from ...core.settings import BOT_ENABLED, BOT_TOKEN
 from ..deps import botmgr, db, reg, require_owner, settings
 
@@ -62,3 +65,62 @@ async def restore_backup(payload: dict):
     return {"ok": True,
             "servers": len(payload["servers"]),
             "keys": len(payload["keys"])}
+
+
+# ------------------------------------------------ scheduled disk snapshots
+async def _dir():
+    return backup_core.backup_dir(await settings.get("backup_dir"), db.path)
+
+
+@router.get("/snapshots")
+async def list_snapshots():
+    directory = await _dir()
+    return {
+        "enabled": await settings.get_bool("backup_enabled", True),
+        "dir": str(directory),
+        "everyHours": await settings.num("backup_interval_hours"),
+        "keep": await settings.num("backup_keep"),
+        "lastTs": int(await settings.get("backup_last_ts") or 0),
+        "snapshots": backup_core.list_backups(directory),
+    }
+
+
+@router.post("/snapshots")
+async def make_snapshot():
+    """Take one now, without waiting for the schedule."""
+    directory = await _dir()
+    try:
+        rec = await backup_core.make_backup(
+            db, directory, await settings.num("backup_keep"))
+    except Exception as e:  # noqa: BLE001 — a full or read-only disk is a 400
+        raise HTTPException(status_code=400, detail=f"Could not write a backup: {e}")
+    await settings.set("backup_last_ts", str(int(time.time())))
+    return rec
+
+
+@router.get("/snapshots/{name}")
+async def download_snapshot(name: str):
+    """Send one snapshot.
+
+    `name` is checked against the generated filename pattern rather than
+    sanitised: this joins a caller-supplied string onto a server path, and an
+    allowlist is the only version of that check with no clever way around it.
+    """
+    if not backup_core.is_backup_name(name):
+        raise HTTPException(status_code=404, detail="Unknown backup")
+    path = (await _dir()) / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Unknown backup")
+    return FileResponse(path, filename=name, media_type="application/octet-stream",
+                        headers={"Cache-Control": "no-store"})
+
+
+@router.delete("/snapshots/{name}")
+async def delete_snapshot(name: str):
+    if not backup_core.is_backup_name(name):
+        raise HTTPException(status_code=404, detail="Unknown backup")
+    path = (await _dir()) / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Unknown backup")
+    path.unlink()
+    return {"ok": True}

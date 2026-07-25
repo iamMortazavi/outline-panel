@@ -162,19 +162,56 @@ async def test_rate_limit_not_bypassed_by_rotating_xff(app):
     await c.aclose()
 
 
-async def test_login_rate_limit_does_not_hoard_ips(app):
-    """Every IP we merely saw used to get a bucket — including ones already
-    being 429'd — so a botnet grew this dict until the process died."""
-    from outline_panel.web.routers import auth
+async def test_login_rate_limit_does_not_hoard_attempts(app):
+    """A botnet must not be able to grow the limiter's state without bound.
+
+    The counters live in the database now (a process dict handed N workers N
+    times the budget), so the property to hold is the same one: nothing is
+    recorded for an attempt that was already refused.
+    """
+    from outline_panel.core.settings import KNOBS
     c = await _client(app, login=False)
     for i in range(200):
         await c.post("/api/login", json={"password": "x"},
                      headers={"x-forwarded-for": f"9.9.{i // 256}.{i % 256}"})
-    # TRUST_PROXY=false here, so every request shares one bucket; what matters is
-    # that no bucket is kept for an IP with nothing recorded against it.
+    cur = await app.db.conn.execute("SELECT COUNT(*) AS n FROM rate_events")
+    rows = (await cur.fetchone())["n"]
+    ceiling = KNOBS["login_global_max_fails"]["default"]
+    # one row per bucket per recorded failure (per-IP + global), and the check
+    # runs before the record, so the ceiling stops the growth
+    assert 0 < rows <= ceiling * 2 + 2
+    await c.aclose()
+
+
+async def test_the_rate_limit_is_shared_not_per_process(app):
+    """Two processes see one budget: the counter is a table, so a second worker
+    cannot hand an attacker a fresh allowance."""
     from outline_panel.core.settings import KNOBS
-    assert all(v for v in auth._login_fails.values())
-    assert len(auth._login_fails) <= KNOBS["login_global_max_fails"]["default"]
+    c = await _client(app, login=False)
+    limit = KNOBS["login_max_fails"]["default"]
+    codes = []
+    for _ in range(limit + 2):
+        r = await c.post("/api/login", json={"password": "nope"})
+        codes.append(r.status_code)
+    assert codes[:limit] == [401] * limit and codes[limit] == 429
+
+    # a "different process" reading the same database sees the same failures
+    from outline_panel.core.db import DB
+    other = DB(app.db.path)
+    await other.init()
+    assert await other.count_rate_events("login:*", 300) >= limit
+    await other.close()
+    await c.aclose()
+
+
+async def test_a_successful_login_clears_the_bucket(app):
+    """Someone who mistyped twice should not still be near the ceiling."""
+    c = await _client(app, login=False)
+    for _ in range(2):
+        await c.post("/api/login", json={"password": "wrong"})
+    assert await app.db.count_rate_events("login:127.0.0.1", 300) == 2
+    assert (await c.post("/api/login", json={"password": "pw"})).status_code == 200
+    assert await app.db.count_rate_events("login:127.0.0.1", 300) == 0
     await c.aclose()
 
 

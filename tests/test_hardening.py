@@ -367,14 +367,16 @@ async def test_a_plan_that_has_not_started_does_not_read_as_never_expiring(app):
     await deps.db.add_key("s1", key["id"], "Ali", None, 30)
     await deps.db.set_sub_token("s1", key["id"], "tok-pending")
 
-    from outline_panel.web.routers.subscription import _collect
-    info = await _collect("tok-pending")
+    # the uncached form: this asserts on the computation, and activation is a
+    # scheduler write that the public cache is allowed to lag behind
+    from outline_panel.web.routers.subscription import _collect_fresh
+    info = await _collect_fresh("tok-pending")
     assert info["expire"] == 0            # genuinely unknown until they connect
     assert info["pendingDays"] == 30      # ...but the term is not
 
     # once it activates, the real date takes over and nothing is "pending"
     await deps.db.activate("s1", key["id"], 1_700_000_000, 1_700_086_400)
-    info = await _collect("tok-pending")
+    info = await _collect_fresh("tok-pending")
     assert info["expire"] == 1_700_086_400 and info["pendingDays"] == 0
 
 
@@ -385,8 +387,8 @@ async def test_a_key_with_no_term_at_all_is_still_unlimited(app):
     key = await fakes["s1"].create_key(name="Sara")
     await deps.db.add_key("s1", key["id"], "Sara", None, None)
     await deps.db.set_sub_token("s1", key["id"], "tok-forever")
-    from outline_panel.web.routers.subscription import _collect
-    info = await _collect("tok-forever")
+    from outline_panel.web.routers.subscription import _collect_fresh
+    info = await _collect_fresh("tok-forever")
     assert info["expire"] == 0 and info["pendingDays"] == 0
 
 

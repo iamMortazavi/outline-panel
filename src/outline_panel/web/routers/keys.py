@@ -9,7 +9,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ...core import security
+from ...core import metrics, security
 from ...core.outline_api import OutlineAPI, OutlineError
 from ...core.utils import gb_to_bytes
 from .. import idempotency
@@ -29,6 +29,7 @@ from ..deps import (
     settings,
     sids_or_404,
 )
+from . import subscription as sub_router
 
 log = logging.getLogger("web.keys")
 router = APIRouter(prefix="/api", tags=["keys"],
@@ -320,6 +321,7 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
         except OutlineError:
             pass
         raise HTTPException(status_code=500, detail=f"Failed to persist key: {e}")
+    metrics.inc("outline_panel_keys_created_total", {"server": sid})
     return {"id": key["id"], "serverId": sid, "name": name,
             "accessUrl": key["accessUrl"], "limit": limit_bytes,
             "monthlyBytes": monthly_bytes, "createdTs": now,
@@ -624,6 +626,7 @@ async def sub_add_server(token: str, target: str,
         except OutlineError:
             pass
         raise HTTPException(status_code=500, detail=f"Failed to add server: {e}")
+    sub_router.invalidate(token)
     return await _sub_info(token, admin)
 
 
@@ -640,6 +643,7 @@ async def sub_remove_server(token: str, target: str,
     for m in members:
         if m["server_id"] == target:
             await db.set_sub_token(target, m["key_id"], None)
+    sub_router.invalidate(token)   # the removed config must stop being served
     return await _sub_info(token, admin)
 
 
@@ -687,5 +691,9 @@ async def delete_key(sid: str, kid: str):
         # subscription token that sub_add_server clones from.
         if e.status != 404:
             raise HTTPException(status_code=502, detail=str(e))
+    meta = await db.get_key(sid, kid)
     await db.delete_key(sid, kid)
+    # the config is gone; stop serving it from the cached subscription too
+    sub_router.invalidate((meta or {}).get("sub_token"))
+    metrics.inc("outline_panel_keys_deleted_total", {"server": sid})
     return {"ok": True}

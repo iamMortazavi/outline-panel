@@ -20,6 +20,8 @@ import time
 
 import aiosqlite
 
+from . import metrics
+
 _SERVERS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS servers (
     id          TEXT PRIMARY KEY,
@@ -140,6 +142,27 @@ CREATE TABLE IF NOT EXISTS idempotency (
     status       INTEGER,
     response     TEXT,
     created_ts   INTEGER NOT NULL
+);
+"""
+
+
+# Leases, so N processes can share one job. `expires_ts` rather than a plain
+# held/free flag: a holder that dies must not keep the lock forever, and there is
+# nobody to clean up after it.
+_LOCKS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS locks (
+    name       TEXT PRIMARY KEY,
+    holder     TEXT NOT NULL,
+    expires_ts INTEGER NOT NULL
+);
+"""
+
+# Failed logins, shared across workers. This lived in a process dict, which with
+# N workers meant N times the budget an attacker actually had to spend.
+_RATE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS rate_events (
+    bucket TEXT NOT NULL,
+    ts     INTEGER NOT NULL
 );
 """
 
@@ -275,6 +298,13 @@ class DB:
     async def _m003_idempotency(self) -> None:
         """Reservations for retried purchases (see web/idempotency.py)."""
         await self.conn.execute(_IDEMPOTENCY_SCHEMA)
+
+    async def _m004_locks_and_rate(self) -> None:
+        """Coordination between processes: one scheduler, one rate-limit budget."""
+        await self.conn.execute(_LOCKS_SCHEMA)
+        await self.conn.execute(_RATE_SCHEMA)
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rate ON rate_events(bucket, ts)")
 
     async def close(self) -> None:
         if self._db is not None:
@@ -602,6 +632,7 @@ class DB:
                     return None
                 _bal, entry_id = await self._ledger(admin_id, -int(amount), **entry)
                 await self.conn.commit()
+                metrics.inc("outline_panel_credit_charged_total", by=float(amount))
                 return entry_id
             except BaseException:
                 await self.conn.rollback()
@@ -621,6 +652,8 @@ class DB:
                 )
                 bal, _id = await self._ledger(admin_id, int(delta), **entry)
                 await self.conn.commit()
+                if delta > 0:
+                    metrics.inc("outline_panel_credit_added_total", by=float(delta))
                 return bal
             except BaseException:
                 await self.conn.rollback()
@@ -673,6 +706,91 @@ class DB:
             (admin_id,),
         )
         return int((await cur.fetchone())["s"])
+
+    # leases ----------------------------------------------------------------
+    async def acquire_lease(self, name: str, holder: str, ttl: int) -> bool:
+        """Take or renew a named lease. True means this holder owns it now.
+
+        The two statements are both conditional writes, so SQLite decides the
+        winner and no reader can slip between a check and a claim:
+          * INSERT ... ON CONFLICT DO NOTHING creates it if free;
+          * UPDATE ... WHERE holder = ? OR expires_ts <= ? takes it if we
+            already hold it (a renewal) or if whoever did has gone quiet.
+        A process that dies simply stops renewing and the lease falls in.
+        """
+        now = int(time.time())
+        async with self._lock:
+            await self.conn.execute(
+                "INSERT INTO locks (name, holder, expires_ts) VALUES (?, ?, ?)"
+                " ON CONFLICT(name) DO NOTHING",
+                (name, holder, now + ttl),
+            )
+            cur = await self.conn.execute(
+                "UPDATE locks SET holder = ?, expires_ts = ?"
+                " WHERE name = ? AND (holder = ? OR expires_ts <= ?)",
+                (holder, now + ttl, name, holder, now),
+            )
+            await self.conn.commit()
+            return cur.rowcount > 0
+
+    async def release_lease(self, name: str, holder: str) -> None:
+        async with self._lock:
+            await self.conn.execute(
+                "DELETE FROM locks WHERE name = ? AND holder = ?", (name, holder))
+            await self.conn.commit()
+
+    async def lease_holder(self, name: str) -> dict | None:
+        cur = await self.conn.execute("SELECT * FROM locks WHERE name = ?", (name,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    # rate limiting ---------------------------------------------------------
+    async def record_rate_event(self, bucket: str) -> None:
+        async with self._lock:
+            await self.conn.execute(
+                "INSERT INTO rate_events (bucket, ts) VALUES (?, ?)",
+                (bucket, int(time.time())),
+            )
+            await self.conn.commit()
+
+    async def count_rate_events(self, bucket: str, window: int) -> int:
+        cur = await self.conn.execute(
+            "SELECT COUNT(*) AS n FROM rate_events WHERE bucket = ? AND ts > ?",
+            (bucket, int(time.time()) - window),
+        )
+        return int((await cur.fetchone())["n"])
+
+    async def clear_rate_events(self, bucket: str) -> None:
+        """Forget a bucket's failures — called after a successful login, so an
+        honest user who mistyped twice is not still near the ceiling."""
+        async with self._lock:
+            await self.conn.execute(
+                "DELETE FROM rate_events WHERE bucket = ?", (bucket,))
+            await self.conn.commit()
+
+    async def prune_rate_events(self, older_than_ts: int) -> int:
+        async with self._lock:
+            cur = await self.conn.execute(
+                "DELETE FROM rate_events WHERE ts < ?", (older_than_ts,))
+            await self.conn.commit()
+            return cur.rowcount
+
+    # credit reconciliation --------------------------------------------------
+    async def credit_drift(self) -> list[dict]:
+        """Admins whose balance disagrees with their own ledger.
+
+        `admins.credit` is the atomic guard a purchase checks against and the
+        ledger is the story of how it got there; the two must agree. There was a
+        test for that and nothing watching it in production, so a drift would
+        have been silent until someone noticed the money was wrong.
+        """
+        cur = await self.conn.execute(
+            "SELECT a.id, a.username, a.credit,"
+            " COALESCE((SELECT SUM(delta) FROM credit_ledger l"
+            "           WHERE l.admin_id = a.id), 0) AS ledger"
+            " FROM admins a WHERE a.credit != ledger"
+        )
+        return [dict(r) for r in await cur.fetchall()]
 
     # audit -----------------------------------------------------------------
     async def add_audit(self, actor_admin_id: int | None, actor_name: str | None,
@@ -869,4 +987,5 @@ _MIGRATIONS = (
     DB._m001_baseline,
     DB._m002_audit_log,
     DB._m003_idempotency,
+    DB._m004_locks_and_rate,
 )
