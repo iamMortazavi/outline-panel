@@ -26,28 +26,67 @@ log = logging.getLogger("scheduler")
 
 
 
-async def expiry_loop(registry, db, interval: int, notifier=None) -> None:
+async def expiry_loop(registry, db, interval: int, notifier=None,
+                      settings=None) -> None:
+    """Run the checks forever.
+
+    `settings` (a SettingsStore) makes the interval and the notification
+    thresholds live: they are re-read every pass, so changing them in the panel
+    takes effect without a restart. `interval` remains the fallback for callers
+    that have no store.
+    """
     # anti-spam memory for notifications: a set of (sid, kid, kind)
     notified: set[tuple] = set()
     while True:
         try:
-            await _check_once(registry, db, notifier, notified)
+            await _check_once(registry, db, notifier, notified, settings)
         except Exception as e:  # noqa: BLE001 — the loop must never die
             log.exception("scheduler error: %s", e)
-        await asyncio.sleep(interval)
+        nap = interval
+        if settings is not None:
+            try:
+                nap = await settings.num("expiry_check_interval")
+            except Exception as e:  # noqa: BLE001 — never let a read kill the loop
+                log.warning("could not read the scheduler interval: %s", e)
+        await asyncio.sleep(nap)
 
 
-async def _safe_notify(notifier, text: str) -> None:
+async def _safe_notify(notifier, text: str, key: dict | None = None) -> None:
+    """Send one alert to whoever owns `key`.
+
+    `owner_admin_id` is passed positionally-by-name so an older notifier that
+    only takes `text` (the tests', and any custom one) keeps working.
+    """
     if not notifier:
         return
     try:
-        await notifier(text)
+        if key is None:
+            await notifier(text)
+        else:
+            await notifier(text, owner_admin_id=key.get("owner_admin_id"))
+    except TypeError:  # notifier that only accepts a message
+        try:
+            await notifier(text)
+        except Exception as e:  # noqa: BLE001
+            log.warning("failed to send notification: %s", e)
     except Exception as e:  # noqa: BLE001
         log.warning("failed to send notification: %s", e)
 
 
-async def _check_once(registry, db, notifier, notified) -> None:
+async def _check_once(registry, db, notifier, notified, settings=None) -> None:
     now = int(time.time())
+    if hasattr(registry, "sync"):   # pick up servers added since the last pass
+        await registry.sync()
+    # Thresholds come from the panel when a store is available, from env
+    # otherwise — the same value either way on a panel nobody has retuned.
+    if settings is not None:
+        limit_pct = await settings.num("notify_limit_percent") / 100
+        warn_window = await settings.num("notify_expiry_days") * 86400
+        cycle_seconds = await settings.cycle_seconds()
+    else:
+        limit_pct = config.NOTIFY_LIMIT_PERCENT / 100
+        warn_window = config.NOTIFY_EXPIRY_DAYS * 86400
+        cycle_seconds = MONTH_SECONDS
     usage_cache: dict[str, dict] = {}
 
     async def usage(sid: str) -> dict:
@@ -72,8 +111,6 @@ async def _check_once(registry, db, notifier, notified) -> None:
             log.info("key %s/%s activated on first connection.", sid, kid)
 
     # 2) monthly quota reset + 3) notifications (across all keys)
-    limit_pct = config.NOTIFY_LIMIT_PERCENT / 100
-    warn_window = config.NOTIFY_EXPIRY_DAYS * 86400
     for key in await db.all_keys():
         sid, kid = key["server_id"], key["key_id"]
         api = registry.get(sid)
@@ -92,7 +129,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
                 # advance the next reset from rt to avoid drift
                 nxt = rt
                 while nxt <= now:
-                    nxt += MONTH_SECONDS
+                    nxt += cycle_seconds
                 await db.set_reset(sid, kid, nxt)
                 notified.discard((sid, kid, "limit"))
                 log.info("monthly quota for %s/%s reset (%s).", sid, kid, fmt_bytes(mb))
@@ -100,6 +137,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
                     notifier,
                     f"🔄 Monthly quota for <b>{name}</b> has been reset "
                     f"({fmt_bytes(mb)}).",
+                    key,
                 )
             except OutlineError as e:
                 log.warning("monthly reset for %s/%s failed: %s", sid, kid, e)
@@ -120,6 +158,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
                         notifier,
                         f"⚠️ <b>{name}</b> has used {fmt_bytes(used)} of "
                         f"{fmt_bytes(lim)}.",
+                        key,
                     )
             else:
                 notified.discard(tag_lim)
@@ -135,6 +174,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
                 await _safe_notify(
                     notifier,
                     f"⏳ <b>{name}</b> is about to expire: {fmt_expiry(exp)}.",
+                    key,
                 )
         else:
             notified.discard(tag_exp)
@@ -152,6 +192,7 @@ async def _check_once(registry, db, notifier, notified) -> None:
             await _safe_notify(
                 notifier,
                 f"🔴 <b>{key.get('name') or kid}</b> has been disabled (expired).",
+                key,
             )
         except OutlineError as e:
             log.warning("failed to disable %s/%s: %s", sid, kid, e)

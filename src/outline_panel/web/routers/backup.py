@@ -45,8 +45,8 @@ async def restore_backup(payload: dict):
         await db.import_all(payload)
     except Exception as e:  # noqa: BLE001 — a bad row is a bad file, and the DB rolled back
         raise HTTPException(status_code=400, detail=f"Not a valid backup file: {e}")
-    # rebuild in-memory state from the restored DB
-    settings._cache.clear()
+    # rebuild in-memory state from the restored DB (settings need no clearing:
+    # the store reads through to SQLite)
     await reg.close_all()
     reg.servers.clear()
     await reg.load()

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from ...core import security
 from ...core.outline_api import OutlineAPI, OutlineError
-from ...core.utils import MONTH_SECONDS, gb_to_bytes
+from ...core.utils import gb_to_bytes
 from ..deps import (
     api_or_404,
     can_see,
@@ -25,6 +25,7 @@ from ..deps import (
     require,
     require_owner,
     scoped_ids,
+    settings,
     sids_or_404,
 )
 
@@ -36,7 +37,7 @@ router = APIRouter(prefix="/api", tags=["keys"],
 # --------------------------------------------------------------- read helpers
 async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
     try:
-        m = await api.get_server_metrics_cached("30d")
+        m = await api.get_server_metrics_cached("30d", await settings.num("metrics_ttl"))
     except OutlineError:
         return {}
     conn = {}
@@ -196,12 +197,29 @@ async def _buy(admin: dict, package_id: int | None, sid: str,
                             price_before_discount=int(pkg["price"]),
                             server_id=sid, key_id=kid)
     if entry is None:
+        cur = await settings.text("currency")
         raise HTTPException(
             status_code=402,
-            detail=f"Not enough credit: {pkg['name']} costs {price:,} but you "
-                   f"have {int(admin.get('credit') or 0):,}",
+            detail=f"Not enough credit: {pkg['name']} costs {price:,} {cur} but "
+                   f"you have {int(admin.get('credit') or 0):,} {cur}",
         )
     return pkg, price, entry
+
+
+def deny_free(admin: dict) -> None:
+    """Refuse a route that hands a customer time or volume outside the price list.
+
+    `extend_key` already enforces this through `_buy` — "any time or volume that
+    reaches a user is paid for". Raising the data limit, granting a monthly
+    quota, resetting usage or mirroring a subscription onto a second server all
+    reach a user just as surely, and all four were free: a reseller bought the
+    cheapest package and then topped it up here for nothing.
+    """
+    if on_credit(admin):
+        raise HTTPException(
+            status_code=403,
+            detail="You buy from the price list — renew by picking a package",
+        )
 
 
 async def _apply_package(sid: str, kid: str, pkg: dict) -> dict:
@@ -293,7 +311,7 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
             # the normal expiry sweep does the rest.
             await db.activate(sid, key["id"], now, now + duration * 86400)
         if monthly_bytes:
-            await db.set_monthly(sid, key["id"], monthly_bytes, now + MONTH_SECONDS)
+            await db.set_monthly(sid, key["id"], monthly_bytes, now + await settings.cycle_seconds())
     except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
         log.exception("DB persist failed; deleting orphan key %s", key.get("id"))
         try:
@@ -343,8 +361,10 @@ async def rename_key(sid: str, kid: str, body: NameBody):
     return {"ok": True}
 
 
-@router.put("/servers/{sid}/keys/{kid}/limit", dependencies=[Depends(require("keys.edit"))])
-async def set_key_limit(sid: str, kid: str, body: LimitBody):
+@router.put("/servers/{sid}/keys/{kid}/limit")
+async def set_key_limit(sid: str, kid: str, body: LimitBody,
+                        admin: dict = Depends(require("keys.edit"))):
+    deny_free(admin)
     api = api_or_404(sid)
     limit_bytes = gb_to_bytes(body.limit_gb) if body.limit_gb > 0 else None
     meta = await ensure_local(sid, kid)
@@ -360,8 +380,10 @@ async def set_key_limit(sid: str, kid: str, body: LimitBody):
     return {"ok": True, "limit": limit_bytes}
 
 
-@router.put("/servers/{sid}/keys/{kid}/monthly", dependencies=[Depends(require("keys.edit"))])
-async def set_key_monthly(sid: str, kid: str, body: MonthlyBody):
+@router.put("/servers/{sid}/keys/{kid}/monthly")
+async def set_key_monthly(sid: str, kid: str, body: MonthlyBody,
+                          admin: dict = Depends(require("keys.edit"))):
+    deny_free(admin)
     api = api_or_404(sid)
     meta = await ensure_local(sid, kid)
     if body.monthly_gb > 0:
@@ -381,7 +403,8 @@ async def set_key_monthly(sid: str, kid: str, body: MonthlyBody):
             await db.set_limit(sid, kid, new_limit)
         # First reset one cycle out (like create_key_for) so saving a quota
         # doesn't trigger an immediate reset on the next scheduler pass.
-        await db.set_monthly(sid, kid, monthly, int(time.time()) + MONTH_SECONDS)
+        await db.set_monthly(sid, kid, monthly,
+                             int(time.time()) + await settings.cycle_seconds())
     else:
         await db.set_monthly(sid, kid, None, None)
     return {"ok": True}
@@ -452,13 +475,15 @@ async def extend_key(sid: str, kid: str, body: ExtendBody,
     return {"ok": True}
 
 
-@router.post("/servers/{sid}/keys/{kid}/reset", dependencies=[Depends(require("keys.edit"))])
-async def reset_usage(sid: str, kid: str):
+@router.post("/servers/{sid}/keys/{kid}/reset")
+async def reset_usage(sid: str, kid: str,
+                      admin: dict = Depends(require("keys.edit"))):
     """Give the key a fresh allowance now (used + quota), and re-enable it.
 
     Outline's usage counter is cumulative and can't be zeroed, so a "reset"
     raises the data limit to current-usage + the per-cycle allowance.
     """
+    deny_free(admin)
     api = api_or_404(sid)
     meta = await ensure_local(sid, kid)
     # Only monthly_bytes may be the base. limit_bytes is the *cumulative ceiling*
@@ -526,6 +551,9 @@ async def sub_add_server(token: str, target: str,
     # this route mints a key on any server in the panel.
     if not can_see(admin, target):
         raise HTTPException(status_code=404, detail="Unknown server")
+    # A mirror is a whole second key with the primary's allowance — product, and
+    # it was free. A credit admin buys a package per server instead.
+    deny_free(admin)
     members = await db.get_keys_by_sub_token(token)
     if not members:
         raise HTTPException(status_code=404, detail="Unknown subscription")

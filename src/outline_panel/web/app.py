@@ -62,7 +62,8 @@ async def lifespan(app: FastAPI):
     task = None
     if config.ENABLE_SCHEDULER:
         task = asyncio.create_task(
-            expiry_loop(reg, db, config.EXPIRY_CHECK_INTERVAL, notifier=botmgr.notify)
+            expiry_loop(reg, db, config.EXPIRY_CHECK_INTERVAL,
+                        notifier=botmgr.notify, settings=settings)
         )
     else:
         log.info("ENABLE_SCHEDULER=false — background scheduler not started.")

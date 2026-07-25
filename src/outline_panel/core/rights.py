@@ -31,11 +31,18 @@ def has_cap(admin: dict, cap: str) -> bool:
 
 
 def can_see(admin: dict, sid: str) -> bool:
-    """The owner, and any sub-admin whose allowlist is empty, see every server."""
+    """The owner sees every server; a sub-admin sees exactly their allowlist.
+
+    An empty allowlist used to mean "every server", which made the panel's most
+    dangerous grant the one you get by leaving a box blank. The API refuses to
+    write an empty list, but a restored backup, a hand-edited row or any future
+    code path would have turned a missing value into full access silently.
+    Empty now means none: the failure mode is a locked-out reseller, not a
+    reseller with the run of the panel.
+    """
     if is_owner(admin):
         return True
-    allowed = csv_list(admin.get("servers"))
-    return not allowed or sid in allowed
+    return sid in csv_list(admin.get("servers"))
 
 
 def owns(admin: dict, meta: dict | None) -> bool:

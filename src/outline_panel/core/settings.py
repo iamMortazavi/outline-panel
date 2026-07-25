@@ -21,6 +21,75 @@ TOTP_ENABLED = "totp_enabled"     # "1"/"0"
 SUB_BASE_URL = "sub_base_url"
 WEBAPP_URL = "webapp_url"         # public https base, e.g. https://panel.example.com
 
+# ---------------------------------------------------------------- panel knobs
+# Every operational number the panel runs on. They were constants in five
+# different modules and env-only variables, so tuning any of them meant editing
+# code or a file on the server and restarting; the DB is the source of truth
+# now, and env only seeds the first run.
+#
+# The spec travels with the value on purpose: /api/settings/panel serves it, so
+# the UI renders whatever is in this table without a matching change in the
+# frontend. Adding a knob is one row here plus one read at the point of use.
+KNOBS: dict[str, dict] = {
+    "notify_limit_percent": {
+        "default": config.NOTIFY_LIMIT_PERCENT, "min": 0, "max": 100,
+        "label": "Warn at % of data limit",
+        "help": "Alert the key's admin once a user passes this share of their allowance.",
+    },
+    "notify_expiry_days": {
+        "default": config.NOTIFY_EXPIRY_DAYS, "min": 0, "max": 365,
+        "label": "Warn this many days before expiry",
+        "help": "0 turns expiry warnings off.",
+    },
+    "expiry_check_interval": {
+        "default": config.EXPIRY_CHECK_INTERVAL, "min": 10, "max": 86400,
+        "label": "Scheduler interval (seconds)",
+        "help": "How often to activate, reset, warn and expire. Lower means more "
+                "load on every Outline server.",
+    },
+    "cycle_days": {
+        "default": 30, "min": 1, "max": 365,
+        "label": "Billing cycle (days)",
+        "help": "Length of one monthly-quota period.",
+    },
+    "metrics_ttl": {
+        "default": 15, "min": 0, "max": 3600,
+        "label": "Metrics cache (seconds)",
+        "help": "0 disables caching entirely — every dashboard poll then hits the "
+                "experimental metrics endpoint of every server.",
+    },
+    "sub_update_hours": {
+        "default": 12, "min": 1, "max": 168,
+        "label": "Subscription refresh (hours)",
+        "help": "How often VPN clients are told to re-fetch the subscription.",
+    },
+    "session_max_age": {
+        "default": config.SESSION_MAX_AGE, "min": 300, "max": 31536000,
+        "label": "Session lifetime (seconds)",
+        "help": "How long a login stays valid.",
+    },
+    "login_max_fails": {
+        "default": 5, "min": 1, "max": 1000,
+        "label": "Failed logins per IP",
+        "help": "Attempts allowed from one address inside the window below.",
+    },
+    "login_window": {
+        "default": 300, "min": 10, "max": 86400,
+        "label": "Login rate-limit window (seconds)",
+    },
+    "login_global_max_fails": {
+        "default": 30, "min": 1, "max": 100000,
+        "label": "Failed logins in total",
+        "help": "Ceiling across every address, so rotating IPs can't walk past "
+                "the per-IP limit.",
+    },
+    "currency": {
+        "default": "Toman", "type": "str", "max": 12,
+        "label": "Currency label",
+        "help": "Shown next to every price and balance.",
+    },
+}
+
 # The owner's login name. Their password stays in ADMIN_PW_HASH/SALT above
 # rather than in their admins row, so `outline-panel-admin reset-password`
 # keeps working and there is one source of truth for it.
@@ -28,19 +97,54 @@ OWNER_USERNAME = "admin"
 
 
 class SettingsStore:
+    """Reads straight through to SQLite — deliberately uncached.
+
+    There used to be an in-process dict here. It was never invalidated, so the
+    standalone bot kept polling with a token the panel had already replaced, and
+    a restore had to reach in and clear it by hand. A local SQLite row read costs
+    microseconds; a settings value that disagrees with the database costs an
+    afternoon.
+    """
+
     def __init__(self, db: DB):
         self.db = db
-        self._cache: dict[str, str | None] = {}
 
     async def get(self, key: str, default: str | None = None) -> str | None:
-        if key not in self._cache:
-            self._cache[key] = await self.db.get_setting(key)
-        val = self._cache[key]
+        val = await self.db.get_setting(key)
         return val if val is not None else default
 
     async def set(self, key: str, value: str | None) -> None:
         await self.db.set_setting(key, value)
-        self._cache[key] = value
+
+    # panel knobs -----------------------------------------------------------
+    async def num(self, key: str) -> int:
+        """A numeric knob's current value, falling back to its env/spec default.
+
+        A stored value outside the spec's range is ignored rather than obeyed:
+        a hand-edited `expiry_check_interval` of 0 would spin the scheduler flat
+        out against every Outline server.
+        """
+        spec = KNOBS[key]
+        raw = await self.get(key)
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            return int(spec["default"])
+        if val < spec["min"] or val > spec["max"]:
+            return int(spec["default"])
+        return val
+
+    async def text(self, key: str) -> str:
+        return (await self.get(key)) or str(KNOBS[key]["default"])
+
+    async def knobs(self) -> dict[str, int | str]:
+        return {
+            k: (await self.text(k) if v.get("type") == "str" else await self.num(k))
+            for k, v in KNOBS.items()
+        }
+
+    async def cycle_seconds(self) -> int:
+        return await self.num("cycle_days") * 86400
 
     async def get_bool(self, key: str, default: bool = False) -> bool:
         v = await self.get(key)

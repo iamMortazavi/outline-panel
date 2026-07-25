@@ -89,9 +89,15 @@ def build_dispatcher(
         identity the dashboard does.
         """
         uid = target.from_user.id
+        if hasattr(registry, "sync"):   # the panel may have added a server
+            await registry.sync()
         if resolve_admin is not None:
             return await resolve_admin(uid)
-        return {"is_owner": 1} if uid in await admin_ids() else None  # tests
+        # Test-only fallback. Every production entry point injects resolve_admin
+        # (web.deps wires it, and bot.run goes through the same BotManager);
+        # reaching this line in production would treat every configured bot id
+        # as the panel owner, which is exactly the bug bot/run.py used to ship.
+        return {"is_owner": 1} if uid in await admin_ids() else None
 
     async def is_admin(uid: int) -> bool:
         return await admin_of(_Uid(uid)) is not None
@@ -106,6 +112,35 @@ def build_dispatcher(
             await deny(target, "⛔️ You do not have permission for this.")
             return None
         return admin
+
+    async def gate_key(target, cap: str, sid: str, kid: str | None = None) -> dict | None:
+        """`gate`, plus the server scope and ownership the dashboard enforces.
+
+        The sid/kid reaching these handlers come out of `callback_data`, which
+        the client composes and can therefore forge. Capability alone let a
+        sub-admin scoped to one server craft `disable:<other_sid>:<kid>` and
+        reach another reseller's customer — so scope and ownership are checked
+        here exactly as `deps.assert_key_access` checks them for the panel.
+        """
+        admin = await gate(target, cap)
+        if admin is None:
+            return None
+        if not can_see(admin, sid) or registry.get(sid) is None:
+            await deny(target, "⛔️ Unknown server.")
+            return None
+        if kid is not None and not owns(admin, await db.get_key(sid, kid)):
+            await deny(target, "⛔️ Unknown user.")
+            return None
+        return admin
+
+    async def refuse_free(target, admin: dict) -> bool:
+        """True (and answered) when this admin may not hand out time or volume
+        for free. Everything a credit admin gives a customer is bought from the
+        price list; the bot must not be the way around it."""
+        if not on_credit(admin):
+            return False
+        await deny(target, "⛔️ Renew by buying a package — open the Web App.")
+        return True
 
     async def deny(target: Message | CallbackQuery, text: str | None = None) -> None:
         text = text or "⛔️ You are not authorized to use this bot."
@@ -362,10 +397,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("key:"))
     async def cb_key(cq: CallbackQuery) -> None:
-        admin = await gate(cq, "keys.view")
-        if not admin:
-            return
         sid, kid = parse_cb(cq.data)
+        if not await gate_key(cq, "keys.view", sid, kid):
+            return
         meta = await db.get_key(sid, kid)
         disabled = bool(meta and meta.get("disabled"))
         await cq.message.edit_text(f"⚙️ Manage user <code>{kid}</code>:",
@@ -374,10 +408,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("link:"))
     async def cb_link(cq: CallbackQuery) -> None:
-        admin = await gate(cq, "keys.view")
-        if not admin:
-            return
         sid, kid = parse_cb(cq.data)
+        if not await gate_key(cq, "keys.view", sid, kid):
+            return
         api = registry.get(sid)
         try:
             key = await api.get_key(kid)
@@ -391,10 +424,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("rename:"))
     async def cb_rename(cq: CallbackQuery, state: FSMContext) -> None:
-        admin = await gate(cq, "keys.edit")
-        if not admin:
-            return
         sid, kid = parse_cb(cq.data)
+        if not await gate_key(cq, "keys.edit", sid, kid):
+            return
         await state.set_state(EditKey.rename)
         await state.update_data(sid=sid, kid=kid)
         await cq.message.edit_text("✏️ Enter the new name:")
@@ -405,6 +437,10 @@ def build_dispatcher(
         data = await state.get_data()
         await state.clear()
         sid, kid, name = data["sid"], data["kid"], msg.text.strip()
+        # Re-check on the way out too: the FSM holds sid/kid across messages, so
+        # rights revoked between the button and the reply must still bite.
+        if not await gate_key(msg, "keys.edit", sid, kid):
+            return
         api = registry.get(sid)
         try:
             await api.rename_key(kid, name)
@@ -419,10 +455,10 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("limit:"))
     async def cb_limit(cq: CallbackQuery, state: FSMContext) -> None:
-        admin = await gate(cq, "keys.edit")
-        if not admin:
-            return
         sid, kid = parse_cb(cq.data)
+        admin = await gate_key(cq, "keys.edit", sid, kid)
+        if not admin or await refuse_free(cq, admin):
+            return
         await state.set_state(EditKey.limit)
         await state.update_data(sid=sid, kid=kid)
         await cq.message.edit_text("💾 Enter the new data limit in <b>GB</b> "
@@ -440,6 +476,9 @@ def build_dispatcher(
         data = await state.get_data()
         await state.clear()
         sid, kid = data["sid"], data["kid"]
+        admin = await gate_key(msg, "keys.edit", sid, kid)
+        if not admin or await refuse_free(msg, admin):
+            return
         api = registry.get(sid)
         limit_bytes = gb_to_bytes(gb) if gb > 0 else None
         meta = await db.get_key(sid, kid)
@@ -460,10 +499,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("disable:"))
     async def cb_disable(cq: CallbackQuery) -> None:
-        admin = await gate(cq, "keys.edit")
-        if not admin:
-            return
         sid, kid = parse_cb(cq.data)
+        if not await gate_key(cq, "keys.edit", sid, kid):
+            return
         api = registry.get(sid)
         if not await db.get_key(sid, kid):
             await db.add_key(sid, kid, "", None, None)
@@ -477,10 +515,9 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("enable:"))
     async def cb_enable(cq: CallbackQuery) -> None:
-        admin = await gate(cq, "keys.edit")
-        if not admin:
-            return
         sid, kid = parse_cb(cq.data)
+        if not await gate_key(cq, "keys.edit", sid, kid):
+            return
         api = registry.get(sid)
         meta = await db.get_key(sid, kid) or {}
         try:
@@ -496,10 +533,10 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("del:"))
     async def cb_del(cq: CallbackQuery) -> None:
-        admin = await gate(cq, "keys.delete")
+        sid, kid = parse_cb(cq.data)
+        admin = await gate_key(cq, "keys.delete", sid, kid)
         if not admin:
             return
-        sid, kid = parse_cb(cq.data)
         api = registry.get(sid)
         try:
             await api.delete_key(kid)
@@ -511,10 +548,10 @@ def build_dispatcher(
 
     @dp.callback_query(F.data.startswith("extend:"))
     async def cb_extend(cq: CallbackQuery) -> None:
-        admin = await gate(cq, "keys.edit")
-        if not admin:
-            return
         sid, kid = parse_cb(cq.data)
+        admin = await gate_key(cq, "keys.edit", sid, kid)
+        if not admin or await refuse_free(cq, admin):
+            return
         api = registry.get(sid)
         meta = await db.get_key(sid, kid)
         if not meta:

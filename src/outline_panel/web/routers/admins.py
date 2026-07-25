@@ -107,9 +107,11 @@ async def create_admin(body: AdminBody):
         # An empty allowlist means "every server" (that is what the owner has).
         # Reaching that by leaving the box empty would be a silent full grant.
         raise HTTPException(status_code=400, detail="Pick at least one server")
+    # Validate BEFORE the insert: a duplicate Telegram id used to 400 *after*
+    # add_admin, leaving a half-configured admin row behind on every attempt.
+    await _check_telegram(body.telegram_id, None)
     h, s = security.hash_password(body.password)
     aid = await db.add_admin(body.username, h, s, caps=caps, servers=servers)
-    await _check_telegram(body.telegram_id, None)
     await db.update_admin(aid, credit_enabled=1 if body.credit_enabled else 0,
                           discount_pct=body.discount_pct,
                           telegram_id=body.telegram_id)

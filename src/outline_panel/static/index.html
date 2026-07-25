@@ -5,17 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0a0d12" />
 <title>Outline Control</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- No web-font CDN on purpose. This panel is run in places where
+     fonts.googleapis.com is blocked: every load paid two failed requests and a
+     render delay, and announced the panel to a third party. System stacks look
+     native and cost nothing. -->
 <script src="/static/vendor/qrcodejs.min.js"></script>
 <style>
   :root{
     --bg:#0a0d12;--bg2:#0d1219;--panel:#10151d;--panel2:#151b25;--line:#1f2733;--line2:#2a3340;--line3:#3b4858;
     --text:#eef2f8;--muted:#9aa6b6;--faint:#6b7689;--dim:#4e5868;
     --acc:#37d4e6;--acc-rgb:55,212,230;--ink:#04141a;--warn:#f6c453;--danger:#ff6b7a;--danger2:#ff97a2;
-    --mono:'IBM Plex Mono',ui-monospace,monospace;--sans:'Hanken Grotesk',system-ui,sans-serif;
-    --display:'Bricolage Grotesque','Hanken Grotesk',system-ui,sans-serif;
+    --mono:ui-monospace,'SF Mono',SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+    --sans:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',Vazirmatn,sans-serif;
+    --display:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;
     --ring:0 0 0 3px rgba(var(--acc-rgb),.32);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -651,7 +653,10 @@ function modalSettings(){
     isOwner()?srow('admins','var(--acc)','Admins','Sub-admins, their servers &amp; rights'):'',
     isOwner()?srow('packages','var(--acc)','Packages','What admins on credit may sell'):'',
     isOwner()?srow('security','var(--acc)','Security','Password &amp; two-factor'):'',
+    isOwner()?srow('knobs','var(--acc)','Panel settings','Thresholds, intervals, cache &amp; currency'):'',
     isOwner()?srow('backup','var(--acc)','Backup &amp; restore','Download or restore all data'):'',
+    // every admin can rotate their own password, not just the owner
+    isOwner()?'':srow('account','var(--acc)','My account','Change your password'),
   ].filter(Boolean).join('');
   openSheet(`<div class="h2">Servers &amp; settings</div><p class="desc">Manage your Outline servers, and configure the panel.</p>
     ${rows}<div style="height:6px"></div>${can('servers.manage')?'<button class="btn" data-act="addserver">+ Add a server</button>':''}
@@ -990,6 +995,65 @@ function modalSecurity(){
   }).catch(()=>{tfa.innerHTML='<div class="desc">Could not load 2FA status.</div>';});
   render();
 }
+/* Panel knobs. The form is generated from the spec the API ships with the
+   values, so adding a setting server-side needs no change here. */
+async function modalKnobs(){
+  const ov=openSheet('<div class="h2">Panel settings</div><p class="desc">Loading…</p>',{wide:true});
+  let d;try{d=await api('/api/settings/panel');}
+  catch(e){ov.querySelector('.sheet').innerHTML='<div class="h2">Panel settings</div><p class="err">'+esc(e.message)+'</p>';return;}
+  const field=s=>{
+    const v=d.values[s.key];
+    const range=s.type==='str'?'':`<span class="mono" style="color:var(--faint);font-weight:400"> ${s.min}–${s.max}</span>`;
+    return `<div class="field">
+      <label class="lab">${esc(s.label)}${range}</label>
+      <input class="inp knob" data-key="${esc(s.key)}" data-type="${esc(s.type)}"
+             ${s.type==='str'?'':'type="number" min="'+s.min+'" max="'+s.max+'"'}
+             value="${esc(v)}" />
+      ${s.help?`<div style="font-size:11.5px;color:var(--dim);margin-top:7px;line-height:1.5">${esc(s.help)}</div>`:''}
+    </div>`;};
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">Panel settings</div>
+    <p class="desc">Everything the panel runs on. Changes apply immediately — no restart.</p>
+    ${d.spec.map(field).join('')}
+    <div id="kerr" class="err"></div>
+    <button class="btn" id="ksave">Save</button><div style="height:10px"></div>
+    <button class="btn-sec" id="kreset">Reset all to defaults</button>`;
+  ov.querySelector('#ksave').onclick=async()=>{
+    const body={};
+    ov.querySelectorAll('.knob').forEach(i=>{
+      body[i.dataset.key]=i.dataset.type==='str'?i.value.trim():Number(i.value);});
+    const er=ov.querySelector('#kerr'),b=ov.querySelector('#ksave');
+    er.textContent='';b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/settings/panel',{method:'PUT',body:JSON.stringify(body)});toast('Settings saved');closeModal();}
+    catch(e){er.textContent=e.message;}
+    finally{b.disabled=false;b.textContent='Save';}
+  };
+  ov.querySelector('#kreset').onclick=async()=>{
+    try{await api('/api/settings/panel/reset',{method:'POST'});toast('Back to defaults');modalKnobs();}
+    catch(e){ov.querySelector('#kerr').textContent=e.message;}
+  };
+}
+
+/* Any admin's own password. The owner's lives in Security along with 2FA;
+   a sub-admin previously had no way to change theirs at all. */
+function modalAccount(){
+  const ov=openSheet(`<div class="h2">My account</div>
+    <p class="desc">Signed in as <b>${esc((S.me&&S.me.username)||'')}</b>.</p>
+    <div class="field"><label class="lab">Current password</label><input id="ac" class="inp" type="password" autocomplete="current-password" /></div>
+    <div class="field"><label class="lab">New password</label><input id="an" class="inp" type="password" autocomplete="new-password" /></div>
+    <div id="aerr" class="err"></div><button class="btn" id="asave">Change password</button>`);
+  ov.querySelector('#asave').onclick=async()=>{
+    const cur=ov.querySelector('#ac').value,nw=ov.querySelector('#an').value,er=ov.querySelector('#aerr');
+    er.textContent='';
+    if(!cur){er.textContent='Enter your current password.';return;}
+    if(nw.length<6){er.textContent='New password must be at least 6 characters.';return;}
+    const b=ov.querySelector('#asave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/me/password',{method:'POST',body:JSON.stringify({current:cur,new:nw})});
+      toast('Password changed');closeModal();}
+    catch(e){er.textContent=e.message;}
+    finally{b.disabled=false;b.textContent='Change password';}
+  };
+}
+
 function modalBackup(){
   const ov=openSheet(`<div class="h2">Backup &amp; restore</div><p class="desc">Download a JSON snapshot of every server, key and setting. Keep it somewhere safe.</p>
     <button class="btn" id="bkdl">⤓ Download backup</button>
@@ -1080,6 +1144,8 @@ document.addEventListener('click',e=>{
     case 'addserver':modalAddServer();break;
     case 'srvdetail':{const s=S.servers.find(x=>x.id===d.id);if(s)modalServerDetail(s);break;}
     case 'security':modalSecurity();break;
+    case 'knobs':modalKnobs();break;
+    case 'account':modalAccount();break;
     case 'backup':modalBackup();break;
     case 'palette':openPalette();break;
   }

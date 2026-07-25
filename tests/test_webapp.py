@@ -172,8 +172,9 @@ async def test_login_rate_limit_does_not_hoard_ips(app):
                      headers={"x-forwarded-for": f"9.9.{i // 256}.{i % 256}"})
     # TRUST_PROXY=false here, so every request shares one bucket; what matters is
     # that no bucket is kept for an IP with nothing recorded against it.
+    from outline_panel.core.settings import KNOBS
     assert all(v for v in auth._login_fails.values())
-    assert len(auth._login_fails) <= auth._GLOBAL_MAX_FAILS
+    assert len(auth._login_fails) <= KNOBS["login_global_max_fails"]["default"]
     await c.aclose()
 
 
@@ -335,8 +336,10 @@ async def test_restore_failure_keeps_the_panel(app):
     _register(app, "s1", "Tokyo", fake)
     await app.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
     await app.db.add_key("s1", "1", "Ali", 10 * 1024 ** 3, 30)
-    await app.db.set_setting("admin_password_hash", "deadbeef")
     c = await _client(app)
+    # after logging in: settings are read straight from the DB now, so planting
+    # this sentinel first would replace the password we log in with
+    await app.db.set_setting("admin_password_hash", "deadbeef")
 
     bad = {"servers": [], "keys": [{}], "settings": {}}  # a key row with no columns
     r = await c.post("/api/restore", json=bad)
@@ -354,8 +357,8 @@ async def test_restore_requires_every_table_it_wipes(app):
     """import_all empties each of these, so a payload missing one silently
     erases it: no settings meant no password, no admins means no logins, and
     no ledger means nobody's credit was ever accounted for."""
-    await app.db.set_setting("admin_password_hash", "deadbeef")
     c = await _client(app)
+    await app.db.set_setting("admin_password_hash", "deadbeef")  # after login, see above
     full = {"servers": [], "keys": [], "settings": {"x": "1"}, "admins": [],
             "packages": [], "ledger": []}
     for missing in full:

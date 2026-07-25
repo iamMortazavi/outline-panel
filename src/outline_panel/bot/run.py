@@ -1,8 +1,17 @@
 """
 Standalone Telegram bot entry point (`outline-panel-bot`).
 
-Shares the same multi-server Registry, DB and handlers as the in-process bot,
-so running it separately is equivalent to enabling the bot from the panel.
+Runs the *same* BotManager the panel runs in-process, on the same DB, registry
+and settings singletons. It used to build its own dispatcher by hand and pass
+neither `resolve_admin` nor `create_key`, which shipped two bugs:
+
+  * every id in `bot_admin_ids` fell through to the test-only fallback in
+    `dispatcher.admin_of` and was treated as the panel **owner** — full rights
+    on every server, no scope, no credit;
+  * `create_key` was None, so "New user" always answered "unavailable".
+
+Sharing one wiring is what stops that recurring: there is no second copy to
+forget to update.
 """
 
 from __future__ import annotations
@@ -10,15 +19,9 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from aiogram import Bot
-from aiogram.types import MenuButtonWebApp, WebAppInfo
-
 from ..core import config
-from ..core.db import DB
 from ..core.scheduler import expiry_loop
-from ..core.settings import BOT_TOKEN, SettingsStore
-from ..web.registry import Registry
-from .dispatcher import build_dispatcher
+from ..core.settings import BOT_TOKEN
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,48 +31,31 @@ log = logging.getLogger("bot")
 
 
 async def main() -> None:
-    db = DB(config.DB_PATH)
-    await db.init()
-    settings = SettingsStore(db)
-    await settings.bootstrap()
-    reg = Registry(db)
-    await reg.load()
+    # Imported here, not at module scope: web.deps builds the DB/registry
+    # singletons on import, and `--help` shouldn't pay for that.
+    from ..web import deps
 
-    token = await settings.get(BOT_TOKEN) or config.BOT_TOKEN
+    await deps.db.init()
+    await deps.settings.bootstrap()
+    await deps.reg.load()
+
+    token = await deps.settings.get(BOT_TOKEN) or config.BOT_TOKEN
     if not token:
         raise RuntimeError("No bot token configured (settings or BOT_TOKEN env).")
 
-    async def get_admin_ids() -> set[int]:
-        return await settings.get_admin_ids() or set(config.ADMIN_IDS)
-
-    bot = Bot(token)
-
-    async def notify(text: str) -> None:
-        for aid in await get_admin_ids():
-            try:
-                await bot.send_message(aid, text, parse_mode="HTML")
-            except Exception as e:  # noqa: BLE001
-                log.warning("notify admin %s failed: %s", aid, e)
-
-    dp = build_dispatcher(db, reg, get_admin_ids,
-                          get_webapp_url=settings.get_webapp_url)
-    wa_base = await settings.get_webapp_url()
-    if wa_base and wa_base.startswith("https://"):
-        try:
-            await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
-                text="Open", web_app=WebAppInfo(url=f"{wa_base}/tma")))
-        except Exception as e:  # noqa: BLE001 — non-fatal
-            log.warning("Could not set Web App menu button: %s", e)
-    asyncio.create_task(
-        expiry_loop(reg, db, config.EXPIRY_CHECK_INTERVAL, notifier=notify)
+    username = await deps.botmgr.start(token)
+    log.info("Telegram bot started as @%s", username)
+    sched = asyncio.create_task(
+        expiry_loop(deps.reg, deps.db, config.EXPIRY_CHECK_INTERVAL,
+                    notifier=deps.botmgr.notify, settings=deps.settings)
     )
-    log.info("Telegram bot started.")
     try:
-        await dp.start_polling(bot)
+        await deps.botmgr.wait()   # BotManager owns polling; a crash surfaces here
     finally:
-        await reg.close_all()
-        await bot.session.close()
-        await db.close()
+        sched.cancel()
+        await deps.botmgr.stop()
+        await deps.reg.close_all()
+        await deps.db.close()
 
 
 def cli() -> None:

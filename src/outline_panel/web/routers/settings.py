@@ -10,6 +10,7 @@ from ...core.settings import (
     BOT_ADMIN_IDS,
     BOT_ENABLED,
     BOT_TOKEN,
+    KNOBS,
     TOTP_ENABLED,
     TOTP_SECRET,
     WEBAPP_URL,
@@ -31,6 +32,61 @@ async def get_settings():
     return {
         "totpEnabled": await settings.get_bool(TOTP_ENABLED),
     }
+
+
+# ------------------------------------------------------------- panel knobs
+@router.get("/panel")
+async def get_panel_settings():
+    """Current values plus the spec that describes them.
+
+    The spec ships with the values so the settings screen is generated, not
+    written: a new knob is a row in core.settings.KNOBS and nothing else.
+    """
+    return {
+        "values": await settings.knobs(),
+        "spec": [
+            {"key": k, "type": v.get("type", "int"), "default": v["default"],
+             "min": v.get("min"), "max": v.get("max"),
+             "label": v["label"], "help": v.get("help", "")}
+            for k, v in KNOBS.items()
+        ],
+    }
+
+
+@router.put("/panel")
+async def set_panel_settings(body: dict):
+    """Write any subset of the knobs. Unknown keys are refused rather than
+    ignored, so a typo is a visible error and not a setting that never applies."""
+    for key, raw in body.items():
+        spec = KNOBS.get(key)
+        if spec is None:
+            raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
+        if spec.get("type") == "str":
+            val = str(raw).strip()
+            if not val or len(val) > spec.get("max", 64):
+                raise HTTPException(status_code=400,
+                                    detail=f"{spec['label']}: 1–{spec.get('max', 64)} characters")
+            await settings.set(key, val)
+            continue
+        try:
+            num = int(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400,
+                                detail=f"{spec['label']}: must be a whole number")
+        if num < spec["min"] or num > spec["max"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{spec['label']}: must be between {spec['min']} and {spec['max']}")
+        await settings.set(key, str(num))
+    return {"ok": True, "values": await settings.knobs()}
+
+
+@router.post("/panel/reset")
+async def reset_panel_settings():
+    """Drop every stored override and fall back to the env/spec defaults."""
+    for key in KNOBS:
+        await settings.set(key, None)
+    return {"ok": True, "values": await settings.knobs()}
 
 
 class PasswordBody(BaseModel):
