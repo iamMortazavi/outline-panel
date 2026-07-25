@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>Outline</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="/static/i18n.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
 <style>
   :root{
@@ -220,7 +221,7 @@ async function api(path,opts){ opts=opts||{};
   const {idem,...rest}=opts;
   const r=await fetch(path,{...rest,headers:{'Authorization':'tma '+initData,'Content-Type':'application/json',
     ...(idem?{'Idempotency-Key':idem}:{}),...(opts.headers||{})}});
-  if(!r.ok){ let d; try{d=await r.json()}catch(e){} const e=new Error((d&&d.detail)||('HTTP '+r.status)); e.status=r.status; throw e; }
+  if(!r.ok){ let d; try{d=await r.json()}catch(e){} const e=new Error(d?I18N.tErr(d):('HTTP '+r.status)); e.status=r.status; throw e; }
   return r.json(); }
 async function copy(text){ try{ await navigator.clipboard.writeText(text); }
   catch(e){ const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity=0;

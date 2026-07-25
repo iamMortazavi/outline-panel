@@ -9,6 +9,7 @@
      fonts.googleapis.com is blocked: every load paid two failed requests and a
      render delay, and announced the panel to a third party. System stacks look
      native and cost nothing. -->
+<script src="/static/i18n.js"></script>
 <script src="/static/vendor/qrcodejs.min.js"></script>
 <style>
   :root{
@@ -35,7 +36,10 @@
   @keyframes ocSheet{from{opacity:0;transform:translateY(14px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
   @keyframes ocDrawer{from{transform:translateX(40px);opacity:.4}to{transform:translateX(0);opacity:1}}
   button,input,select,textarea{font-family:inherit}
-  .hidden{display:none!important}.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .hidden{display:none!important}
+  /* keys, ss:// links, byte counts and IDs stay LTR inside an RTL page: bidi
+     reordering makes "24.0 GB" read "GB 24.0" and mangles a URL outright */
+  [dir="rtl"] .mono{direction:ltr;text-align:start;unicode-bidi:embed}.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   a{color:var(--acc)}
   .btn{width:100%;padding:14px;border-radius:12px;font-weight:700;font-size:15px;background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 92%,#fff),var(--acc));color:var(--ink);border:none;cursor:pointer;letter-spacing:.2px;box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 8px 20px -10px rgba(var(--acc-rgb),.6);transition:transform .12s,box-shadow .15s,filter .15s}
   .btn:hover{filter:brightness(1.05)}.btn:active{transform:translateY(1px)}.btn:disabled{opacity:.5;cursor:default;box-shadow:none}
@@ -98,9 +102,9 @@ const api=async(p,o={})=>{const {idem,...rest}=o;
     headers:{'Content-Type':'application/json',...(idem?{'Idempotency-Key':idem}:{})},...rest});
   let d=null;try{d=await r.json();}catch(_){}
   // session expired/revoked anywhere (incl. silent polls) → bounce to login once
-  if(r.status===403){toast((d&&d.detail)||'You do not have permission for this',1);throw new Error((d&&d.detail)||'Forbidden');}
-  if(r.status===401){if(pollT){clearInterval(pollT);pollT=null;}if(S.screen!=='login')showLogin();throw new Error((d&&d.detail)||'Session expired');}
-  if(!r.ok)throw new Error((d&&d.detail)||('HTTP '+r.status));return d;};
+  if(r.status===403){toast(I18N.tErr(d),1);throw new Error(I18N.tErr(d));}
+  if(r.status===401){if(pollT){clearInterval(pollT);pollT=null;}if(S.screen!=='login')showLogin();throw new Error(I18N.tErr(d));}
+  if(!r.ok)throw new Error(d?I18N.tErr(d):('HTTP '+r.status));return d;};
 let toastT;function toast(m,bad){const t=$('#toast');t.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:'+(bad?'var(--danger)':'var(--acc)')+'"></span>'+esc(m);
   t.style.cssText='position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:70;background:var(--panel2);color:var(--text);border:1px solid '+(bad?'rgba(255,107,122,.4)':'var(--line2)')+';padding:12px 20px;border-radius:99px;font-size:13.5px;font-weight:500;box-shadow:0 14px 40px rgba(0,0,0,.55);display:flex;align-items:center;gap:9px;animation:ocRise .2s both';
   clearTimeout(toastT);toastT=setTimeout(()=>t.style.display='none',2300);t.style.display='flex';}
@@ -138,6 +142,11 @@ let _sigStats='',_sigKeys='';
 const statsSig=()=>JSON.stringify(S.stats||0);
 const keysSig=()=>S.keys.map(k=>k.id+':'+k.used+':'+(k.limit||0)+':'+(k.disabled?1:0)+':'+(k.pending?1:0)+':'+(k.lastSeen||0)+':'+(k.expiry||0)+':'+k.name+':'+(k.peakDevices||0)).join('|');
 
+I18N.apply();
+function nextLangLabel(){const l=I18N.languages.find(x=>x.id!==I18N.lang);return l?l.label:'';}
+function toggleLang(){const l=I18N.languages.find(x=>x.id!==I18N.lang);
+  if(!l)return; I18N.setLang(l.id); S.screen==='login'?showLogin():renderApp();}
+
 /* ---------- auth ---------- */
 async function checkAuth(){try{await api('/api/me');await enterApp();}catch(_){showLogin();}}
 function showLogin(needTotp){
@@ -148,18 +157,20 @@ function showLogin(needTotp){
       <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:30px">
         <span style="width:11px;height:11px;border-radius:50%;background:var(--acc);box-shadow:0 0 16px var(--acc)"></span>
         <span style="font-family:var(--display);font-weight:700;font-size:20px;letter-spacing:-.3px">Outline<span style="color:var(--muted);font-weight:600"> Control</span></span></div>
-      <h1 style="font-family:var(--display);font-weight:700;font-size:32px;letter-spacing:-.8px;margin:0 0 8px;text-align:center">Welcome back.</h1>
-      <p class="desc" style="text-align:center;margin-bottom:30px">Sign in to manage your servers and keys.</p>
-      <label class="lab">Username</label>
+      <h1 style="font-family:var(--display);font-weight:700;font-size:32px;letter-spacing:-.8px;margin:0 0 8px;text-align:center">${esc(t('Welcome back.'))}</h1>
+      <p class="desc" style="text-align:center;margin-bottom:30px">${esc(t('Sign in to manage your servers and keys.'))}</p>
+      <label class="lab">${esc(t('Username'))}</label>
       <input id="un" class="inp" value="admin" autocomplete="username" autocapitalize="off" spellcheck="false" style="padding:14px;font-size:16px;margin-bottom:14px" />
-      <label class="lab">Password</label>
+      <label class="lab">${esc(t('Password'))}</label>
       <input id="pw" class="inp" type="password" placeholder="••••••••••" autocomplete="current-password" style="padding:14px;font-size:16px" />
-      <div id="totpWrap" class="${needTotp?'':'hidden'}" style="margin-top:14px"><label class="lab">Two-factor code</label>
+      <div id="totpWrap" class="${needTotp?'':'hidden'}" style="margin-top:14px"><label class="lab">${esc(t('Two-factor code'))}</label>
         <input id="totp" class="inp" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" style="padding:14px;font-size:16px" /></div>
       <div id="loginErr" class="err" style="text-align:center;margin-top:12px"></div>
       <div style="height:8px"></div>
-      <button class="btn" id="loginBtn" style="padding:15px">Sign in →</button>
+      <button class="btn" id="loginBtn" style="padding:15px">${esc(t('Sign in →'))}</button>
+      <div style="text-align:center;margin-top:18px"><button id="langsw" style="background:none;border:none;color:var(--muted);font:inherit;font-size:12.5px;cursor:pointer;text-decoration:underline">${esc(nextLangLabel())}</button></div>
     </div></div>`;
+  $('#langsw').onclick=toggleLang;
   const go=()=>doLogin();
   $('#loginBtn').onclick=go;
   $('#un').addEventListener('keydown',e=>{if(e.key==='Enter')$('#pw').focus();});
@@ -171,8 +182,8 @@ async function doLogin(){
   const un=$('#un').value.trim(),pw=$('#pw').value,tot=($('#totp')?.value||'').trim(),b=$('#loginBtn');
   $('#loginErr').textContent='';b.disabled=true;b.innerHTML='<span class="spin"></span>';
   try{await api('/api/login',{method:'POST',body:JSON.stringify({username:un,password:pw,totp:tot||null})});await enterApp();}
-  catch(e){if(/2fa code required/i.test(e.message)){if($('#totpWrap').classList.contains('hidden')){showLogin(true);$('#un').value=un;$('#pw').value=pw;}$('#loginErr').textContent='Enter your two-factor code.';}
-    else{$('#loginErr').textContent=e.message;b.disabled=false;b.textContent='Sign in →';}}
+  catch(e){if(/2fa code required/i.test(e.message)){if($('#totpWrap').classList.contains('hidden')){showLogin(true);$('#un').value=un;$('#pw').value=pw;}$('#loginErr').textContent=t('Enter your two-factor code.');}
+    else{$('#loginErr').textContent=e.message;b.disabled=false;b.textContent=t('Sign in →');}}
 }
 async function signOut(){try{await api('/api/logout',{method:'POST'});}catch(_){}showLogin();}
 

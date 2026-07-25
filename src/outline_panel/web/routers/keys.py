@@ -9,7 +9,7 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from ...core import metrics, security
+from ...core import errors, metrics, security
 from ...core.outline_api import OutlineAPI, OutlineError
 from ...core.utils import gb_to_bytes
 from .. import idempotency
@@ -189,22 +189,19 @@ async def _buy(admin: dict, package_id: int | None, sid: str,
     if not on_credit(admin):
         return None
     if package_id is None:
-        raise HTTPException(status_code=400, detail="Pick a package")
+        raise errors.pick_a_package()
     pkg = await db.get_package(package_id)
     if pkg is None:
-        raise HTTPException(status_code=404, detail="Unknown package")
+        raise errors.unknown_package()
     price = price_for(pkg, admin)
     entry = await db.charge(admin["id"], price, reason="purchase",
                             package_id=pkg["id"], package_name=pkg["name"],
                             price_before_discount=int(pkg["price"]),
                             server_id=sid, key_id=kid)
     if entry is None:
-        cur = await settings.text("currency")
-        raise HTTPException(
-            status_code=402,
-            detail=f"Not enough credit: {pkg['name']} costs {price:,} {cur} but "
-                   f"you have {int(admin.get('credit') or 0):,} {cur}",
-        )
+        raise errors.not_enough_credit(
+            pkg["name"], price, int(admin.get("credit") or 0),
+            await settings.text("currency"))
     return pkg, price, entry
 
 
@@ -218,10 +215,7 @@ def deny_free(admin: dict) -> None:
     cheapest package and then topped it up here for nothing.
     """
     if on_credit(admin):
-        raise HTTPException(
-            status_code=403,
-            detail="You buy from the price list — renew by picking a package",
-        )
+        raise errors.buy_a_package()
 
 
 async def _apply_package(sid: str, kid: str, pkg: dict) -> dict:
@@ -247,7 +241,7 @@ async def _apply_package(sid: str, kid: str, pkg: dict) -> dict:
         else:
             await api.set_data_limit(kid, new_limit)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
 
     await db.set_limit(sid, kid, new_limit)
     days = int(pkg["days"] or 0)
@@ -302,7 +296,7 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
     try:
         key = await api.create_key(name=name, limit_bytes=limit_bytes)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     try:
         await db.add_key(sid, key["id"], name, limit_bytes, duration,
                          owner_admin_id=owner_admin_id)
@@ -373,7 +367,7 @@ async def rename_key(sid: str, kid: str, body: NameBody):
     try:
         await api.rename_key(kid, body.name)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     await ensure_local(sid, kid)
     await db.set_name(sid, kid, body.name)
     return {"ok": True}
@@ -393,7 +387,7 @@ async def set_key_limit(sid: str, kid: str, body: LimitBody,
             else:
                 await api.remove_data_limit(kid)
         except OutlineError as e:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise errors.upstream(str(e))
     await db.set_limit(sid, kid, limit_bytes)
     return {"ok": True, "limit": limit_bytes}
 
@@ -417,7 +411,7 @@ async def set_key_monthly(sid: str, kid: str, body: MonthlyBody,
                 new_limit = int(usage.get(str(kid), 0)) + monthly
                 await api.set_data_limit(kid, new_limit)
             except OutlineError as e:
-                raise HTTPException(status_code=502, detail=str(e))
+                raise errors.upstream(str(e))
             await db.set_limit(sid, kid, new_limit)
         # First reset one cycle out (like create_key_for) so saving a quota
         # doesn't trigger an immediate reset on the next scheduler pass.
@@ -435,7 +429,7 @@ async def disable_key(sid: str, kid: str):
     try:
         await api.set_data_limit(kid, 0)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     await db.set_disabled(sid, kid, True)
     return {"ok": True}
 
@@ -447,7 +441,7 @@ async def enable_key(sid: str, kid: str):
     try:
         await enable_on_outline(api, kid, meta or {})
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     await db.set_disabled(sid, kid, False)
     return {"ok": True}
 
@@ -494,7 +488,7 @@ async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
             try:
                 await enable_on_outline(api, kid, meta)
             except OutlineError as e:
-                raise HTTPException(status_code=502, detail=str(e))
+                raise errors.upstream(str(e))
         if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
             # not yet activated — adjust the stored duration (min 1 day)
             await db.set_duration(sid, kid,
@@ -535,7 +529,7 @@ async def reset_usage(sid: str, kid: str,
         new_limit = used + int(base)
         await api.set_data_limit(kid, new_limit)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     await db.set_limit(sid, kid, new_limit)
     await db.set_disabled(sid, kid, False)
     return {"ok": True, "limit": new_limit}
@@ -587,13 +581,13 @@ async def sub_add_server(token: str, target: str,
     # `target`, not `sid`, so enforce_scope never sees it: check it by hand or
     # this route mints a key on any server in the panel.
     if not can_see(admin, target):
-        raise HTTPException(status_code=404, detail="Unknown server")
+        raise errors.unknown_server()
     # A mirror is a whole second key with the primary's allowance — product, and
     # it was free. A credit admin buys a package per server instead.
     deny_free(admin)
     members = await db.get_keys_by_sub_token(token)
     if not members:
-        raise HTTPException(status_code=404, detail="Unknown subscription")
+        raise errors.unknown_subscription()
     if any(m["server_id"] == target for m in members):
         return await _sub_info(token, admin)  # already included
     api = api_or_404(target)
@@ -609,7 +603,7 @@ async def sub_add_server(token: str, target: str,
         if primary.get("disabled"):
             await api.set_data_limit(key["id"], 0)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     try:
         await db.add_key(target, key["id"], name, limit_bytes, duration,
                          owner_admin_id=primary.get("owner_admin_id"))
@@ -636,10 +630,10 @@ async def sub_remove_server(token: str, target: str,
     """Remove `target`'s config from the subscription (unlinks the token; the
     key itself is kept — delete it from the key list if no longer needed)."""
     if not can_see(admin, target):  # `target`, so enforce_scope misses it too
-        raise HTTPException(status_code=404, detail="Unknown server")
+        raise errors.unknown_server()
     members = await db.get_keys_by_sub_token(token)
     if not members:
-        raise HTTPException(status_code=404, detail="Unknown subscription")
+        raise errors.unknown_subscription()
     for m in members:
         if m["server_id"] == target:
             await db.set_sub_token(target, m["key_id"], None)
@@ -664,7 +658,7 @@ async def set_key_owner(sid: str, kid: str, body: OwnerBody):
     if body.admin_id is not None:
         target = await db.get_admin(body.admin_id)
         if target is None:
-            raise HTTPException(status_code=404, detail="Unknown admin")
+            raise errors.unknown_admin()
     if target is None or target["is_owner"]:
         await db.set_key_owner(sid, kid, None)   # the owner is stored as NULL
         return {"ok": True, "ownerAdminId": None}
@@ -690,7 +684,7 @@ async def delete_key(sid: str, kid: str):
         # undeletable ghost — invisible in the key list, yet still holding the
         # subscription token that sub_add_server clones from.
         if e.status != 404:
-            raise HTTPException(status_code=502, detail=str(e))
+            raise errors.upstream(str(e))
     meta = await db.get_key(sid, kid)
     await db.delete_key(sid, kid)
     # the config is gone; stop serving it from the cached subscription too

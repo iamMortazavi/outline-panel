@@ -167,6 +167,22 @@ CREATE TABLE IF NOT EXISTS rate_events (
 """
 
 
+# One row per probe. Reachability was computed per request and thrown away, so
+# "has this server been flapping all week?" had no answer. Deliberately narrow:
+# a boolean, a latency and the error text, pruned on the same schedule as the
+# audit log — this is an operational signal, not an archive.
+_HEALTH_SCHEMA = """
+CREATE TABLE IF NOT EXISTS server_health (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    server_id  TEXT NOT NULL,
+    ts         INTEGER NOT NULL,
+    reachable  INTEGER NOT NULL,
+    latency_ms INTEGER,
+    error      TEXT
+);
+"""
+
+
 class DB:
     def __init__(self, path: str):
         self.path = path
@@ -305,6 +321,12 @@ class DB:
         await self.conn.execute(_RATE_SCHEMA)
         await self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_rate ON rate_events(bucket, ts)")
+
+    async def _m005_server_health(self) -> None:
+        """Probe history, so a flapping server is visible rather than momentary."""
+        await self.conn.execute(_HEALTH_SCHEMA)
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_health ON server_health(server_id, ts DESC)")
 
     async def close(self) -> None:
         if self._db is not None:
@@ -792,6 +814,71 @@ class DB:
         )
         return [dict(r) for r in await cur.fetchall()]
 
+    # server health ---------------------------------------------------------
+    async def record_health(self, server_id: str, reachable: bool,
+                            latency_ms: int | None, error: str | None) -> None:
+        async with self._lock:
+            await self.conn.execute(
+                "INSERT INTO server_health (server_id, ts, reachable, latency_ms,"
+                " error) VALUES (?, ?, ?, ?, ?)",
+                (server_id, int(time.time()), 1 if reachable else 0, latency_ms,
+                 (error or "")[:200] or None),
+            )
+            await self.conn.commit()
+
+    async def health_history(self, server_id: str, limit: int = 200) -> list[dict]:
+        cur = await self.conn.execute(
+            "SELECT * FROM server_health WHERE server_id = ?"
+            " ORDER BY id DESC LIMIT ?", (server_id, limit))
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def health_summary(self, since_ts: int) -> dict[str, dict]:
+        """Per server: probes, failures and mean latency over the window.
+
+        Computed in SQL rather than by walking rows in Python — the table is
+        one row per server per scheduler pass, which is tens of thousands a
+        week even on a small panel.
+        """
+        cur = await self.conn.execute(
+            "SELECT server_id, COUNT(*) AS probes,"
+            " SUM(reachable) AS ok,"
+            " AVG(CASE WHEN reachable = 1 THEN latency_ms END) AS avg_ms"
+            " FROM server_health WHERE ts >= ? GROUP BY server_id", (since_ts,))
+        out = {}
+        for r in await cur.fetchall():
+            probes = int(r["probes"] or 0)
+            ok = int(r["ok"] or 0)
+            out[r["server_id"]] = {
+                "probes": probes,
+                "ok": ok,
+                "uptimePct": round(ok * 100 / probes, 2) if probes else None,
+                "avgLatencyMs": round(r["avg_ms"]) if r["avg_ms"] is not None else None,
+            }
+        return out
+
+    async def consecutive_failures(self, server_id: str, cap: int = 50) -> int:
+        """How many probes in a row have failed, newest first.
+
+        This is what an alert should fire on: a single failed probe is a blip
+        and paging on it trains people to ignore the alert.
+        """
+        cur = await self.conn.execute(
+            "SELECT reachable FROM server_health WHERE server_id = ?"
+            " ORDER BY id DESC LIMIT ?", (server_id, cap))
+        n = 0
+        for row in await cur.fetchall():
+            if row["reachable"]:
+                break
+            n += 1
+        return n
+
+    async def prune_health(self, older_than_ts: int) -> int:
+        async with self._lock:
+            cur = await self.conn.execute(
+                "DELETE FROM server_health WHERE ts < ?", (older_than_ts,))
+            await self.conn.commit()
+            return cur.rowcount
+
     # audit -----------------------------------------------------------------
     async def add_audit(self, actor_admin_id: int | None, actor_name: str | None,
                         action: str, target: str | None, status: int | None,
@@ -988,4 +1075,5 @@ _MIGRATIONS = (
     DB._m002_audit_log,
     DB._m003_idempotency,
     DB._m004_locks_and_rate,
+    DB._m005_server_health,
 )

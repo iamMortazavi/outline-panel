@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from ...core import errors
 from ...core.outline_api import OutlineAPI, OutlineError, parse_access_config
 from ...core.utils import gb_to_bytes
 from ..deps import api_or_404, current_admin, db, enforce_scope, host, reg, require, scoped_ids
@@ -48,6 +50,29 @@ async def _server_info(sid: str) -> dict:
     }
 
 
+@router.get("/servers/health")
+async def servers_health(days: int = 7, admin: dict = Depends(current_admin)):
+    """Uptime and mean latency per server over the window, plus how many checks
+    each has failed in a row right now."""
+    days = max(1, min(90, days))
+    since = int(time.time()) - days * 86400
+    summary = await db.health_summary(since)
+    out = []
+    for sid in scoped_ids(admin):
+        row = summary.get(sid, {"probes": 0, "ok": 0, "uptimePct": None,
+                                "avgLatencyMs": None})
+        out.append({"id": sid, "name": (reg.meta(sid) or {}).get("name"),
+                    "failingNow": await db.consecutive_failures(sid), **row})
+    return {"days": days, "servers": out}
+
+
+@router.get("/servers/{sid}/health")
+async def server_health(sid: str, limit: int = 100):
+    """Recent probe results for one server, newest first."""
+    api_or_404(sid)
+    return {"history": await db.health_history(sid, max(1, min(500, limit)))}
+
+
 @router.get("/servers")
 async def list_servers(admin: dict = Depends(current_admin)):
     # No {sid}, so enforce_scope does not cover this one: filter by hand or the
@@ -80,7 +105,7 @@ async def add_server(body: ServerBody):
 @router.put("/servers/{sid}", dependencies=[Depends(require("servers.manage"))])
 async def rename_server_local(sid: str, body: NameBody):
     if not reg.meta(sid):
-        raise HTTPException(status_code=404, detail="Unknown server")
+        raise errors.unknown_server()
     await db.rename_server_local(sid, body.name)
     reg.servers[sid]["name"] = body.name
     return {"ok": True}
@@ -89,7 +114,7 @@ async def rename_server_local(sid: str, body: NameBody):
 @router.delete("/servers/{sid}", dependencies=[Depends(require("servers.manage"))])
 async def delete_server(sid: str):
     if not reg.meta(sid):
-        raise HTTPException(status_code=404, detail="Unknown server")
+        raise errors.unknown_server()
     await reg.remove(sid)
     return {"ok": True}
 
@@ -120,7 +145,7 @@ async def set_metrics(sid: str, body: MetricsBody):
     try:
         await api.set_metrics_enabled(body.enabled)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     return {"ok": True}
 
 
@@ -133,7 +158,7 @@ async def set_global_limit(sid: str, body: LimitBody):
         else:
             await api.remove_global_data_limit()
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     return {"ok": True}
 
 
@@ -143,5 +168,5 @@ async def set_server_name(sid: str, body: NameBody):
     try:
         await api.rename_server(body.name)
     except OutlineError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+        raise errors.upstream(str(e))
     return {"ok": True}

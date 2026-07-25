@@ -99,6 +99,43 @@ async def _safe_notify(notifier, text: str, key: dict | None = None) -> None:
         log.warning("failed to send notification: %s", e)
 
 
+async def _probe_servers(registry, db, notifier, notified, settings) -> None:
+    """Ask every server whether it is alive, and remember the answer.
+
+    Alerts fire on a *run* of failures, not on one: a single missed probe is a
+    blip, and paging on blips is how people learn to ignore the alert. The
+    recovery notice is tied to the same `notified` set, so it can only arrive
+    after an alert actually went out.
+    """
+    threshold = await settings.num("health_alert_failures")
+    for sid in registry.ids() if hasattr(registry, "ids") else []:
+        api = registry.get(sid)
+        if api is None:
+            continue
+        name = (registry.meta(sid) or {}).get("name") or sid
+        started = time.monotonic()
+        try:
+            await api.get_server_info()
+            reachable, err = True, None
+        except OutlineError as e:
+            reachable, err = False, str(e)
+        latency = int((time.monotonic() - started) * 1000)
+        await db.record_health(sid, reachable, latency if reachable else None, err)
+
+        tag = (sid, None, "down")
+        if not reachable:
+            if await db.consecutive_failures(sid) >= threshold and tag not in notified:
+                notified.add(tag)
+                await _safe_notify(
+                    notifier,
+                    f"🔌 <b>{name}</b> has failed {threshold} checks in a row "
+                    f"and looks down.\n<code>{(err or '')[:120]}</code>",
+                )
+        elif tag in notified:
+            notified.discard(tag)
+            await _safe_notify(notifier, f"✅ <b>{name}</b> is reachable again.")
+
+
 async def _check_once(registry, db, notifier, notified, settings=None) -> None:
     now = int(time.time())
     if hasattr(registry, "sync"):   # pick up servers added since the last pass
@@ -205,6 +242,13 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
         else:
             notified.discard(tag_exp)
 
+    # 3b) probe every server and remember the answer
+    if settings is not None:
+        try:
+            await _probe_servers(registry, db, notifier, notified, settings)
+        except Exception as e:  # noqa: BLE001
+            log.warning("health probe failed: %s", e)
+
     # 4) housekeeping: these tables only ever grow, so something has to trim them
     if settings is not None:
         try:
@@ -217,6 +261,7 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
             # past that only preserves the chance of replaying a stale purchase.
             await db.prune_idempotency(now - 86400)
             await db.prune_rate_events(now - 86400)
+            await db.prune_health(now - await settings.num("health_retention_days") * 86400)
         except Exception as e:  # noqa: BLE001 — housekeeping must not stop expiry
             log.warning("housekeeping failed: %s", e)
         try:

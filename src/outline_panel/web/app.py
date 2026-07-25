@@ -180,7 +180,17 @@ async def index():
 
 @app.exception_handler(HTTPException)
 async def http_exc_handler(request, exc: HTTPException):
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    """`detail` stays the English sentence it always was, so nothing that reads
+    it breaks. A PanelError adds `code`/`params` beside it, which is what lets
+    the UI translate — and its absence is what makes the fallback to `detail`
+    the correct behaviour rather than a bug."""
+    body: dict = {"detail": exc.detail}
+    code = getattr(exc, "code", None)
+    if code:
+        body["code"] = code
+        if getattr(exc, "params", None):
+            body["params"] = exc.params
+    return JSONResponse(status_code=exc.status_code, content=body)
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
