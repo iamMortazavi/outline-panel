@@ -144,7 +144,7 @@ async def tma_rename(sid: str, kid: str, body: NameBody, auth: dict = Depends(re
 @router.put("/tma/api/keys/{sid}/{kid}/limit")
 async def tma_limit(sid: str, kid: str, body: LimitBody, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
-    return await keys_router.set_key_limit(sid, kid, body)
+    return await keys_router.set_key_limit(sid, kid, body, auth)
 
 
 @router.post("/tma/api/keys/{sid}/{kid}/enable")

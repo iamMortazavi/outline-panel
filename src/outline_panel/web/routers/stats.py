@@ -7,13 +7,13 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from ...core.outline_api import OutlineError
-from ..deps import current_admin, reg, require, sids_or_404
+from ..deps import current_admin, reg, require, settings, sids_or_404
 
 router = APIRouter(prefix="/api", tags=["stats"],
                    dependencies=[Depends(require("keys.view"))])
 
 
-async def _stats_for(sid: str) -> dict:
+async def _stats_for(sid: str, ttl: int) -> dict:
     m = reg.meta(sid)
     if m is None:  # server removed between snapshot and fetch
         return {"id": sid, "name": None, "available": False, "tunnelSec": 0,
@@ -21,7 +21,7 @@ async def _stats_for(sid: str) -> dict:
                 "locations": []}
     api = m["api"]
     try:
-        sm = await api.get_server_metrics_cached("30d")
+        sm = await api.get_server_metrics_cached("30d", ttl)
         avail = True
     except OutlineError:
         sm, avail = {}, False
@@ -44,7 +44,8 @@ async def _stats_for(sid: str) -> dict:
 async def stats(server: str | None = None,
                 admin: dict = Depends(current_admin)):
     sids = sids_or_404(server, admin)
-    per = await asyncio.gather(*[_stats_for(s) for s in sids]) if sids else []
+    ttl = await settings.num("metrics_ttl")
+    per = await asyncio.gather(*[_stats_for(s, ttl) for s in sids]) if sids else []
     any_avail = any(p["available"] for p in per)
     locmap: dict = {}
     for p in per:

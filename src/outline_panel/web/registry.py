@@ -13,13 +13,33 @@ class Registry:
         self.servers: dict[str, dict] = {}  # sid -> {id,name,api_url,cert_sha256,api}
 
     async def load(self) -> None:
-        rows = await self.db.all_servers()
-        if not rows and config.OUTLINE_API_URL:
+        if not await self.db.all_servers() and config.OUTLINE_API_URL:
             await self.db.add_server("default", "Server 1", config.OUTLINE_API_URL,
                                      config.OUTLINE_CERT_SHA256)
-            rows = await self.db.all_servers()
-        for r in rows:
-            self.servers[r["id"]] = {
+        await self.sync()
+
+    async def sync(self) -> None:
+        """Reconcile the in-memory map with the servers table.
+
+        The registry used to be read once at startup and mutated in place, so a
+        server added by one process — a second uvicorn worker, or the standalone
+        bot — stayed invisible to every other one until a restart, and a deleted
+        server stayed usable. Reading the rows is a local SQLite scan; building
+        an OutlineAPI is not, so a client is rebuilt only when its url or pinned
+        certificate actually moved. A rename reuses the connection pool.
+        """
+        rows = {r["id"]: r for r in await self.db.all_servers()}
+        for sid in [s for s in self.servers if s not in rows]:
+            await self.servers.pop(sid)["api"].close()
+        for sid, r in rows.items():
+            cur = self.servers.get(sid)
+            if (cur and cur["api_url"] == r["api_url"]
+                    and cur.get("cert_sha256") == r.get("cert_sha256")):
+                cur["name"] = r["name"]
+                continue
+            if cur:
+                await cur["api"].close()
+            self.servers[sid] = {
                 **r, "api": OutlineAPI(r["api_url"], r.get("cert_sha256")),
             }
 

@@ -23,12 +23,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ...core.outline_api import OutlineError
-from ..deps import STATIC_DIR, db, reg
+from ..deps import STATIC_DIR, db, reg, settings
 
 router = APIRouter(tags=["subscription"])
-
-# How often (hours) clients should re-fetch the subscription.
-_UPDATE_INTERVAL_HOURS = 12
 
 
 def _ss_with_label(access_url: str, label: str) -> str:
@@ -53,6 +50,7 @@ def _wants_html(request: Request) -> bool:
 async def _collect(token: str) -> dict:
     """Resolve a subscription token into a usage summary (``servers[*].url`` are
     the clean ``ss://`` lines the raw sub is built from)."""
+    await reg.sync()   # public route: no current_admin to refresh the list for us
     members = await db.get_keys_by_sub_token(token)
     if not members:
         raise HTTPException(status_code=404, detail="Unknown subscription")
@@ -61,7 +59,7 @@ async def _collect(token: str) -> dict:
     usage_by_server: dict[str, dict] = {}
     servers: list[dict] = []
     title = None
-    download = total = expire = 0
+    download = total = expire = pending_days = 0
     any_unlimited = False
 
     for m in members:
@@ -92,6 +90,12 @@ async def _collect(token: str) -> dict:
             total += int(lim)
         if exp:
             expire = max(expire, int(exp))
+        # A plan whose clock has not started has no expiry_ts yet, which the page
+        # read as "No expiry" — telling someone who bought 30 days that their
+        # subscription never ends. Say what it actually is: n days, from the
+        # first connection.
+        if m.get("duration_days") and not m.get("activated_ts"):
+            pending_days = max(pending_days, int(m["duration_days"]))
         servers.append({
             "server": sname, "used": used, "limit": lim,
             "disabled": bool(m.get("disabled")), "url": line,
@@ -108,7 +112,10 @@ async def _collect(token: str) -> dict:
         "total": 0 if any_unlimited else total,
         "unlimited": any_unlimited,
         "expire": expire or 0,
-        "updateInterval": _UPDATE_INTERVAL_HOURS,
+        # 0 unless the validity period has not begun; then it is the term the
+        # countdown will run for once the user first connects.
+        "pendingDays": pending_days,
+        "updateInterval": await settings.num("sub_update_hours"),
         "servers": servers,
     }
 
@@ -127,7 +134,7 @@ async def subscription(token: str, request: Request):
         userinfo += f"; expire={info['expire']}"
     headers = {
         "Subscription-Userinfo": userinfo,
-        "Profile-Update-Interval": str(_UPDATE_INTERVAL_HOURS),
+        "Profile-Update-Interval": str(info["updateInterval"]),
         "Profile-Title": "base64:" + base64.b64encode(info["name"].encode()).decode(),
         "Content-Disposition": f'inline; filename="{token}"',
         "Cache-Control": "no-store",

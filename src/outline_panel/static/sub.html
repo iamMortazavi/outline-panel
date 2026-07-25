@@ -65,6 +65,26 @@
   .mini:active{opacity:.7}
   .mini svg{width:15px;height:15px}
 
+  /* connect guide */
+  .seg{display:flex;gap:5px;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:4px;margin-bottom:11px;overflow-x:auto}
+  .seg button{flex:1;min-width:72px;background:none;border:1px solid transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;padding:8px 6px;border-radius:9px;cursor:pointer;white-space:nowrap}
+  .seg button.on{background:var(--panel2);border-color:var(--line2);color:var(--acc)}
+  .app{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px 12px;margin-bottom:9px}
+  .app .ic{width:36px;height:36px;border-radius:11px;background:var(--panel2);border:1px solid var(--line2);display:grid;place-items:center;font-size:17px;flex:none}
+  .app .who2{flex:1;min-width:0}
+  .app .nm2{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* wraps rather than ellipsing: on a 375px screen the longer notes are the
+     ones that actually tell the user something */
+  .app .ds{font-size:11.5px;color:var(--faint);margin-top:2px;line-height:1.45}
+  .add{flex:none;border:none;border-radius:10px;padding:9px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
+    background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 92%,#fff),var(--acc));color:var(--ink)}
+  .add:active{transform:translateY(1px)}
+  .steps{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-bottom:11px}
+  .steps li{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:4px}
+  .steps li:last-child{margin-bottom:0}
+  .steps b{color:var(--text)}
+  .steps ol{margin:0;padding-left:19px}
+
   .center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:70vh;gap:10px;padding:24px}
   .spin{width:22px;height:22px;border:2.5px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:rot .7s linear infinite}
   @keyframes rot{to{transform:rotate(360deg)}}
@@ -99,6 +119,72 @@ function showQR(name,text){const box=document.getElementById('qr');box.innerHTML
 function closeQR(){document.getElementById('scrim').className='scrim';}
 document.getElementById('scrim').onclick=e=>{if(e.target.id==='scrim')closeQR();};
 
+/* ---------- client apps ----------
+   One table on purpose. App names and their import URL schemes are the part of
+   this page that goes stale — they change every year or two — so there is
+   exactly one place to edit when they do, and nothing else in the page knows an
+   app name. `link(sub)` builds the app's one-tap import URL from the
+   subscription link; an app with no `link` is added from the Configs section
+   below instead. A scheme that isn't installed simply does nothing, which is
+   why every row still has the copy button underneath as a fallback. */
+const APPS={
+  outline:{name:'Outline',note:'Official app — simplest',icon:'🔑',perServer:true},
+  hiddify:{name:'Hiddify',note:'Imports the whole subscription',icon:'⚡',
+           link:s=>'hiddify://install-sub?url='+encodeURIComponent(s)},
+  streisand:{name:'Streisand',note:'Popular on iPhone',icon:'🌊',
+           link:s=>'streisand://import/'+s},
+  shadowrocket:{name:'Shadowrocket',note:'Paid · App Store',icon:'🚀',
+           link:s=>'sub://'+btoa(s).replace(/=+$/,'')},
+  v2rayng:{name:'v2rayNG',note:'Widely used on Android',icon:'🅥',
+           link:s=>'v2rayng://install-sub?url='+encodeURIComponent(s)},
+  clash:{name:'Clash / Verge',note:'Desktop & Android',icon:'⚔️',
+           link:s=>'clash://install-config?url='+encodeURIComponent(s)},
+  singbox:{name:'sing-box',note:'Cross-platform',icon:'📦',
+           link:s=>'sing-box://import-remote-profile?url='+encodeURIComponent(s)},
+};
+const PLATFORMS=[
+  {id:'ios',     label:'iPhone', apps:['outline','streisand','shadowrocket','hiddify','singbox']},
+  {id:'android', label:'Android',apps:['outline','hiddify','v2rayng','singbox','clash']},
+  {id:'windows', label:'Windows',apps:['outline','hiddify','clash']},
+  {id:'macos',   label:'macOS',  apps:['outline','hiddify','streisand','clash']},
+  {id:'linux',   label:'Linux',  apps:['outline','hiddify','singbox']},
+];
+function detectPlatform(){
+  const u=navigator.userAgent||'';
+  if(/iPhone|iPad|iPod/i.test(u))return 'ios';
+  if(/Android/i.test(u))return 'android';
+  if(/Windows|Win64|Win32/i.test(u))return 'windows';
+  if(/Mac OS X|Macintosh/i.test(u))return 'macos';
+  return 'linux';
+}
+let PLAT=detectPlatform(), DATA=null;
+
+function connectSection(d){
+  const p=PLATFORMS.find(x=>x.id===PLAT)||PLATFORMS[0];
+  const first=(d.servers||[])[0];
+  const seg=PLATFORMS.map(x=>'<button data-plat="'+x.id+'" class="'+(x.id===PLAT?'on':'')+'">'+esc(x.label)+'</button>').join('');
+  const rows=p.apps.map(id=>{
+    const a=APPS[id];if(!a)return '';
+    // Outline takes one ss:// config at a time, not a subscription link
+    const href=a.perServer?(first&&first.url):(a.link?a.link(subUrl):null);
+    const note=a.perServer&&(d.servers||[]).length>1
+      ? 'Adds the first server — use Configs below for the rest' : a.note;
+    return '<div class="app"><div class="ic">'+a.icon+'</div>'+
+      '<div class="who2"><div class="nm2">'+esc(a.name)+'</div><div class="ds">'+esc(note)+'</div></div>'+
+      (href?'<button class="add" data-open="'+esc(href)+'">Add</button>':'')+'</div>';
+  }).join('');
+  return '<div class="sectitle">Connect</div>'+
+    '<div class="seg" id="seg">'+seg+'</div>'+
+    '<div class="steps"><ol>'+
+      '<li>Install one of the apps below.</li>'+
+      '<li>Tap <b>Add</b> — the app opens and imports your subscription.</li>'+
+      '<li>Press connect. Your data and expiry update automatically.</li>'+
+    '</ol></div>'+rows+
+    '<div style="font-size:11.5px;color:var(--faint);line-height:1.55;margin:2px 4px 0">'+
+      'Nothing happened? The app probably isn’t installed yet. Install it, then '+
+      'copy the subscription link above and paste it in the app.</div>';
+}
+
 function ring(pct){const r=30,c=2*Math.PI*r,off=c*(1-Math.min(pct,100)/100);
   return '<svg width="74" height="74" viewBox="0 0 74 74"><circle cx="37" cy="37" r="'+r+'" fill="none" stroke="rgba(3,23,27,.18)" stroke-width="8"/><circle cx="37" cy="37" r="'+r+'" fill="none" stroke="#03171b" stroke-width="8" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+off+'" transform="rotate(-90 37 37)"/><text x="37" y="42" text-anchor="middle" font-family="var(--display)" font-weight="800" font-size="17" fill="#03171b">'+Math.round(pct)+'%</text></svg>';}
 
@@ -112,10 +198,18 @@ function render(d){
   h+='<div class="hero"><div class="sub">Data used</div><div class="who">'+esc(d.name)+'</div>'+
      '<div class="ring">'+(unlimited?'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">Unlimited plan</div></div>':
         ring(pct)+'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">of '+fmtB(total)+' · '+fmtB(remain)+' left</div></div>')+'</div></div>';
-  h+='<div class="grid2"><div class="card"><div class="t">Expiry</div><div class="v" style="'+(ex.d==='expired'?'color:var(--danger)':'')+'">'+ex.t+'</div>'+(ex.d&&ex.d!=='expired'?'<div style="font-size:11.5px;color:var(--faint);margin-top:3px">'+ex.d+'</div>':'')+'</div>'+
+  // A plan that hasn't started has no expiry_ts, which used to render as
+  // "No expiry" — telling someone who bought 30 days that it never ends.
+  const pend=d.pendingDays||0;
+  const expVal=pend?pend+' days':ex.t;
+  const expNote=pend?'starts on first connection'
+                    :(ex.d&&ex.d!=='expired'?ex.d:'');
+  h+='<div class="grid2"><div class="card"><div class="t">'+(pend?'Validity':'Expiry')+'</div><div class="v" style="'+(!pend&&ex.d==='expired'?'color:var(--danger)':(pend?'color:var(--warn)':''))+'">'+esc(expVal)+'</div>'+(expNote?'<div style="font-size:11.5px;color:var(--faint);margin-top:3px">'+esc(expNote)+'</div>':'')+'</div>'+
      '<div class="card"><div class="t">Configs</div><div class="v">'+(d.servers||[]).length+(multi?' servers':' server')+'</div><div style="font-size:11.5px;color:var(--faint);margin-top:3px">auto-updates ~'+(d.updateInterval||12)+'h</div></div></div>';
 
   h+='<div class="sectitle">Subscription link</div><div class="link"><div class="url">'+esc(subUrl)+'</div><div class="row"><button class="btn" onclick="copy(subUrl)">Copy link</button><button class="btn btn-sec" onclick="showQR(\'Subscription\',subUrl)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M21 14v3M14 21h3" stroke-linecap="round"/></svg></button></div></div>';
+
+  h+=connectSection(d);
 
   if((d.servers||[]).length){
     h+='<div class="sectitle">Configs</div>';
@@ -124,20 +218,30 @@ function render(d){
         '<div class="bar"><i style="width:'+(un?100:Math.max(p,2))+'%;opacity:'+(un?.45:1)+'"></i></div>'+
         '<div class="srv-sub"><span>'+fmtB(s.used)+' / '+(un?'∞':fmtB(s.limit))+'</span><span>'+(un?'Unlimited':Math.round(p)+'%')+'</span></div>'+
         '<div class="srv-acts"><div class="mini" data-copy="'+esc(s.url)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy config</div>'+
-        '<div class="mini" data-qr="'+esc(s.url)+'" data-nm="'+esc(s.server)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>QR</div></div></div>';
+        '<div class="mini" data-qr="'+esc(s.url)+'" data-nm="'+esc(s.server)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>QR</div>'+
+        // ss:// is Outline's own scheme, so this hands the config straight to the app
+        '<div class="mini" data-open="'+esc(s.url)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Open</div></div></div>';
     }).join('');
   }
   h+='<div class="foot">Auto-updates in your app · <a onclick="boot()">Refresh</a></div></div>';
   document.getElementById('app').innerHTML=h;
   document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(b.dataset.copy));
   document.querySelectorAll('[data-qr]').forEach(b=>b.onclick=()=>showQR(b.dataset.nm,b.dataset.qr));
+  document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{PLAT=b.dataset.plat;render(DATA);});
+  // A custom scheme with no app registered is silently ignored by the browser,
+  // so say what to do next rather than leaving the tap looking broken.
+  document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{
+    location.href=b.dataset.open;
+    setTimeout(()=>{if(!document.hidden)toast('App not installed yet — install it, then tap Add');},1200);
+  });
 }
 function fail(msg){document.getElementById('app').innerHTML='<div class="center"><div class="emoji">🔗</div><div class="ttl">'+esc(msg)+'</div><div class="muted">Check the link, or ask your provider for a new one.</div></div>';}
 async function boot(){
   try{const r=await fetch('/sub/'+encodeURIComponent(token)+'/info',{headers:{'Accept':'application/json'}});
     if(r.status===404)return fail('Subscription not found');
     if(!r.ok)return fail('Could not load subscription');
-    render(await r.json());
+    DATA=await r.json();   // kept so switching platform re-renders without a fetch
+    render(DATA);
   }catch(e){fail('Could not load subscription');}
 }
 boot();

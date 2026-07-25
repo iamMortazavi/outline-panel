@@ -73,13 +73,19 @@ async def current_admin(outline_session: str | None = Cookie(default=None)) -> d
     if not outline_session:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
-        data = signer.loads(outline_session, max_age=config.SESSION_MAX_AGE)
+        data = signer.loads(outline_session,
+                            max_age=await settings.num("session_max_age"))
     except BadSignature:
         raise HTTPException(status_code=401, detail="Session expired")
     # Pre-identity cookies held a bare random string. There is no honest way to
     # map one to an admin, so they end here and the user logs in again once.
     if not isinstance(data, dict) or "aid" not in data:
         raise HTTPException(status_code=401, detail="Session expired")
+    # The one choke point every authenticated route passes through, so it is
+    # where the server list is brought up to date: reg is process-local and a
+    # server added by another worker (or the standalone bot) would otherwise
+    # never appear here. One local SELECT per request.
+    await reg.sync()
     row = await db.get_admin(int(data["aid"]))
     if row is None or row["disabled"]:
         raise HTTPException(status_code=401, detail="Session expired")

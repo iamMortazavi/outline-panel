@@ -108,14 +108,39 @@ class BotManager:
             await self._bot.session.close()
         self._bot = self._dp = self._task = self._username = None
 
-    async def notify(self, text: str) -> None:
-        """Scheduler notifier — message every admin (best effort)."""
-        if self._bot is None:
-            return
+    async def wait(self) -> None:
+        """Block until polling stops. Used by the standalone entry point, which
+        has nothing else to keep the loop alive."""
+        if self._task is not None:
+            await self._task
+
+    async def _global_ids(self) -> set[int]:
         ids = self.get_admin_ids()
         if hasattr(ids, "__await__"):
             ids = await ids
-        for aid in ids or ():
+        return set(ids or ())
+
+    async def _targets(self, owner_admin_id: int | None) -> set[int]:
+        """Who hears about one key's alert.
+
+        A reseller's customer is the reseller's problem, not the whole admin
+        list's — and previously the owner got every sub-admin's alerts while the
+        sub-admin got none. An owner-less key (the panel owner's) still goes to
+        the configured bot admins, and so does an unlinked admin's, so an alert
+        is never dropped for want of a Telegram id.
+        """
+        if owner_admin_id is None:
+            return await self._global_ids()
+        row = await self.db.get_admin(owner_admin_id)
+        if row and row["telegram_id"]:
+            return {int(row["telegram_id"])}
+        return await self._global_ids()
+
+    async def notify(self, text: str, owner_admin_id: int | None = None) -> None:
+        """Scheduler notifier — message whoever owns the key (best effort)."""
+        if self._bot is None:
+            return
+        for aid in await self._targets(owner_admin_id):
             try:
                 await self._bot.send_message(aid, text, parse_mode="HTML")
             except Exception as e:  # noqa: BLE001
