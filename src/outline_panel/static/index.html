@@ -87,7 +87,15 @@
 <script>
 const $=s=>document.querySelector(s);
 const root=$('#root'), modalRoot=$('#modalRoot');
-const api=async(p,o={})=>{const r=await fetch(p,{credentials:'same-origin',headers:{'Content-Type':'application/json'},...o});
+// One id per purchase *intent*, not per call. The server replays the first
+// answer for a repeat, so a create/renew whose response was lost can be sent
+// again without charging twice — but only if the retry carries the same id,
+// which is why it is minted where the user decides, not where fetch runs.
+const idemKey=()=>(crypto.randomUUID?crypto.randomUUID()
+  :String(Date.now())+Math.random().toString(16).slice(2));
+const api=async(p,o={})=>{const {idem,...rest}=o;
+  const r=await fetch(p,{credentials:'same-origin',
+    headers:{'Content-Type':'application/json',...(idem?{'Idempotency-Key':idem}:{})},...rest});
   let d=null;try{d=await r.json();}catch(_){}
   // session expired/revoked anywhere (incl. silent polls) → bounce to login once
   if(r.status===403){toast((d&&d.detail)||'You do not have permission for this',1);throw new Error((d&&d.detail)||'Forbidden');}
@@ -500,6 +508,7 @@ function _pkgRow(p,cls){
   return `<label class="srow" style="cursor:${p.affordable?'pointer':'not-allowed'};padding:12px 13px;opacity:${p.affordable?1:.45}"><input type="radio" name="${cls}" class="${cls}" value="${p.id}" ${p.affordable?'':'disabled'} style="width:17px;height:17px;accent-color:var(--acc)" /><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(pkgSize(p))} · ${esc(pkgTerm(p))}</div></div><span class="mono" style="font-size:12.5px;color:${p.affordable?'var(--acc)':'var(--danger)'}">${esc(fmtToman(p.price))}</span></label>`;
 }
 async function modalCreateBuy(){
+  const idem=idemKey();   // this dialog is one purchase, however many attempts
   const multi=S.servers.length>1;
   const ov=openSheet('<div class="h2">New user</div><p class="desc">Loading packages…</p>');
   let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">New user</div><p class="err">${esc(e.message)}</p>`;return;}
@@ -525,7 +534,7 @@ async function modalCreateBuy(){
     if(!name){er.textContent='Please enter a name.';return;}
     if(!pick){er.textContent='Pick a package.';return;}
     const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',
+    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',idem,
           body:JSON.stringify({name,package_id:+pick.value,start_now:startNow})});
       await loadAll();renderApp();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
     catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create user';}
@@ -553,7 +562,7 @@ function modalCreateFree(){
     const name=ov.querySelector('#cn').value.trim();const lg=parseFloat(ov.querySelector('#cl').value||'0')||0;const dd=parseInt(ov.querySelector('#cd').value||'0')||0;const mg=parseFloat(ov.querySelector('#cm').value||'0')||0;
     const er=ov.querySelector('#ce');if(!sid){er.textContent='Add a server first.';return;}if(!name){er.textContent='Please enter a name.';return;}
     const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mg,start_now:startNow})});
+    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',idem,body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mg,start_now:startNow})});
       await refreshKeys();renderList();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
     catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create key';}
   };
@@ -612,10 +621,11 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
   const kb='/api/servers/'+k.serverId+'/keys/'+k.id;let disabled=k.disabled;
   if(ov.querySelector('#mow'))_ownerPicker(ov,k);
   if(ov.querySelector('#mrn'))_renewPicker(ov,k,kb);
+  const daysIdem=idemKey();   // days stack up on a double-send even without money
   if(ov.querySelector('#mxgo'))ov.querySelector('#mxgo').onclick=async()=>{const d=parseInt(ov.querySelector('#mx').value||'0',10)||0;const er=ov.querySelector('#me');er.textContent='';
     if(!d){er.textContent='Enter a number of days to add or reduce.';return;}
     if(Math.abs(d)>3650){er.textContent='At most 3650 days at a time.';return;}
-    try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
+    try{await api(kb+'/extend',{method:'POST',idem:daysIdem,body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mtog').onclick=async()=>{try{await api(kb+'/'+(disabled?'enable':'disable'),{method:'POST'});disabled=!disabled;ov.querySelector('#mtog').textContent=disabled?'Enable':'Disable';toast(disabled?'Key disabled':'Key enabled');await refreshKeys();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”?'))return;try{await api(kb+'/reset',{method:'POST'});toast('Usage reset');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#msub').onclick=async()=>{try{const r=await api(kb+'/sub',{method:'POST'});openSubSheet(k,r);}catch(e){toast(e.message,1);}};
@@ -654,6 +664,7 @@ function modalSettings(){
     isOwner()?srow('packages','var(--acc)','Packages','What admins on credit may sell'):'',
     isOwner()?srow('security','var(--acc)','Security','Password &amp; two-factor'):'',
     isOwner()?srow('knobs','var(--acc)','Panel settings','Thresholds, intervals, cache &amp; currency'):'',
+    isOwner()?srow('audit','var(--acc)','Activity log','Who did what, and when'):'',
     isOwner()?srow('backup','var(--acc)','Backup &amp; restore','Download or restore all data'):'',
     // every admin can rotate their own password, not just the owner
     isOwner()?'':srow('account','var(--acc)','My account','Change your password'),
@@ -681,12 +692,13 @@ async function _renewPicker(ov,k,kb){
   const rows=d.packages.map(p=>_pkgRow(p,'mpk')).join('')||'<div class="desc">No packages available.</div>';
   ov.querySelector('#mrn').innerHTML=`<div class="desc" style="margin:0 0 8px">Renewing adds the package's time and data. You have <span class="mono" style="color:var(--acc)">${esc(fmtToman(d.credit))}</span>.</div>${rows}
     <button class="btn-sec" id="mrgo" style="width:100%;margin-top:9px">Renew with this package</button>`;
+  const renewIdem=idemKey();   // one renewal, however many attempts
   ov.querySelector('#mrgo').onclick=async()=>{
     const pick=[...ov.querySelectorAll('.mpk')].find(x=>x.checked);
     const er=ov.querySelector('#me');er.textContent='';
     if(!pick){er.textContent='Pick a package.';return;}
     const b=ov.querySelector('#mrgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{await api(kb+'/extend',{method:'POST',body:JSON.stringify({package_id:+pick.value})});
+    try{await api(kb+'/extend',{method:'POST',idem:renewIdem,body:JSON.stringify({package_id:+pick.value})});
       toast('Renewed');closeModal();await loadAll();renderApp();}
     catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Renew with this package';}
   };
@@ -1033,6 +1045,46 @@ async function modalKnobs(){
   };
 }
 
+/* Activity log. Keyset paging: "Load more" passes the last id back, so page 50
+   costs what page 1 does. */
+async function modalAudit(){
+  const ov=openDrawer('<div style="padding:22px 20px 0"><div class="h2">Activity log</div>'+
+    '<p class="desc">Every change made through the panel. Passwords and tokens are never stored.</p>'+
+    '<div id="alist"><div class="desc">Loading…</div></div></div>');
+  let before=null,rows=[];
+  const dot=s=>s>=500?'var(--danger)':s>=400?'var(--warn)':'var(--acc)';
+  // "POST /api/servers/{sid}/keys" -> "Create key" reads better than a route
+  const VERBS=[[/POST .*\/keys$/,'Created a user'],[/DELETE .*\/keys\/.*/,'Deleted a user'],
+    [/POST .*\/extend/,'Extended a user'],[/PUT .*\/limit/,'Changed a data limit'],
+    [/POST .*\/disable/,'Disabled a user'],[/POST .*\/enable/,'Enabled a user'],
+    [/POST .*\/reset/,'Reset usage'],[/PUT .*\/owner/,'Transferred a user'],
+    [/POST \/api\/login/,'Signed in'],[/POST \/api\/logout/,'Signed out'],
+    [/\/api\/admins/,'Admin management'],[/\/api\/packages/,'Package management'],
+    [/\/api\/servers$/,'Server management'],[/\/api\/restore/,'Restored a backup'],
+    [/\/api\/settings/,'Changed settings']];
+  const label=a=>{for(const [re,t] of VERBS)if(re.test(a))return t;return a;};
+  const draw=()=>{
+    const el=ov.querySelector('#alist');
+    if(!rows.length){el.innerHTML='<div class="desc">Nothing recorded yet.</div>';return;}
+    el.innerHTML=rows.map(e=>`<div style="display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--panel2)">
+        <span style="width:7px;height:7px;border-radius:50%;flex:none;margin-top:6px;background:${dot(e.status||0)}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:600">${esc(label(e.action))}${e.target?` <span class="mono" style="color:var(--dim);font-weight:400">${esc(e.target)}</span>`:''}</div>
+          <div class="mono" style="font-size:11px;color:var(--faint);margin-top:3px">
+            ${esc(e.actor_name||'not signed in')} · ${new Date(e.ts*1000).toLocaleString()} · ${e.status}${e.ip?' · '+esc(e.ip):''}</div>
+          ${e.detail?`<div class="mono" style="font-size:10.5px;color:var(--dim);margin-top:4px;word-break:break-all">${esc(e.detail.slice(0,180))}</div>`:''}
+        </div></div>`).join('')+
+      (before?'<button class="btn-sec" id="amore" style="margin:14px 0 24px">Load more</button>':'<div style="height:24px"></div>');
+    const m=ov.querySelector('#amore');if(m)m.onclick=load;
+  };
+  async function load(){
+    try{const d=await api('/api/audit?limit=50'+(before?'&before_id='+before:''));
+      rows=rows.concat(d.entries);before=d.nextBeforeId;draw();}
+    catch(e){ov.querySelector('#alist').innerHTML='<p class="err">'+esc(e.message)+'</p>';}
+  }
+  load();
+}
+
 /* Any admin's own password. The owner's lives in Security along with 2FA;
    a sub-admin previously had no way to change theirs at all. */
 function modalAccount(){
@@ -1100,7 +1152,7 @@ async function bulk(op){if(op==='transfer')return bulkTransfer();
   const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));if(op==='clear'){S.selected={};renderList();return;}if(!ids.length)return;
   if(op==='delete'&&!confirm('Delete '+ids.length+' key(s)? This cannot be undone.'))return;
   for(const id of ids){const k=keyById(id);if(!k)continue;const kb='/api/servers/'+k.serverId+'/keys/'+k.id;try{
-    if(op==='extend')await api(kb+'/extend',{method:'POST',body:JSON.stringify({days:30})});
+    if(op==='extend')await api(kb+'/extend',{method:'POST',idem:idemKey(),body:JSON.stringify({days:30})});
     else if(op==='disable')await api(kb+'/disable',{method:'POST'});
     else if(op==='delete')await api(kb,{method:'DELETE'});}catch(e){toast(e.message,1);}}
   S.selected={};toast('Done');await refreshKeys();renderList();}
@@ -1145,6 +1197,7 @@ document.addEventListener('click',e=>{
     case 'srvdetail':{const s=S.servers.find(x=>x.id===d.id);if(s)modalServerDetail(s);break;}
     case 'security':modalSecurity();break;
     case 'knobs':modalKnobs();break;
+    case 'audit':modalAudit();break;
     case 'account':modalAccount();break;
     case 'backup':modalBackup();break;
     case 'palette':openPalette();break;

@@ -83,6 +83,12 @@ KNOBS: dict[str, dict] = {
         "help": "Ceiling across every address, so rotating IPs can't walk past "
                 "the per-IP limit.",
     },
+    "audit_retention_days": {
+        "default": 90, "min": 1, "max": 3650,
+        "label": "Keep the audit log for (days)",
+        "help": "Older entries are deleted by the scheduler. The log only grows, "
+                "so this is what stops it.",
+    },
     "currency": {
         "default": "Toman", "type": "str", "max": 12,
         "label": "Currency label",

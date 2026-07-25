@@ -179,7 +179,21 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
         else:
             notified.discard(tag_exp)
 
-    # 4) enforce expiry
+    # 4) housekeeping: both tables only ever grow, so something has to trim them
+    if settings is not None:
+        try:
+            cutoff = now - await settings.num("audit_retention_days") * 86400
+            gone = await db.prune_audit(cutoff)
+            if gone:
+                log.info("pruned %d audit entries older than %d days.", gone,
+                         await settings.num("audit_retention_days"))
+            # A day is far longer than any client will retry; keeping the rows
+            # past that only preserves the chance of replaying a stale purchase.
+            await db.prune_idempotency(now - 86400)
+        except Exception as e:  # noqa: BLE001 — housekeeping must not stop expiry
+            log.warning("housekeeping failed: %s", e)
+
+    # 5) enforce expiry
     for key in await db.expired_active_keys(now):
         sid, kid = key["server_id"], key["key_id"]
         api = registry.get(sid)

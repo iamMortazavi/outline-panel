@@ -89,6 +89,10 @@ async def login(body: LoginBody, request: Request, response: Response):
             _record_login_fail(ip)
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
     _login_fails.pop(ip, None)
+    # Name the actor for the audit trail. current_admin never runs on this
+    # route, so without this a successful sign-in is recorded against nobody —
+    # which reads as "not signed in signed in".
+    request.state.audit_admin = admin
     # honor a TLS-terminating reverse proxy (only when trusted), else the
     # request's own scheme
     proto = request.url.scheme
