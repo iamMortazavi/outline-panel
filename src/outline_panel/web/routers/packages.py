@@ -8,9 +8,10 @@ Editing the list is owner-only — a package's price is the owner's revenue.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from ...core import errors
 from ..deps import current_admin, db, on_credit, price_for, require_owner
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
@@ -60,7 +61,7 @@ async def create_package(body: PackageBody):
 @router.put("/{pkg_id}", dependencies=[Depends(require_owner)])
 async def edit_package(pkg_id: int, body: PackageBody):
     if await db.get_package(pkg_id) is None:
-        raise HTTPException(status_code=404, detail="Unknown package")
+        raise errors.unknown_package()
     # Editing the price does not rewrite past sales: the ledger snapshotted
     # what was charged at the time.
     await db.update_package(pkg_id, name=body.name.strip(), gb=body.gb or None,
@@ -72,6 +73,6 @@ async def edit_package(pkg_id: int, body: PackageBody):
 @router.delete("/{pkg_id}", dependencies=[Depends(require_owner)])
 async def remove_package(pkg_id: int):
     if await db.get_package(pkg_id) is None:
-        raise HTTPException(status_code=404, detail="Unknown package")
+        raise errors.unknown_package()
     await db.delete_package(pkg_id)
     return {"ok": True}

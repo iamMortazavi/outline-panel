@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, Field
 
-from ...core import config, security
+from ...core import config, errors, security
 from ...core.settings import OWNER_USERNAME, TOTP_ENABLED, TOTP_SECRET
 from ..deps import CAPS, COOKIE_NAME, _csv, current_admin, db, on_credit, settings, signer
 
@@ -44,9 +44,9 @@ def _client_ip(request: Request) -> str:
 async def _check_login_rate(ip: str, max_fails: int, window: int,
                             global_max: int) -> None:
     if await db.count_rate_events(f"login:{ip}", window) >= max_fails:
-        raise HTTPException(status_code=429, detail=_RATE_MSG)
+        raise errors.too_many_attempts()
     if await db.count_rate_events(_GLOBAL, window) >= global_max:
-        raise HTTPException(status_code=429, detail=_RATE_MSG)
+        raise errors.too_many_attempts()
 
 
 async def _record_login_fail(ip: str) -> None:
@@ -63,17 +63,17 @@ async def login(body: LoginBody, request: Request, response: Response):
     admin = await settings.verify_login(body.username, body.password)
     if admin is None:
         await _record_login_fail(ip)
-        raise HTTPException(status_code=401, detail="Wrong username or password")
+        raise errors.bad_login()
     # second factor, if enabled. The TOTP secret is the owner's, so it guards
     # the owner's login only; sub-admins have their own separate passwords.
     if admin["is_owner"] and await settings.get_bool(TOTP_ENABLED):
         secret = await settings.get(TOTP_SECRET)
         if not body.totp:
             # signal the client to prompt for a code (not a failed attempt)
-            raise HTTPException(status_code=401, detail="2FA code required")
+            raise errors.totp_required()
         if not security.verify_totp(secret or "", body.totp):
             await _record_login_fail(ip)
-            raise HTTPException(status_code=401, detail="Invalid 2FA code")
+            raise errors.bad_totp()
     await db.clear_rate_events(f"login:{ip}")
     # Name the actor for the audit trail. current_admin never runs on this
     # route, so without this a successful sign-in is recorded against nobody —
@@ -139,7 +139,7 @@ async def change_my_password(body: MyPasswordBody,
     `settings`, a sub-admin's in their row).
     """
     if await settings.verify_login(admin["username"], body.current) is None:
-        raise HTTPException(status_code=401, detail="Current password is wrong")
+        raise errors.wrong_password()
     if admin["is_owner"]:
         await settings.set_admin_password(body.new)
     else:

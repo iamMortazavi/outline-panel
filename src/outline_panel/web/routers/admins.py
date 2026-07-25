@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ...core import security
+from ...core import errors, security
 from ..deps import CAPS, current_admin, db, reg, require_owner
 
 router = APIRouter(prefix="/api/admins", tags=["admins"],
@@ -127,7 +127,7 @@ async def create_admin(body: AdminBody):
 async def edit_admin(admin_id: int, body: AdminEdit):
     row = await db.get_admin(admin_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Unknown admin")
+        raise errors.unknown_admin()
     if row["is_owner"]:
         # Scoping or disabling the owner would lock the panel's only full
         # account out of its own settings; their password has its own endpoint.
@@ -163,7 +163,7 @@ async def add_credit(admin_id: int, body: CreditBody):
     have no trace of what changed or why."""
     row = await db.get_admin(admin_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Unknown admin")
+        raise errors.unknown_admin()
     if body.delta == 0:
         raise HTTPException(status_code=400, detail="Enter an amount")
     if int(row["credit"] or 0) + body.delta < 0:
@@ -177,7 +177,7 @@ async def add_credit(admin_id: int, body: CreditBody):
 @router.get("/{admin_id}/ledger")
 async def admin_ledger(admin_id: int):
     if await db.get_admin(admin_id) is None:
-        raise HTTPException(status_code=404, detail="Unknown admin")
+        raise errors.unknown_admin()
     return {"entries": await db.ledger_for(admin_id)}
 
 
@@ -185,7 +185,7 @@ async def admin_ledger(admin_id: int):
 async def remove_admin(admin_id: int, me: dict = Depends(current_admin)):
     row = await db.get_admin(admin_id)
     if row is None:
-        raise HTTPException(status_code=404, detail="Unknown admin")
+        raise errors.unknown_admin()
     if row["is_owner"]:
         raise HTTPException(status_code=400, detail="The owner cannot be deleted")
     await db.delete_admin(admin_id)

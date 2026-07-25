@@ -5,11 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import Cookie, Depends, HTTPException, Request
+from fastapi import Cookie, Depends, Request
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from ..bot.manager import BotManager
-from ..core import config
+from ..core import config, errors
 from ..core.db import DB
 from ..core.outline_api import OutlineAPI
 
@@ -74,16 +74,16 @@ async def current_admin(request: Request,
     store to keep in sync.
     """
     if not outline_session:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise errors.not_authenticated()
     try:
         data = signer.loads(outline_session,
                             max_age=await settings.num("session_max_age"))
     except BadSignature:
-        raise HTTPException(status_code=401, detail="Session expired")
+        raise errors.session_expired()
     # Pre-identity cookies held a bare random string. There is no honest way to
     # map one to an admin, so they end here and the user logs in again once.
     if not isinstance(data, dict) or "aid" not in data:
-        raise HTTPException(status_code=401, detail="Session expired")
+        raise errors.session_expired()
     # The one choke point every authenticated route passes through, so it is
     # where the server list is brought up to date: reg is process-local and a
     # server added by another worker (or the standalone bot) would otherwise
@@ -91,7 +91,7 @@ async def current_admin(request: Request,
     await reg.sync()
     row = await db.get_admin(int(data["aid"]))
     if row is None or row["disabled"]:
-        raise HTTPException(status_code=401, detail="Session expired")
+        raise errors.session_expired()
     # Hand the actor to the audit middleware, which runs outside the dependency
     # tree and has no other way to learn who this was.
     request.state.audit_admin = row
@@ -107,23 +107,21 @@ def require(*caps: str):
     async def _check(admin: dict = Depends(current_admin)) -> dict:
         for c in caps:
             if not has_cap(admin, c):
-                raise HTTPException(status_code=403,
-                                    detail="You do not have permission for this")
+                raise errors.no_permission()
         return admin
     return _check
 
 
 async def require_owner(admin: dict = Depends(current_admin)) -> dict:
     if not is_owner(admin):
-        raise HTTPException(status_code=403, detail="Owner only")
+        raise errors.owner_only()
     return admin
 
 
 def assert_cap(admin: dict, cap: str) -> None:
     """Raise unless this admin holds `cap`. The dependency form is require()."""
     if not has_cap(admin, cap):
-        raise HTTPException(status_code=403,
-                            detail="You do not have permission for this")
+        raise errors.no_permission()
 
 
 async def assert_key_access(admin: dict, sid: str | None,
@@ -135,10 +133,10 @@ async def assert_key_access(admin: dict, sid: str | None,
     into being a back door with laxer rules than the panel.
     """
     if sid and not can_see(admin, sid):
-        raise HTTPException(status_code=404, detail="Unknown server")
+        raise errors.unknown_server()
     if sid and kid and not is_owner(admin):
         if not owns(admin, await db.get_key(sid, kid)):
-            raise HTTPException(status_code=404, detail="Unknown key")
+            raise errors.unknown_key()
 
 
 async def enforce_scope(request: Request,
@@ -162,7 +160,7 @@ async def admin_for_telegram(uid: int | None) -> dict | None:
 def api_or_404(sid: str) -> OutlineAPI:
     api = reg.get(sid)
     if api is None:
-        raise HTTPException(status_code=404, detail="Unknown server")
+        raise errors.unknown_server()
     return api
 
 
@@ -175,7 +173,7 @@ def sids_or_404(server: str | None, admin: dict) -> list[str]:
     if not server:
         return scoped_ids(admin)
     if reg.meta(server) is None or not can_see(admin, server):
-        raise HTTPException(status_code=404, detail="Unknown server")
+        raise errors.unknown_server()
     return [server]
 
 

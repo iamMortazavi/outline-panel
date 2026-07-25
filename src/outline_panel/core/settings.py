@@ -83,6 +83,16 @@ KNOBS: dict[str, dict] = {
         "help": "Ceiling across every address, so rotating IPs can't walk past "
                 "the per-IP limit.",
     },
+    "health_alert_failures": {
+        "default": 3, "min": 1, "max": 100,
+        "label": "Alert after this many failed checks",
+        "help": "Consecutive, not total — one missed check is a blip, and alerting "
+                "on blips teaches people to ignore the alert.",
+    },
+    "health_retention_days": {
+        "default": 14, "min": 1, "max": 365,
+        "label": "Keep server health history for (days)",
+    },
     "backup_interval_hours": {
         "default": 24, "min": 1, "max": 8760,
         "label": "Automatic backup every (hours)",

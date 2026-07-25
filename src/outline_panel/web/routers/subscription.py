@@ -23,7 +23,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
-from ...core import config
+from ...core import config, errors
 from ...core.outline_api import OutlineError
 from ..deps import STATIC_DIR, db, reg, settings
 
@@ -84,8 +84,7 @@ async def _rate_limit(request: Request) -> None:
          (request.client.host if request.client else "unknown")
     bucket = f"sub:{ip}"
     if await db.count_rate_events(bucket, 60) >= limit:
-        raise HTTPException(status_code=429,
-                            detail="Too many requests — try again shortly")
+        raise errors.too_many_requests()
     await db.record_rate_event(bucket)
 
 
@@ -109,7 +108,7 @@ async def _collect_fresh(token: str) -> dict:
     await reg.sync()   # public route: no current_admin to refresh the list for us
     members = await db.get_keys_by_sub_token(token)
     if not members:
-        raise HTTPException(status_code=404, detail="Unknown subscription")
+        raise errors.unknown_subscription()
 
     multi = len({m["server_id"] for m in members}) > 1
     usage_by_server: dict[str, dict] = {}

@@ -7,6 +7,7 @@
 <title>Subscription</title>
 <!-- System fonts only: this page is opened when the tunnel is down, on networks
      that block Google. No external request may gate the render. -->
+<script src="/static/i18n.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
 <style>
   :root{
@@ -27,7 +28,7 @@
   .brand{display:flex;align-items:center;gap:9px;margin-bottom:22px}
   .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 11px var(--acc)}
   .brand b{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:-.2px}
-  .brand span{color:var(--faint);font-size:12.5px;margin-left:auto}
+  .brand span{color:var(--faint);font-size:12.5px;margin-inline-start:auto}
 
   .hero{position:relative;border-radius:20px;padding:22px;background:linear-gradient(135deg,var(--acc),#53e0d2);color:#03171b;overflow:hidden;box-shadow:0 16px 40px -20px rgba(var(--acc-rgb),.6);margin-bottom:13px}
   .hero::after{content:"";position:absolute;right:-50px;top:-70px;width:190px;height:190px;border-radius:50%;background:rgba(255,255,255,.16)}
@@ -60,6 +61,13 @@
   .bar{height:6px;border-radius:5px;background:var(--panel2);overflow:hidden;margin:10px 0 7px}
   .bar>i{display:block;height:100%;border-radius:5px;background:var(--acc)}
   .srv-sub{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+  /* the ss:// line and byte counts stay LTR inside an RTL page — a URL reordered
+     by the bidi algorithm is unreadable and, worse, looks wrong when copied,
+     and "24.0 GB" renders as "GB 24.0". Direction only: .big keeps its own face. */
+  [dir="rtl"] .url,[dir="rtl"] .mono,[dir="rtl"] .big{direction:ltr;text-align:start;unicode-bidi:embed}
+  [dir="rtl"] .ring .lbl{direction:rtl}
+  .langbtn{background:none;border:1px solid var(--line2);color:var(--muted);
+    border-radius:8px;padding:3px 9px;font:inherit;font-size:11.5px;cursor:pointer}
   .srv-acts{display:flex;gap:8px;margin-top:11px}
   .mini{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:11px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer}
   .mini:active{opacity:.7}
@@ -83,7 +91,7 @@
   .steps li{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:4px}
   .steps li:last-child{margin-bottom:0}
   .steps b{color:var(--text)}
-  .steps ol{margin:0;padding-left:19px}
+  .steps ol{margin:0;padding-inline-start:19px;padding-left:unset}
 
   .center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:70vh;gap:10px;padding:24px}
   .spin{width:22px;height:22px;border:2.5px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:rot .7s linear infinite}
@@ -105,17 +113,17 @@
 </head>
 <body>
   <div id="app"><div class="center"><span class="spin"></span></div></div>
-  <div class="scrim" id="scrim"><div class="qrbox"><div class="nm" id="qrnm"></div><div class="qr" id="qr"></div><button class="btn btn-sec" style="width:100%" onclick="closeQR()">Close</button></div></div>
+  <div class="scrim" id="scrim"><div class="qrbox"><div class="nm" id="qrnm"></div><div class="qr" id="qr"></div><button class="btn btn-sec" id="qrclose" style="width:100%" onclick="closeQR()">Close</button></div></div>
   <div id="toast"></div>
 <script>
 const token=decodeURIComponent(location.pathname.replace(/^\/sub\//,'').replace(/\/.*$/,''));
 const subUrl=location.origin+'/sub/'+token;
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function fmtB(n){if(n==null)return '∞';n=Number(n);const u=['B','KB','MB','GB','TB'];let i=0;while(Math.abs(n)>=1024&&i<u.length-1){n/=1024;i++;}return (n>=100||i===0?n.toFixed(0):n.toFixed(1))+' '+u[i];}
-function expiry(ts){if(!ts)return{t:'No expiry',d:null};const left=ts-Date.now()/1000;if(left<=0)return{t:'Expired',d:'expired'};const d=Math.floor(left/86400),h=Math.floor((left%86400)/3600);return{t:(d>0?d+'d '+h+'h':h+'h'),d:new Date(ts*1000).toLocaleDateString()};}
+function expiry(ts){if(!ts)return{t:t('No expiry'),d:null};const left=ts-Date.now()/1000;if(left<=0)return{t:t('Expired'),d:'expired'};const d=Math.floor(left/86400),h=Math.floor((left%86400)/3600);return{t:(d>0?d+'d '+h+'h':h+'h'),d:new Date(ts*1000).toLocaleDateString()};}
 let toastT;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.className='on';clearTimeout(toastT);toastT=setTimeout(()=>t.className='',1800);}
-async function copy(text){try{await navigator.clipboard.writeText(text);}catch(e){const a=document.createElement('textarea');a.value=text;a.style.position='fixed';a.style.opacity=0;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(_){}a.remove();}toast('Copied');}
-function showQR(name,text){const box=document.getElementById('qr');box.innerHTML='';try{const q=qrcode(0,'M');q.addData(text);q.make();box.innerHTML=q.createSvgTag({cellSize:7,margin:2,scalable:true});}catch(e){box.textContent='QR error';}document.getElementById('qrnm').textContent=name;document.getElementById('scrim').className='scrim on';}
+async function copy(text){try{await navigator.clipboard.writeText(text);}catch(e){const a=document.createElement('textarea');a.value=text;a.style.position='fixed';a.style.opacity=0;document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(_){}a.remove();}toast(t('Copied'));}
+function showQR(name,text){const box=document.getElementById('qr');box.innerHTML='';try{const q=qrcode(0,'M');q.addData(text);q.make();box.innerHTML=q.createSvgTag({cellSize:7,margin:2,scalable:true});}catch(e){box.textContent='QR';}document.getElementById('qrnm').textContent=name;document.getElementById('scrim').className='scrim on';}
 function closeQR(){document.getElementById('scrim').className='scrim';}
 document.getElementById('scrim').onclick=e=>{if(e.target.id==='scrim')closeQR();};
 
@@ -158,6 +166,12 @@ function detectPlatform(){
   return 'linux';
 }
 let PLAT=detectPlatform(), DATA=null;
+I18N.apply();
+function nextLangLabel(){const l=I18N.languages.find(x=>x.id!==I18N.lang);return l?l.label:'';}
+function toggleLang(){const l=I18N.languages.find(x=>x.id!==I18N.lang);if(l){I18N.setLang(l.id);paintStatic();render(DATA);}}
+// the QR dialog lives outside render()'s subtree, so it is painted separately
+function paintStatic(){const b=document.getElementById('qrclose');if(b)b.textContent=t('Close');}
+paintStatic();
 
 function connectSection(d){
   const p=PLATFORMS.find(x=>x.id===PLAT)||PLATFORMS[0];
@@ -168,21 +182,21 @@ function connectSection(d){
     // Outline takes one ss:// config at a time, not a subscription link
     const href=a.perServer?(first&&first.url):(a.link?a.link(subUrl):null);
     const note=a.perServer&&(d.servers||[]).length>1
-      ? 'Adds the first server — use Configs below for the rest' : a.note;
+      ? t('Adds the first server — use Configs below for the rest') : t(a.note);
     return '<div class="app"><div class="ic">'+a.icon+'</div>'+
       '<div class="who2"><div class="nm2">'+esc(a.name)+'</div><div class="ds">'+esc(note)+'</div></div>'+
-      (href?'<button class="add" data-open="'+esc(href)+'">Add</button>':'')+'</div>';
+      (href?'<button class="add" data-open="'+esc(href)+'">'+esc(t('Add'))+'</button>':'')+'</div>';
   }).join('');
-  return '<div class="sectitle">Connect</div>'+
+  return '<div class="sectitle">'+esc(t('Connect'))+'</div>'+
     '<div class="seg" id="seg">'+seg+'</div>'+
     '<div class="steps"><ol>'+
-      '<li>Install one of the apps below.</li>'+
-      '<li>Tap <b>Add</b> — the app opens and imports your subscription.</li>'+
-      '<li>Press connect. Your data and expiry update automatically.</li>'+
+      '<li>'+esc(t('Install one of the apps below.'))+'</li>'+
+      '<li>'+t('Tap <b>Add</b> — the app opens and imports your subscription.')+'</li>'+
+      '<li>'+esc(t('Press connect. Your data and expiry update automatically.'))+'</li>'+
     '</ol></div>'+rows+
     '<div style="font-size:11.5px;color:var(--faint);line-height:1.55;margin:2px 4px 0">'+
-      'Nothing happened? The app probably isn’t installed yet. Install it, then '+
-      'copy the subscription link above and paste it in the app.</div>';
+      esc(t('Nothing happened? The app probably isn’t installed yet. Install it, '+
+            'then copy the subscription link above and paste it in the app.'))+'</div>';
 }
 
 function ring(pct){const r=30,c=2*Math.PI*r,off=c*(1-Math.min(pct,100)/100);
@@ -194,55 +208,57 @@ function render(d){
   const remain=unlimited?null:Math.max(0,total-used);
   const ex=expiry(d.expire);
   const multi=(d.servers||[]).length>1;
-  let h='<div class="wrap"><div class="brand"><span class="dot"></span><b>Outline</b><span>SUBSCRIPTION</span></div>';
-  h+='<div class="hero"><div class="sub">Data used</div><div class="who">'+esc(d.name)+'</div>'+
-     '<div class="ring">'+(unlimited?'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">Unlimited plan</div></div>':
-        ring(pct)+'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">of '+fmtB(total)+' · '+fmtB(remain)+' left</div></div>')+'</div></div>';
+  let h='<div class="wrap"><div class="brand"><span class="dot"></span><b>Outline</b><span>'+esc(t('SUBSCRIPTION'))+'</span>'+
+     '<button class="langbtn" id="lang" style="margin-inline-start:10px">'+esc(nextLangLabel())+'</button></div>';
+  h+='<div class="hero"><div class="sub">'+esc(t('Data used'))+'</div><div class="who">'+esc(d.name)+'</div>'+
+     '<div class="ring">'+(unlimited?'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">'+esc(t('Unlimited plan'))+'</div></div>':
+        ring(pct)+'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">'+esc(t('of'))+' <span class="mono">'+fmtB(total)+'</span> · <span class="mono">'+fmtB(remain)+'</span> '+esc(t('left'))+'</div></div>')+'</div></div>';
   // A plan that hasn't started has no expiry_ts, which used to render as
   // "No expiry" — telling someone who bought 30 days that it never ends.
   const pend=d.pendingDays||0;
-  const expVal=pend?pend+' days':ex.t;
-  const expNote=pend?'starts on first connection'
+  const expVal=pend?(pend+' '+t('days')):ex.t;
+  const expNote=pend?t('starts on first connection')
                     :(ex.d&&ex.d!=='expired'?ex.d:'');
-  h+='<div class="grid2"><div class="card"><div class="t">'+(pend?'Validity':'Expiry')+'</div><div class="v" style="'+(!pend&&ex.d==='expired'?'color:var(--danger)':(pend?'color:var(--warn)':''))+'">'+esc(expVal)+'</div>'+(expNote?'<div style="font-size:11.5px;color:var(--faint);margin-top:3px">'+esc(expNote)+'</div>':'')+'</div>'+
-     '<div class="card"><div class="t">Configs</div><div class="v">'+(d.servers||[]).length+(multi?' servers':' server')+'</div><div style="font-size:11.5px;color:var(--faint);margin-top:3px">auto-updates ~'+(d.updateInterval||12)+'h</div></div></div>';
+  h+='<div class="grid2"><div class="card"><div class="t">'+esc(t(pend?'Validity':'Expiry'))+'</div><div class="v" style="'+(!pend&&ex.d==='expired'?'color:var(--danger)':(pend?'color:var(--warn)':''))+'">'+esc(expVal)+'</div>'+(expNote?'<div style="font-size:11.5px;color:var(--faint);margin-top:3px">'+esc(expNote)+'</div>':'')+'</div>'+
+     '<div class="card"><div class="t">'+esc(t('Configs'))+'</div><div class="v">'+(d.servers||[]).length+' '+esc(t(multi?'servers':'server'))+'</div><div style="font-size:11.5px;color:var(--faint);margin-top:3px">'+esc(t('auto-updates'))+' ~'+(d.updateInterval||12)+esc(t('h'))+'</div></div></div>';
 
-  h+='<div class="sectitle">Subscription link</div><div class="link"><div class="url">'+esc(subUrl)+'</div><div class="row"><button class="btn" onclick="copy(subUrl)">Copy link</button><button class="btn btn-sec" onclick="showQR(\'Subscription\',subUrl)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M21 14v3M14 21h3" stroke-linecap="round"/></svg></button></div></div>';
+  h+='<div class="sectitle">'+esc(t('Subscription link'))+'</div><div class="link"><div class="url">'+esc(subUrl)+'</div><div class="row"><button class="btn" onclick="copy(subUrl)">'+esc(t('Copy link'))+'</button><button class="btn btn-sec" onclick="showQR(\'Subscription\',subUrl)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M21 14v3M14 21h3" stroke-linecap="round"/></svg></button></div></div>';
 
   h+=connectSection(d);
 
   if((d.servers||[]).length){
-    h+='<div class="sectitle">Configs</div>';
+    h+='<div class="sectitle">'+esc(t('Configs'))+'</div>';
     h+=d.servers.map(s=>{const un=(s.limit==null);const p=un?0:Math.min(100,(s.used||0)/s.limit*100);
-      return '<div class="srv"><div class="srv-top"><div class="srv-name">'+esc(s.server)+'</div><span class="pill '+(s.disabled?'off':'ok')+'">'+(s.disabled?'Off':'Active')+'</span></div>'+
+      return '<div class="srv"><div class="srv-top"><div class="srv-name">'+esc(s.server)+'</div><span class="pill '+(s.disabled?'off':'ok')+'">'+esc(t(s.disabled?'Off':'Active'))+'</span></div>'+
         '<div class="bar"><i style="width:'+(un?100:Math.max(p,2))+'%;opacity:'+(un?.45:1)+'"></i></div>'+
-        '<div class="srv-sub"><span>'+fmtB(s.used)+' / '+(un?'∞':fmtB(s.limit))+'</span><span>'+(un?'Unlimited':Math.round(p)+'%')+'</span></div>'+
-        '<div class="srv-acts"><div class="mini" data-copy="'+esc(s.url)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>Copy config</div>'+
+        '<div class="srv-sub"><span class="mono">'+fmtB(s.used)+' / '+(un?'∞':fmtB(s.limit))+'</span><span>'+(un?esc(t('Unlimited')):Math.round(p)+'%')+'</span></div>'+
+        '<div class="srv-acts"><div class="mini" data-copy="'+esc(s.url)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>'+esc(t('Copy config'))+'</div>'+
         '<div class="mini" data-qr="'+esc(s.url)+'" data-nm="'+esc(s.server)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>QR</div>'+
         // ss:// is Outline's own scheme, so this hands the config straight to the app
-        '<div class="mini" data-open="'+esc(s.url)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Open</div></div></div>';
+        '<div class="mini" data-open="'+esc(s.url)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'+esc(t('Open'))+'</div></div></div>';
     }).join('');
   }
-  h+='<div class="foot">Auto-updates in your app · <a onclick="boot()">Refresh</a></div></div>';
+  h+='<div class="foot">'+esc(t('Auto-updates in your app'))+' · <a onclick="boot()">'+esc(t('Refresh'))+'</a></div></div>';
   document.getElementById('app').innerHTML=h;
   document.querySelectorAll('[data-copy]').forEach(b=>b.onclick=()=>copy(b.dataset.copy));
   document.querySelectorAll('[data-qr]').forEach(b=>b.onclick=()=>showQR(b.dataset.nm,b.dataset.qr));
   document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{PLAT=b.dataset.plat;render(DATA);});
+  const lb=document.getElementById('lang');if(lb)lb.onclick=toggleLang;
   // A custom scheme with no app registered is silently ignored by the browser,
   // so say what to do next rather than leaving the tap looking broken.
   document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>{
     location.href=b.dataset.open;
-    setTimeout(()=>{if(!document.hidden)toast('App not installed yet — install it, then tap Add');},1200);
+    setTimeout(()=>{if(!document.hidden)toast(t('App not installed yet — install it, then tap Add'));},1200);
   });
 }
-function fail(msg){document.getElementById('app').innerHTML='<div class="center"><div class="emoji">🔗</div><div class="ttl">'+esc(msg)+'</div><div class="muted">Check the link, or ask your provider for a new one.</div></div>';}
+function fail(msg){document.getElementById('app').innerHTML='<div class="center"><div class="emoji">🔗</div><div class="ttl">'+esc(msg)+'</div><div class="muted">'+esc(t('Check the link, or ask your provider for a new one.'))+'</div></div>';}
 async function boot(){
   try{const r=await fetch('/sub/'+encodeURIComponent(token)+'/info',{headers:{'Accept':'application/json'}});
-    if(r.status===404)return fail('Subscription not found');
-    if(!r.ok)return fail('Could not load subscription');
+    if(r.status===404)return fail(t('Subscription not found'));
+    if(!r.ok)return fail(t('Could not load subscription'));
     DATA=await r.json();   // kept so switching platform re-renders without a fetch
     render(DATA);
-  }catch(e){fail('Could not load subscription');}
+  }catch(e){fail(t('Could not load subscription'));}
 }
 boot();
 </script>
