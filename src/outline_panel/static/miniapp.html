@@ -212,8 +212,14 @@ function confirmDo(msg){ return new Promise(res=>{ if(tg&&tg.showConfirm) tg.sho
 let toastT;
 function toast(msg,bad){ const t=document.getElementById('toast'); t.textContent=msg; t.className='on'+(bad?' bad':'');
   clearTimeout(toastT); toastT=setTimeout(()=>t.className=bad?'bad':'',1900); }
+// One id per purchase intent. A phone on a flaky connection is exactly where a
+// response goes missing, and the server replays rather than charging twice.
+const idemKey=()=>(crypto.randomUUID?crypto.randomUUID()
+  :String(Date.now())+Math.random().toString(16).slice(2));
 async function api(path,opts){ opts=opts||{};
-  const r=await fetch(path,{...opts,headers:{'Authorization':'tma '+initData,'Content-Type':'application/json',...(opts.headers||{})}});
+  const {idem,...rest}=opts;
+  const r=await fetch(path,{...rest,headers:{'Authorization':'tma '+initData,'Content-Type':'application/json',
+    ...(idem?{'Idempotency-Key':idem}:{}),...(opts.headers||{})}});
   if(!r.ok){ let d; try{d=await r.json()}catch(e){} const e=new Error((d&&d.detail)||('HTTP '+r.status)); e.status=r.status; throw e; }
   return r.json(); }
 async function copy(text){ try{ await navigator.clipboard.writeText(text); }
@@ -421,10 +427,11 @@ function openExtend(sid,kid){
     '<div class="seg" style="margin-bottom:14px"><div class="s" data-d="-30">−30</div><div class="s" data-d="-7">−7</div><div class="s" data-d="7">+7</div><div class="s" data-d="30">+30</div><div class="s" data-d="90">+90</div><div class="s" data-d="180">+180</div></div>'+
     '<div id="eerr" class="err"></div><button class="btn" id="ego">Apply</button>', ()=>openDetail(sid,kid));
   s.querySelectorAll('.seg .s').forEach(c=>c.onclick=()=>{ s.querySelector('#en').value=c.dataset.d; haptic(); });
+  const idem=idemKey();   // this screen is one extension, however many attempts
   const go=async()=>{ const days=parseInt(s.querySelector('#en').value||'0',10)||0; const err=s.querySelector('#eerr'); err.textContent='';
     if(days===0){ err.textContent='Enter a non-zero number of days.'; return; }
     const b=s.querySelector('#ego'); b.disabled=true; mainBusy(true);
-    try{ await api('/tma/api/keys/'+sid+'/'+kid+'/extend',{method:'POST',body:JSON.stringify({days})}); await afterEdit(sid,kid,days>0?('Extended +'+days+'d'):('Reduced '+days+'d')); }
+    try{ await api('/tma/api/keys/'+sid+'/'+kid+'/extend',{method:'POST',idem,body:JSON.stringify({days})}); await afterEdit(sid,kid,days>0?('Extended +'+days+'d'):('Reduced '+days+'d')); }
     catch(e){ err.textContent=e.message; b.disabled=false; mainBusy(false); } };
   s.querySelector('#ego').onclick=go; mainBtn('Apply',go);
 }
@@ -466,10 +473,14 @@ function openCreate(){
     '<label class="field" style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:0"><input id="csn" type="checkbox" style="width:18px;height:18px;flex:none;accent-color:var(--acc)" /><span class="lab" style="margin:0">Start countdown now</span></label>'+
     '<div class="hint">Leave 0 for unlimited data or no expiry. Unchecked, the duration counts from the user\'s first connection.</div>'+
     '<div id="cerr" class="err"></div><button class="btn" id="cgo">Create User</button>');
-  const go=()=>submitCreate(s); s.querySelector('#cgo').onclick=go; mainBtn('Create User',go);
+  // Minted with the sheet, not with the request: retrying a failed Create must
+  // reuse it, or the second attempt is a second charge.
+  const createIdem=idemKey();
+  const go=()=>submitCreate(s,createIdem); s.querySelector('#cgo').onclick=go;
+  mainBtn('Create User',go);
   setTimeout(()=>{ const n=s.querySelector('#cn'); n&&n.focus(); },320);
 }
-async function submitCreate(s){
+async function submitCreate(s,createIdem){
   const server=SERVERS.length>1?s.querySelector('#cs').value:(SERVERS[0]&&SERVERS[0].id);
   const name=s.querySelector('#cn').value.trim();
   const limit_gb=parseFloat(s.querySelector('#cl').value||'0')||0, days=parseInt(s.querySelector('#cd').value||'0',10)||0;
@@ -478,7 +489,7 @@ async function submitCreate(s){
   if(!server){ err.textContent='No server is configured.'; return; }
   const btn=s.querySelector('#cgo'); btn.disabled=true; btn.textContent='Creating…'; mainBusy(true);
   const start_now=!!s.querySelector('#csn').checked;
-  try{ const k=await api('/tma/api/keys',{method:'POST',body:JSON.stringify({server,name,limit_gb,days,start_now})});
+  try{ const k=await api('/tma/api/keys',{method:'POST',idem:createIdem,body:JSON.stringify({server,name,limit_gb,days,start_now})});
     notify('success'); showCreated(k); await loadHome(false); }
   catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent='Create User'; mainBusy(false); }
 }

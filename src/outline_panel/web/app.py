@@ -22,9 +22,11 @@ from fastapi.staticfiles import StaticFiles
 from ..core import config
 from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_ENABLED, BOT_TOKEN
+from .audit import audit_middleware
 from .deps import STATIC_DIR, botmgr, db, reg, settings
 from .routers import (
     admins,
+    audit,
     auth,
     backup,
     keys,
@@ -77,6 +79,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Outline Panel", lifespan=lifespan)
 
+# Registered first so it wraps outermost and sees the final status of every
+# mutating request, including ones rejected by a dependency.
+app.middleware("http")(audit_middleware)
+
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -109,6 +115,7 @@ async def security_headers(request: Request, call_next):
 
 app.include_router(auth.router)
 app.include_router(admins.router)
+app.include_router(audit.router)
 app.include_router(packages.router)
 app.include_router(servers.router)
 app.include_router(keys.router)

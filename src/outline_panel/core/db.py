@@ -111,6 +111,39 @@ CREATE TABLE IF NOT EXISTS credit_ledger (
 """
 
 
+# Who did what, when, from where. `actor_name` and `detail` are SNAPSHOTS: the
+# record has to survive the admin being renamed or deleted, and has to say what
+# was asked for even after the target is gone — nothing here joins back out.
+_AUDIT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts             INTEGER NOT NULL,
+    actor_admin_id INTEGER,
+    actor_name     TEXT,
+    action         TEXT NOT NULL,
+    target         TEXT,
+    status         INTEGER,
+    ip             TEXT,
+    detail         TEXT
+);
+"""
+
+# One row per purchase attempt that carried an Idempotency-Key. The PRIMARY KEY
+# is the reservation: two concurrent retries race to INSERT and exactly one wins,
+# the same way `charge()` lets SQLite decide who can afford it.
+_IDEMPOTENCY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS idempotency (
+    key          TEXT PRIMARY KEY,
+    admin_id     INTEGER NOT NULL,
+    endpoint     TEXT NOT NULL,
+    request_hash TEXT NOT NULL,
+    status       INTEGER,
+    response     TEXT,
+    created_ts   INTEGER NOT NULL
+);
+"""
+
+
 class DB:
     def __init__(self, path: str):
         self.path = path
@@ -129,6 +162,50 @@ class DB:
         # WAL allows concurrent reads/writes without locking the whole DB
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("PRAGMA busy_timeout=5000")
+        await self._migrate()
+
+    async def _migrate(self) -> None:
+        """Bring the schema up to date, one numbered step at a time.
+
+        `PRAGMA user_version` is the counter. It starts at 0 on both a brand-new
+        file and every panel already deployed, which is why step 001 is the old
+        defensive block verbatim: it is idempotent, so it is a no-op against a
+        database that already has that shape and a full build against an empty
+        one. Everything after it can be written plainly — no `IF NOT EXISTS`, no
+        `PRAGMA table_info` guard — because the version says whether it ran.
+
+        Deliberately not Alembic: for one SQLite file this is the whole feature,
+        and a migration tool is a dependency, a config file and a second place
+        to look.
+
+        **Every step must be re-runnable.** Python's sqlite3 autocommits DDL, so
+        a CREATE lands the moment it executes while the version bump below is
+        ordinary DML inside a transaction. Lose the process in between and the
+        step replays on the next start against a schema that already has it.
+        Hence `IF NOT EXISTS` on the objects each step creates — not defensive
+        habit, the one thing that makes a half-applied step recoverable.
+        """
+        cur = await self.conn.execute("PRAGMA user_version")
+        have = int((await cur.fetchone())[0])
+        for version, step in enumerate(_MIGRATIONS[have:], start=have + 1):
+            await step(self)
+            # Not a bound parameter: PRAGMA does not take them. `version` is an
+            # int from enumerate, so there is nothing to inject.
+            await self.conn.execute(f"PRAGMA user_version = {version}")
+            # Commit per step: a failure half way leaves the steps that did land
+            # applied *and* the counter agreeing with them.
+            await self.conn.commit()
+
+    async def schema_version(self) -> int:
+        cur = await self.conn.execute("PRAGMA user_version")
+        return int((await cur.fetchone())[0])
+
+    async def _m001_baseline(self) -> None:
+        """Every schema change made before migrations existed.
+
+        Kept exactly as it was, guards and all. A deployed panel is already in
+        this shape with user_version 0, so this has to be safe to re-run.
+        """
         await self._db.execute(_SERVERS_SCHEMA)
         # migration: add the cert_sha256 column to older servers tables
         cur = await self._db.execute("PRAGMA table_info(servers)")
@@ -185,7 +262,19 @@ class DB:
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_ledger_admin ON credit_ledger(admin_id)"
         )
-        await self._db.commit()
+
+    async def _m002_audit_log(self) -> None:
+        """Who did what. credit_ledger only ever saw money move."""
+        await self.conn.execute(_AUDIT_SCHEMA)
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts DESC)")
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_audit_actor"
+            " ON audit_log(actor_admin_id, ts DESC)")
+
+    async def _m003_idempotency(self) -> None:
+        """Reservations for retried purchases (see web/idempotency.py)."""
+        await self.conn.execute(_IDEMPOTENCY_SCHEMA)
 
     async def close(self) -> None:
         if self._db is not None:
@@ -585,6 +674,96 @@ class DB:
         )
         return int((await cur.fetchone())["s"])
 
+    # audit -----------------------------------------------------------------
+    async def add_audit(self, actor_admin_id: int | None, actor_name: str | None,
+                        action: str, target: str | None, status: int | None,
+                        ip: str | None, detail: str | None) -> None:
+        async with self._lock:
+            await self.conn.execute(
+                "INSERT INTO audit_log (ts, actor_admin_id, actor_name, action,"
+                " target, status, ip, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (int(time.time()), actor_admin_id, actor_name, action, target,
+                 status, ip, detail),
+            )
+            await self.conn.commit()
+
+    async def audit_page(self, limit: int = 100, before_id: int | None = None,
+                         actor_admin_id: int | None = None) -> list[dict]:
+        """Newest first. Keyset paging on id, not OFFSET: the table only grows,
+        and OFFSET would re-scan everything to reach page 50."""
+        sql = "SELECT * FROM audit_log WHERE 1=1"
+        args: list = []
+        if before_id is not None:
+            sql += " AND id < ?"
+            args.append(before_id)
+        if actor_admin_id is not None:
+            sql += " AND actor_admin_id = ?"
+            args.append(actor_admin_id)
+        sql += " ORDER BY id DESC LIMIT ?"
+        args.append(limit)
+        cur = await self.conn.execute(sql, args)
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def prune_audit(self, older_than_ts: int) -> int:
+        async with self._lock:
+            cur = await self.conn.execute(
+                "DELETE FROM audit_log WHERE ts < ?", (older_than_ts,))
+            await self.conn.commit()
+            return cur.rowcount
+
+    # idempotency -----------------------------------------------------------
+    async def claim_idempotency(self, key: str, admin_id: int, endpoint: str,
+                                request_hash: str) -> dict | None:
+        """Reserve `key`, or return the row that already holds it.
+
+        None means "you own it, go do the work". A dict means someone got there
+        first — the caller compares the hash and either replays the stored
+        response or reports a conflict. The INSERT itself is the lock, so two
+        retries arriving together cannot both proceed.
+        """
+        async with self._lock:
+            try:
+                await self.conn.execute(
+                    "INSERT INTO idempotency (key, admin_id, endpoint,"
+                    " request_hash, created_ts) VALUES (?, ?, ?, ?, ?)",
+                    (key, admin_id, endpoint, request_hash, int(time.time())),
+                )
+                await self.conn.commit()
+                return None
+            except aiosqlite.IntegrityError:
+                await self.conn.rollback()
+        cur = await self.conn.execute(
+            "SELECT * FROM idempotency WHERE key = ?", (key,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+    async def finish_idempotency(self, key: str, status: int,
+                                 response: str) -> None:
+        async with self._lock:
+            await self.conn.execute(
+                "UPDATE idempotency SET status = ?, response = ? WHERE key = ?",
+                (status, response, key),
+            )
+            await self.conn.commit()
+
+    async def release_idempotency(self, key: str) -> None:
+        """Drop a reservation whose work failed, so an honest retry can run.
+
+        Only for failures that changed nothing. A charge that landed must keep
+        its row, or the retry charges again — which is the whole point.
+        """
+        async with self._lock:
+            await self.conn.execute(
+                "DELETE FROM idempotency WHERE key = ? AND status IS NULL", (key,))
+            await self.conn.commit()
+
+    async def prune_idempotency(self, older_than_ts: int) -> int:
+        async with self._lock:
+            cur = await self.conn.execute(
+                "DELETE FROM idempotency WHERE created_ts < ?", (older_than_ts,))
+            await self.conn.commit()
+            return cur.rowcount
+
     # backup / restore ------------------------------------------------------
     _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts")
     _KEY_COLS = ("server_id", "key_id", "name", "limit_bytes", "duration_days",
@@ -633,6 +812,10 @@ class DB:
                 await self.conn.execute("DELETE FROM settings")
                 await self.conn.execute("DELETE FROM admins")
                 await self.conn.execute("DELETE FROM packages")
+                # audit_log and idempotency are deliberately NOT wiped: the
+                # record of who restored what is worth more than a clean slate,
+                # and replaying an old purchase key after a restore would be a
+                # double charge.
                 await self.conn.execute("DELETE FROM credit_ledger")
                 for s in servers:
                     cols = [c for c in self._SERVER_COLS if c in s]
@@ -678,3 +861,12 @@ class DB:
             except BaseException:
                 await self.conn.rollback()
                 raise
+
+
+# Ordered, append-only. Never renumber or edit a step that has shipped: the
+# counter in a live database refers to positions in this list.
+_MIGRATIONS = (
+    DB._m001_baseline,
+    DB._m002_audit_log,
+    DB._m003_idempotency,
+)

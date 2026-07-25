@@ -13,7 +13,7 @@ usage, and create a new key (picking a server when more than one is configured).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -112,14 +112,17 @@ class TmaCreate(BaseModel):
 
 
 @router.post("/tma/api/keys")
-async def tma_create(body: TmaCreate, auth: dict = Depends(require_tma)):
+async def tma_create(body: TmaCreate, request: Request,
+                     auth: dict = Depends(require_tma)):
     assert_cap(auth, "keys.create")
     await assert_key_access(auth, body.server)
     # Reuse the dashboard's route body, not create_key_for: it is what charges a
     # credit admin and reverses on failure. Free-form creation from Telegram
     # would let a reseller mint keys around the price list entirely.
+    # The request is forwarded so the Mini App gets idempotency too — a phone on
+    # a flaky connection is exactly where a lost response happens.
     return await keys_router.create_key(
-        body.server,
+        body.server, request,
         keys_router.CreateBody(name=body.name, limit_gb=body.limit_gb,
                                days=body.days, start_now=body.start_now,
                                package_id=body.package_id),
@@ -160,9 +163,10 @@ async def tma_disable(sid: str, kid: str, auth: dict = Depends(require_tma)):
 
 
 @router.post("/tma/api/keys/{sid}/{kid}/extend")
-async def tma_extend(sid: str, kid: str, body: ExtendBody, auth: dict = Depends(require_tma)):
+async def tma_extend(sid: str, kid: str, body: ExtendBody, request: Request,
+                     auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
-    return await keys_router.extend_key(sid, kid, body, auth)
+    return await keys_router.extend_key(sid, kid, request, body, auth)
 
 
 @router.delete("/tma/api/keys/{sid}/{kid}")

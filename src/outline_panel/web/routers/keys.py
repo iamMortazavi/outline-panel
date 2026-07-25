@@ -6,12 +6,13 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ...core import security
 from ...core.outline_api import OutlineAPI, OutlineError
 from ...core.utils import gb_to_bytes
+from .. import idempotency
 from ..deps import (
     api_or_404,
     can_see,
@@ -327,25 +328,40 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
 
 
 @router.post("/servers/{sid}/keys")
-async def create_key(sid: str, body: CreateBody,
+async def create_key(sid: str, request: Request, body: CreateBody,
                      admin: dict = Depends(require("keys.create"))):
+    # The charge lands before Outline is called, so a lost response used to
+    # leave the admin paying for a retry. An Idempotency-Key replays the first
+    # answer instead.
+    guard = await idempotency.begin(request, admin)
+    if guard.replay:
+        return guard.replay
     mine = None if is_owner(admin) else admin["id"]
-    bought = await _buy(admin, body.package_id, sid)
-    if not bought:
-        return await create_key_for(sid, body.name, body.limit_gb, body.days,
-                                    body.monthly_gb, body.start_now, mine)
-    pkg, _price, entry = bought
     try:
-        # The package decides what the user gets — the body's own limit/days
-        # are ignored rather than merged, or the buyer picks their own size.
-        key = await create_key_for(sid, body.name, pkg["gb"] or 0,
-                                   pkg["days"] or 0, pkg["monthly_gb"] or 0,
-                                   body.start_now, mine)
-    except BaseException as e:
-        await _reverse(admin, bought, sid, f"create failed: {e}")
+        bought = await _buy(admin, body.package_id, sid)
+        if not bought:
+            key = await create_key_for(sid, body.name, body.limit_gb, body.days,
+                                       body.monthly_gb, body.start_now, mine)
+            await guard.done(key)
+            return key
+        pkg, _price, entry = bought
+        try:
+            # The package decides what the user gets — the body's own limit/days
+            # are ignored rather than merged, or the buyer picks their own size.
+            key = await create_key_for(sid, body.name, pkg["gb"] or 0,
+                                       pkg["days"] or 0, pkg["monthly_gb"] or 0,
+                                       body.start_now, mine)
+        except BaseException as e:
+            await _reverse(admin, bought, sid, f"create failed: {e}")
+            raise
+    except BaseException:
+        # Every failure above either charged nothing or reversed it, so the key
+        # is free to be retried.
+        await guard.abandon()
         raise
     # now that the key exists, point the charge at what it bought
     await db.tag_ledger(entry, sid, key["id"])
+    await guard.done(key)
     return key
 
 
@@ -435,7 +451,7 @@ async def enable_key(sid: str, kid: str):
 
 
 @router.post("/servers/{sid}/keys/{kid}/extend")
-async def extend_key(sid: str, kid: str, body: ExtendBody,
+async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
                      admin: dict = Depends(require("keys.edit"))):
     """Adjust a key's validity: positive `days` extends (and re-enables a
     disabled key), negative `days` shortens it (clamped to expire-now).
@@ -444,35 +460,54 @@ async def extend_key(sid: str, kid: str, body: ExtendBody,
     reaches a user is paid for, so they cannot extend their way around the
     price list.
     """
-    bought = await _buy(admin, body.package_id, sid, kid)
+    guard = await idempotency.begin(request, admin)
+    if guard.replay:
+        return guard.replay
+    try:
+        bought = await _buy(admin, body.package_id, sid, kid)
+    except BaseException:
+        await guard.abandon()
+        raise
     if bought:
         try:
-            return await _apply_package(sid, kid, bought[0])
+            result = await _apply_package(sid, kid, bought[0])
         except BaseException as e:
             await _reverse(admin, bought, sid, f"renew failed: {e}")
+            await guard.abandon()
             raise
+        await guard.done(result)
+        return result
     if body.days == 0:
+        await guard.abandon()
         raise HTTPException(status_code=400, detail="days must not be zero")
-    api = api_or_404(sid)
-    meta = await ensure_local(sid, kid)
-    now = int(time.time())
-    # Re-enable FIRST: committing the new expiry before the Outline call means a
-    # 502 still moves the date, and the admin's retry extends a second time.
-    # only re-enable on an extension, never on a reduction
-    if body.days > 0 and meta.get("disabled"):
-        try:
-            await enable_on_outline(api, kid, meta)
-        except OutlineError as e:
-            raise HTTPException(status_code=502, detail=str(e))
-    if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
-        # not yet activated — adjust the stored duration (min 1 day)
-        await db.set_duration(sid, kid, max(1, int(meta["duration_days"]) + body.days))
-    else:
-        base = max(meta.get("expiry_ts") or 0, now)
-        await db.set_expiry(sid, kid, max(now, base + body.days * 86400))
-    if body.days > 0 and meta.get("disabled"):
-        await db.set_disabled(sid, kid, False)
-    return {"ok": True}
+    # No money on this path, but the days still stack up on a double-send.
+    try:
+        api = api_or_404(sid)
+        meta = await ensure_local(sid, kid)
+        now = int(time.time())
+        # Re-enable FIRST: committing the new expiry before the Outline call means a
+        # 502 still moves the date, and the admin's retry extends a second time.
+        # only re-enable on an extension, never on a reduction
+        if body.days > 0 and meta.get("disabled"):
+            try:
+                await enable_on_outline(api, kid, meta)
+            except OutlineError as e:
+                raise HTTPException(status_code=502, detail=str(e))
+        if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
+            # not yet activated — adjust the stored duration (min 1 day)
+            await db.set_duration(sid, kid,
+                                  max(1, int(meta["duration_days"]) + body.days))
+        else:
+            base = max(meta.get("expiry_ts") or 0, now)
+            await db.set_expiry(sid, kid, max(now, base + body.days * 86400))
+        if body.days > 0 and meta.get("disabled"):
+            await db.set_disabled(sid, kid, False)
+    except BaseException:
+        await guard.abandon()
+        raise
+    result = {"ok": True}
+    await guard.done(result)
+    return result
 
 
 @router.post("/servers/{sid}/keys/{kid}/reset")

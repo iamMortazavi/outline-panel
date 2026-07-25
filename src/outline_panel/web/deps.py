@@ -53,8 +53,10 @@ async def create_key_as(admin: dict, sid: str, **fields) -> dict:
     top-level import here would be a cycle.
     """
     from .routers import keys as keys_router
+    # No Request: this is a Telegram button press, not an HTTP call that could
+    # be retried with the same idempotency key.
     return await keys_router.create_key(
-        sid, keys_router.CreateBody(**fields), admin)
+        sid, None, keys_router.CreateBody(**fields), admin)
 
 
 botmgr = BotManager(db, reg, settings.get_admin_ids, settings.get_webapp_url,
@@ -63,7 +65,8 @@ botmgr = BotManager(db, reg, settings.get_admin_ids, settings.get_webapp_url,
 signer = URLSafeTimedSerializer(config.SESSION_SECRET, salt="session")
 
 
-async def current_admin(outline_session: str | None = Cookie(default=None)) -> dict:
+async def current_admin(request: Request,
+                        outline_session: str | None = Cookie(default=None)) -> dict:
     """The admin behind this request, loaded fresh from the DB every time.
 
     Re-reading the row is what makes revocation instant: disabling or deleting
@@ -89,6 +92,9 @@ async def current_admin(outline_session: str | None = Cookie(default=None)) -> d
     row = await db.get_admin(int(data["aid"]))
     if row is None or row["disabled"]:
         raise HTTPException(status_code=401, detail="Session expired")
+    # Hand the actor to the audit middleware, which runs outside the dependency
+    # tree and has no other way to learn who this was.
+    request.state.audit_admin = row
     return row
 
 
