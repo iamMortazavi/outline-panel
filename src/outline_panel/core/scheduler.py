@@ -16,9 +16,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import socket
 import time
+import uuid
 
-from . import config
+from . import backup, config, metrics
 from .outline_api import OutlineError
 from .utils import MONTH_SECONDS, fmt_bytes, fmt_expiry
 
@@ -26,28 +29,51 @@ log = logging.getLogger("scheduler")
 
 
 
-async def expiry_loop(registry, db, interval: int, notifier=None,
-                      settings=None) -> None:
-    """Run the checks forever.
+LEASE = "scheduler"
 
-    `settings` (a SettingsStore) makes the interval and the notification
-    thresholds live: they are re-read every pass, so changing them in the panel
-    takes effect without a restart. `interval` remains the fallback for callers
-    that have no store.
+
+async def expiry_loop(registry, db, interval: int, notifier=None,
+                      settings=None, holder: str | None = None) -> None:
+    """Run the checks forever, in exactly one process.
+
+    Coordination used to be the `ENABLE_SCHEDULER` env var: the operator had to
+    know to switch it off wherever a second process ran, and getting it wrong
+    meant two schedulers resetting quotas and expiring the same keys against
+    each other. A lease settles it instead — every process runs this loop, only
+    the lease-holder does the work, and if that one dies the lease expires and
+    another picks it up within a cycle.
+
+    `settings` makes the interval and thresholds live: re-read every pass, so a
+    change in the panel applies without a restart.
     """
+    # Distinct per process. pid alone repeats across containers.
+    holder = holder or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
     # anti-spam memory for notifications: a set of (sid, kid, kind)
     notified: set[tuple] = set()
+    held = False
     while True:
-        try:
-            await _check_once(registry, db, notifier, notified, settings)
-        except Exception as e:  # noqa: BLE001 — the loop must never die
-            log.exception("scheduler error: %s", e)
         nap = interval
         if settings is not None:
             try:
                 nap = await settings.num("expiry_check_interval")
             except Exception as e:  # noqa: BLE001 — never let a read kill the loop
                 log.warning("could not read the scheduler interval: %s", e)
+        try:
+            # Long enough that a slow pass cannot lose the lease mid-run, short
+            # enough that a dead holder is replaced promptly.
+            if await db.acquire_lease(LEASE, holder, max(30, nap * 3)):
+                if not held:
+                    log.info("scheduler lease acquired by %s", holder)
+                    held = True
+                metrics.observe("outline_panel_scheduler_leader", 1)
+                await _check_once(registry, db, notifier, notified, settings)
+                metrics.inc("outline_panel_scheduler_passes_total")
+            elif held:
+                log.info("scheduler lease lost; standing by")
+                held = False
+                metrics.observe("outline_panel_scheduler_leader", 0)
+        except Exception as e:  # noqa: BLE001 — the loop must never die
+            log.exception("scheduler error: %s", e)
         await asyncio.sleep(nap)
 
 
@@ -179,7 +205,7 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
         else:
             notified.discard(tag_exp)
 
-    # 4) housekeeping: both tables only ever grow, so something has to trim them
+    # 4) housekeeping: these tables only ever grow, so something has to trim them
     if settings is not None:
         try:
             cutoff = now - await settings.num("audit_retention_days") * 86400
@@ -190,8 +216,29 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
             # A day is far longer than any client will retry; keeping the rows
             # past that only preserves the chance of replaying a stale purchase.
             await db.prune_idempotency(now - 86400)
+            await db.prune_rate_events(now - 86400)
         except Exception as e:  # noqa: BLE001 — housekeeping must not stop expiry
             log.warning("housekeeping failed: %s", e)
+        try:
+            await backup.maybe_backup(db, settings, db.path, now)
+        except Exception as e:  # noqa: BLE001 — a full disk must not stop expiry
+            log.warning("backup failed: %s", e)
+
+    # 4b) reconciliation: admins.credit is what a purchase is checked against,
+    # the ledger is how it got there. They must agree, and nothing was watching.
+    try:
+        for row in await db.credit_drift():
+            log.error("CREDIT DRIFT: admin %s (%s) holds %s but the ledger says %s",
+                      row["id"], row["username"], row["credit"], row["ledger"])
+            await _safe_notify(
+                notifier,
+                f"🚨 Credit mismatch for <b>{row['username']}</b>: balance "
+                f"{row['credit']:,} but the statement totals {row['ledger']:,}. "
+                f"No money has been lost — but something wrote the balance "
+                f"outside the ledger, so please check before selling more.",
+            )
+    except Exception as e:  # noqa: BLE001
+        log.warning("reconciliation failed: %s", e)
 
     # 5) enforce expiry
     for key in await db.expired_active_keys(now):

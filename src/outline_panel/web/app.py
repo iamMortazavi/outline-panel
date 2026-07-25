@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -23,7 +25,21 @@ from ..core import config
 from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_ENABLED, BOT_TOKEN
 from .audit import audit_middleware
-from .deps import STATIC_DIR, botmgr, db, reg, settings
+from .deps import (
+    COOKIE_NAME,
+    STATIC_DIR,
+    botmgr,
+    current_admin,
+    db,
+    reg,
+    require_owner,
+    settings,
+)
+from .observability import (
+    configure_logging,
+    metrics_endpoint,
+    observability_middleware,
+)
 from .routers import (
     admins,
     audit,
@@ -45,6 +61,7 @@ log = logging.getLogger("webapp")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging(os.getenv("LOG_FORMAT", "text"), os.getenv("LOG_LEVEL", "INFO"))
     if not config.SESSION_SECRET_SET:
         log.warning(
             "SESSION_SECRET is not set — sessions reset on restart and break "
@@ -82,6 +99,9 @@ app = FastAPI(title="Outline Panel", lifespan=lifespan)
 # Registered first so it wraps outermost and sees the final status of every
 # mutating request, including ones rejected by a dependency.
 app.middleware("http")(audit_middleware)
+# Outermost of the two, so the request id is set before anything else logs and
+# the timing covers the whole chain.
+app.middleware("http")(observability_middleware)
 
 
 @app.middleware("http")
@@ -130,6 +150,27 @@ app.include_router(miniapp.router)
 @app.get("/healthz")
 async def healthz():
     return {"ok": True}
+
+
+@app.get("/metrics")
+async def metrics_route(request: Request):
+    """Prometheus scrape.
+
+    Not public: the labels carry server hostnames and the values carry customer
+    and revenue counts. A scraper uses a bearer token set in the panel; a person
+    can just be signed in as the owner.
+    """
+    token = (await settings.get("metrics_token") or "").strip()
+    auth = (request.headers.get("Authorization") or "").strip()
+    if token and secrets.compare_digest(auth, f"Bearer {token}"):
+        return await metrics_endpoint(db, reg)
+    try:
+        await require_owner(await current_admin(request,
+                                                request.cookies.get(COOKIE_NAME)))
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="Metrics require the owner "
+                                                    "session or a metrics token")
+    return await metrics_endpoint(db, reg)
 
 
 @app.get("/")

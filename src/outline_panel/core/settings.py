@@ -83,6 +83,29 @@ KNOBS: dict[str, dict] = {
         "help": "Ceiling across every address, so rotating IPs can't walk past "
                 "the per-IP limit.",
     },
+    "backup_interval_hours": {
+        "default": 24, "min": 1, "max": 8760,
+        "label": "Automatic backup every (hours)",
+        "help": "Snapshots are taken with VACUUM INTO, which does not interrupt "
+                "the panel. Turn the whole thing off with Backups enabled.",
+    },
+    "backup_keep": {
+        "default": 14, "min": 1, "max": 1000,
+        "label": "Backups to keep",
+        "help": "Older snapshots are deleted once this many newer ones exist.",
+    },
+    "sub_cache_seconds": {
+        "default": 20, "min": 0, "max": 3600,
+        "label": "Subscription page cache (seconds)",
+        "help": "The subscription link is public and each fetch reaches every "
+                "server, so a client on a tight refresh loop multiplies load. "
+                "0 disables caching.",
+    },
+    "sub_max_per_minute": {
+        "default": 30, "min": 1, "max": 10000,
+        "label": "Subscription fetches per minute, per address",
+        "help": "Anything above this is refused with 429.",
+    },
     "audit_retention_days": {
         "default": 90, "min": 1, "max": 3650,
         "label": "Keep the audit log for (days)",

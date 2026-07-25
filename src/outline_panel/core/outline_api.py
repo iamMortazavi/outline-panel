@@ -21,6 +21,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from . import metrics
+
 
 class OutlineError(Exception):
     """Raised for any error while talking to the Outline API.
@@ -144,15 +146,29 @@ class OutlineAPI:
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         url = f"{self.api_url}{path}"
         client = await self._get_client()
+        # Every Outline call funnels through here, so this is the one place that
+        # can answer "is the upstream slow or failing" — the question nothing
+        # could answer before.
+        host = urlparse(self.api_url).netloc
+        started = time.monotonic()
         try:
             resp = await client.request(method, url, **kwargs)
         except httpx.HTTPError as e:
+            metrics.inc("outline_panel_outline_calls_total",
+                        {"server": host, "outcome": "unreachable"})
             raise OutlineError(f"Failed to reach the Outline server: {e}") from e
+        finally:
+            metrics.observe("outline_panel_outline_seconds",
+                            time.monotonic() - started, {"server": host})
         if resp.status_code >= 400:
+            metrics.inc("outline_panel_outline_calls_total",
+                        {"server": host, "outcome": "error"})
             raise OutlineError(
                 f"Error response from server ({resp.status_code}): {resp.text[:200]}",
                 status=resp.status_code,
             )
+        metrics.inc("outline_panel_outline_calls_total",
+                    {"server": host, "outcome": "ok"})
         return resp
 
     # server ------------------------------------------------------------

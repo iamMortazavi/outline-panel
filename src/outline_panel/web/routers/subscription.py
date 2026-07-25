@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
+from ...core import config
 from ...core.outline_api import OutlineError
 from ..deps import STATIC_DIR, db, reg, settings
 
@@ -47,9 +49,63 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in request.headers.get("accept", "").lower() and "mozilla" in ua
 
 
+# token -> (expires_at, summary). Process-local and deliberately so: this is a
+# load shield, not a source of truth, and a worker serving a copy a few seconds
+# older than its neighbour's costs nothing. Bounded by _CACHE_MAX so a flood of
+# invented tokens cannot grow it — misses raise 404 before ever landing here.
+#
+# Usage figures going a few seconds stale is cosmetic — suspending a user sets
+# their Outline data limit to zero, which cuts the tunnel immediately whatever
+# this says. *Membership* is not cosmetic: unlinking a server has to stop that
+# config being handed out, so every route that changes who is in a subscription
+# calls invalidate() below.
+_cache: dict[str, tuple[float, dict]] = {}
+_CACHE_MAX = 5000
+
+
+def invalidate(token: str | None) -> None:
+    """Drop a cached summary. Called wherever a subscription's membership
+    changes, so a removed server stops being served at once."""
+    if token:
+        _cache.pop(token, None)
+
+
+async def _rate_limit(request: Request) -> None:
+    """Cap fetches per address.
+
+    This route needs no credentials and reaches every configured Outline server
+    on every call, so an open loop against one link is an amplifier pointed at
+    the whole fleet. The token is 22 random characters — guessing is not the
+    threat; volume is.
+    """
+    limit = await settings.num("sub_max_per_minute")
+    ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+          if config.TRUST_PROXY else None) or \
+         (request.client.host if request.client else "unknown")
+    bucket = f"sub:{ip}"
+    if await db.count_rate_events(bucket, 60) >= limit:
+        raise HTTPException(status_code=429,
+                            detail="Too many requests — try again shortly")
+    await db.record_rate_event(bucket)
+
+
 async def _collect(token: str) -> dict:
     """Resolve a subscription token into a usage summary (``servers[*].url`` are
     the clean ``ss://`` lines the raw sub is built from)."""
+    ttl = await settings.num("sub_cache_seconds")
+    if ttl:
+        hit = _cache.get(token)
+        if hit and hit[0] > time.monotonic():
+            return hit[1]
+    info = await _collect_fresh(token)
+    if ttl:
+        if len(_cache) >= _CACHE_MAX:
+            _cache.clear()
+        _cache[token] = (time.monotonic() + ttl, info)
+    return info
+
+
+async def _collect_fresh(token: str) -> dict:
     await reg.sync()   # public route: no current_admin to refresh the list for us
     members = await db.get_keys_by_sub_token(token)
     if not members:
@@ -123,9 +179,12 @@ async def _collect(token: str) -> dict:
 @router.get("/sub/{token}")
 async def subscription(token: str, request: Request):
     # Browsers get the friendly page; VPN clients get the raw base64 sub.
+    # Served before the rate limit on purpose: it is a static file that touches
+    # no server, and the JSON call it then makes is limited.
     if _wants_html(request):
         return FileResponse(STATIC_DIR / "sub.html")
 
+    await _rate_limit(request)
     info = await _collect(token)
     urls = [s["url"] for s in info["servers"]]
     payload = base64.b64encode("\n".join(urls).encode()).decode()
@@ -144,7 +203,8 @@ async def subscription(token: str, request: Request):
 
 
 @router.get("/sub/{token}/info")
-async def subscription_info(token: str):
+async def subscription_info(token: str, request: Request):
     """JSON usage summary that powers the browser page (token is the secret)."""
+    await _rate_limit(request)
     # Carries the same ss:// key material as the raw sub — no-store, same as it.
     return JSONResponse(await _collect(token), headers={"Cache-Control": "no-store"})
