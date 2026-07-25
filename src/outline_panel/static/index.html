@@ -39,7 +39,21 @@
   .hidden{display:none!important}
   /* keys, ss:// links, byte counts and IDs stay LTR inside an RTL page: bidi
      reordering makes "24.0 GB" read "GB 24.0" and mangles a URL outright */
-  [dir="rtl"] .mono{direction:ltr;text-align:start;unicode-bidi:embed}.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  [dir="rtl"] .mono{direction:ltr;text-align:start;unicode-bidi:embed}
+  /* Persian letters join; letter-spacing pulls them apart and the word stops
+     being readable. The design uses tracking on chips, labels and headings, so
+     it has to be cancelled wholesale here — !important because most of it is
+     set inline. Latin runs inside an RTL page lose their tracking too, which
+     is a fair trade for words that render at all. */
+  [dir="rtl"] *{letter-spacing:normal!important}
+  [dir="rtl"] .mono{letter-spacing:0!important}
+  /* The design uses the monospace face for chips, inputs and hints. A
+     monospace font puts every Persian letter in a fixed cell, which stops the
+     letters joining and turns a word into disconnected shapes — so Persian text
+     gets the sans face. `.mono` keeps monospace: it holds numbers and IDs,
+     which is what the tabular figures are for. */
+  [dir="rtl"] .chip,[dir="rtl"] .inp,[dir="rtl"] .hint{font-family:var(--sans)}
+  [dir="rtl"] textarea.inp{font-family:var(--mono)}   /* pasted configs stay code */.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
   a{color:var(--acc)}
   .btn{width:100%;padding:14px;border-radius:12px;font-weight:700;font-size:15px;background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 92%,#fff),var(--acc));color:var(--ink);border:none;cursor:pointer;letter-spacing:.2px;box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 8px 20px -10px rgba(var(--acc-rgb),.6);transition:transform .12s,box-shadow .15s,filter .15s}
   .btn:hover{filter:brightness(1.05)}.btn:active{transform:translateY(1px)}.btn:disabled{opacity:.5;cursor:default;box-shadow:none}
@@ -219,7 +233,7 @@ async function enterApp(){
   try{await loadAll();}
   catch(e){
     if(/auth|session/i.test(e.message))return showLogin();
-    root.innerHTML=`<div style="min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center"><div style="max-width:360px;animation:ocRise .4s both"><div style="font-size:42px;margin-bottom:12px;color:var(--danger)">⚠</div><div style="font-weight:700;font-size:17px;margin-bottom:6px">Couldn't load the dashboard</div><p class="desc" style="margin-bottom:20px">${esc(e.message||'Network error')}</p><button class="btn" id="retry" style="width:auto;padding:11px 24px">Retry</button></div></div>`;
+    root.innerHTML=`<div style="min-height:100dvh;display:grid;place-items:center;padding:24px;text-align:center"><div style="max-width:360px;animation:ocRise .4s both"><div style="font-size:42px;margin-bottom:12px;color:var(--danger)">⚠</div><div style="font-weight:700;font-size:17px;margin-bottom:6px">${esc(t('Couldn\'t load the dashboard'))}</div><p class="desc" style="margin-bottom:20px">${esc(e.message||'Network error')}</p><button class="btn" id="retry" style="width:auto;padding:11px 24px">${esc(t('Retry'))}</button></div></div>`;
     $('#retry').onclick=()=>enterApp();
     return;
   }
@@ -293,17 +307,17 @@ function renderApp(){
       <div style="flex:1"></div>
       <div style="position:relative;${narrow?'display:none':'width:230px'}">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg>
-        <input id="search" data-inp="search" value="${esc(S.search)}" placeholder="Search keys…" class="inp" style="padding:9px 64px 9px 36px;font-size:13.5px" />
+        <input id="search" data-inp="search" value="${esc(S.search)}" placeholder="${esc(t('Search keys…'))}" class="inp" style="padding:9px 64px 9px 36px;font-size:13.5px" />
         <kbd data-act="palette" title="Command palette" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer">⌘K</kbd></div>
-      ${!can('keys.create')?'':`<button class="btn" data-act="create" style="${narrow?'display:none':'width:auto;flex:none;white-space:nowrap;padding:9px 15px;display:flex;align-items:center;gap:7px;font-size:13.5px'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>New key</button>`}
-      <button class="icon-btn" data-act="settings" aria-label="Settings" style="padding:10px;color:var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
-      <button data-act="signout" style="${narrow?'display:none':'background:none;border:1px solid var(--line2);color:var(--faint);padding:9px 13px;border-radius:11px;cursor:pointer;font-size:13px'}">Sign out</button>
+      ${!can('keys.create')?'':`<button class="btn" data-act="create" style="${narrow?'display:none':'width:auto;flex:none;white-space:nowrap;padding:9px 15px;display:flex;align-items:center;gap:7px;font-size:13.5px'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>${esc(t('New key'))}</button>`}
+      <button class="icon-btn" data-act="settings" aria-label="${esc(t('Settings'))}" style="padding:10px;color:var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+      <button data-act="signout" style="${narrow?'display:none':'background:none;border:1px solid var(--line2);color:var(--faint);padding:9px 13px;border-radius:11px;cursor:pointer;font-size:13px'}">${esc(t('Sign out'))}</button>
     </div>
   </header>
   <div style="max-width:1400px;margin:0 auto;padding:${narrow?'16px 16px 96px':'22px 22px 80px'}">
     <div id="shell"></div>
   </div>
-  ${narrow&&can('keys.create')?`<button class="btn" data-act="create" style="position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:35;width:auto;display:flex;align-items:center;gap:8px;padding:14px 20px;border-radius:99px;box-shadow:0 12px 30px rgba(var(--acc-rgb),.28)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>New key</button>`:''}
+  ${narrow&&can('keys.create')?`<button class="btn" data-act="create" style="position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:35;width:auto;display:flex;align-items:center;gap:8px;padding:14px 20px;border-radius:99px;box-shadow:0 12px 30px rgba(var(--acc-rgb),.28)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>${esc(t('New key'))}</button>`:''}
   `;
   // shell layout
   const wide=W>=1100, mid=W>=720&&W<1100;
@@ -315,8 +329,8 @@ function renderApp(){
   $('#shell').style.cssText=shellStyle;
   $('#shell').innerHTML=`<div id="kpi" style="${kpiOuter}"></div>
     <div style="${contentStyle}">
-      ${narrow?'<div style="margin-bottom:14px"><div style="position:relative"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;left:13px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg><input id="msearch" data-inp="search" value="'+esc(S.search)+'" placeholder="Search keys…" class="inp" style="padding:12px 12px 12px 38px"/></div></div>':''}
-      ${isOwner()?`<div style="display:flex;gap:7px;margin-bottom:14px">${[['users','Users'],['admins','Admins']].map(([t,l])=>`<button class="chip ${S.tab===t?'sel':''}" data-act="tab" data-id="${t}" style="padding:8px 15px">${l}</button>`).join('')}</div>`:''}
+      ${narrow?'<div style="margin-bottom:14px"><div style="position:relative"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;left:13px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg><input id="msearch" data-inp="search" value="'+esc(S.search)+'" placeholder="'+esc(t('Search keys…'))+'" class="inp" style="padding:12px 12px 12px 38px"/></div></div>':''}
+      ${isOwner()?`<div style="display:flex;gap:7px;margin-bottom:14px">${[['users','Users'],['admins','Admins']].map(([tb,l])=>`<button class="chip ${S.tab===tb?'sel':''}" data-act="tab" data-id="${tb}" style="padding:8px 15px">${esc(t(l))}</button>`).join('')}</div>`:''}
       <div id="toolbar"></div><div id="banner"></div><div id="selbar"></div>
       <div id="count" style="font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin:0 2px 10px;font-weight:600"></div>
       <div id="list"></div>
@@ -334,17 +348,17 @@ function renderApp(){
 function renderSrv(){
   const wrap=$('#srvwrap');if(!wrap)return;
   const sf=S.servers.find(s=>s.id===S.srvFilter);
-  const label=S.srvFilter==='all'?'All servers':(sf?sf.name:'All servers');
+  const label=S.srvFilter==='all'?t('All servers'):(sf?sf.name:t('All servers'));
   const dot=S.srvFilter==='all'?'var(--acc)':(sf&&sf.reachable?'var(--acc)':'var(--danger)');
   let menu='';
   if(S.srvMenuOpen){
     menu=`<div style="position:absolute;top:46px;left:0;width:260px;background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:6px;z-index:40;box-shadow:0 18px 50px rgba(0,0,0,.55);animation:ocRise .16s both">
-      <div data-act="srvpick" data-id="all" style="display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:9px;cursor:pointer"><span style="width:7px;height:7px;border-radius:50%;background:var(--acc)"></span><span style="flex:1;font-size:13px;font-weight:600">All servers</span><span class="mono" style="font-size:11px;color:var(--dim)">${S.keys.length} keys</span></div>
+      <div data-act="srvpick" data-id="all" style="display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:9px;cursor:pointer"><span style="width:7px;height:7px;border-radius:50%;background:var(--acc)"></span><span style="flex:1;font-size:13px;font-weight:600">${esc(t('All servers'))}</span><span class="mono" style="font-size:11px;color:var(--dim)">${S.keys.length} ${esc(t('keys'))}</span></div>
       <div style="height:1px;background:var(--line2);margin:5px 8px"></div>
       ${S.servers.map(s=>`<div data-act="srvpick" data-id="${esc(s.id)}" style="display:flex;align-items:center;gap:10px;padding:10px 11px;border-radius:9px;cursor:pointer">
         <span style="width:7px;height:7px;border-radius:50%;flex:none;background:${s.reachable?'var(--acc)':'var(--danger)'}"></span>
         <div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</div>
-        <div class="mono" style="font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.host||'')}${s.reachable?'':' · unreachable'}</div></div>
+        <div class="mono" style="font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.host||'')}${s.reachable?'':' · '+t('unreachable')}</div></div>
         <span class="mono" style="font-size:11px;color:var(--dim)">${S.keys.filter(k=>k.serverId===s.id).length}</span></div>`).join('')}
     </div>`;
   }
@@ -354,7 +368,7 @@ function renderSrv(){
     <svg width="11" height="11" viewBox="0 0 12 8" fill="none" style="flex:none;opacity:.6"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>${menu}`;
 }
 
-function kpiCard(label,val,opts={}){
+function kpiCard(label,val,opts={}){label=t(label);
   const acc=opts.accent;
   return `<div style="background:${acc?'linear-gradient(165deg,rgba(var(--acc-rgb),.1),transparent)':'var(--panel)'};border:1px solid ${acc?'rgba(var(--acc-rgb),.3)':'var(--line)'};border-radius:14px;padding:14px 15px">
     <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:${acc?'var(--acc)':'var(--faint)'};font-weight:600;display:flex;align-items:center;gap:6px">${opts.pulse?'<span style="width:6px;height:6px;border-radius:50%;background:var(--acc);box-shadow:0 0 7px var(--acc);animation:ocPulse 1.8s infinite"></span>':''}${label}</div>
@@ -376,18 +390,18 @@ function renderToolbar(){
   const tb=$('#toolbar');if(!tb)return;const narrow=innerWidth<720;const sc=scoped();
   const counts={all:sc.length,online:sc.filter(isOnline).length,active:sc.filter(k=>!k.disabled&&!k.pending).length,pending:sc.filter(k=>k.pending).length,disabled:sc.filter(k=>k.disabled).length};
   const defs=[['all','All'],['online','Online'],['active','Active'],['pending','Pending'],['disabled','Disabled']];
-  const pills=defs.map(([id,lbl])=>{const on=S.statusFilter===id;return `<button data-act="statusf" data-id="${id}" style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;font-size:12.5px;font-weight:600;cursor:pointer;flex:none;white-space:nowrap;background:${on?'var(--acc)':'transparent'};color:${on?'var(--ink)':'var(--muted)'}">${lbl}<span class="mono" style="font-size:11px;opacity:.7">${counts[id]}</span></button>`;}).join('');
+  const pills=defs.map(([id,lbl])=>{const on=S.statusFilter===id;return `<button data-act="statusf" data-id="${id}" style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;font-size:12.5px;font-weight:600;cursor:pointer;flex:none;white-space:nowrap;background:${on?'var(--acc)':'transparent'};color:${on?'var(--ink)':'var(--muted)'}">${esc(t(lbl))}<span class="mono" style="font-size:11px;opacity:.7">${counts[id]}</span></button>`;}).join('');
   const sortSel=`<div style="position:relative;${narrow?'flex:1 1 100%':''}"><select id="sort" data-inp="sort" style="appearance:none;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:${narrow?'12px 32px 12px 14px':'9px 32px 9px 13px'};border-radius:11px;font-size:13px;cursor:pointer;outline:none;${narrow?'width:100%':''}">
-    ${[['recent','Newest'],['name','Name A–Z'],['usage','Most usage'],['expiry','Expiring soon'],['devices','Most devices'],['online','Online first'],['lastseen','Last seen']].map(([v,l])=>`<option value="${v}" ${S.sort===v?'selected':''}>${l}</option>`).join('')}
+    ${[['recent','Newest'],['name','Name A–Z'],['usage','Most usage'],['expiry','Expiring soon'],['devices','Most devices'],['online','Online first'],['lastseen','Last seen']].map(([v,l])=>`<option value="${v}" ${S.sort===v?'selected':''}>${esc(t(l))}</option>`).join('')}
     </select><svg width="11" height="11" viewBox="0 0 12 8" fill="none" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;opacity:.55"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>`;
   const viewToggle=narrow?'':`<div style="display:flex;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px">
-    <button data-act="view" data-id="table" aria-label="Table" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='table'?'var(--acc)':'transparent'};color:${S.view==='table'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg></button>
-    <button data-act="view" data-id="cards" aria-label="Cards" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='cards'?'var(--acc)':'transparent'};color:${S.view==='cards'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></button></div>`;
+    <button data-act="view" data-id="table" aria-label="${esc(t('Table'))}" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='table'?'var(--acc)':'transparent'};color:${S.view==='table'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg></button>
+    <button data-act="view" data-id="cards" aria-label="${esc(t('Cards'))}" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='cards'?'var(--acc)':'transparent'};color:${S.view==='cards'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></button></div>`;
   // An active admin filter must be visible and undoable, or the list just looks
   // mysteriously short.
   const af=adminFilterName();
   const afChip=af?`<button data-act="adminfilter" data-id="all" class="chip sel" style="padding:7px 12px;display:inline-flex;align-items:center;gap:7px">${esc(af)}'s users <span style="color:var(--acc)">✕</span></button>`:'';
-  const csv=`<button data-act="csv" class="btn-sec" style="width:auto;padding:8px 13px;font-size:12.5px;display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round"/></svg>CSV</button>`;
+  const csv=`<button data-act="csv" class="btn-sec" style="width:auto;padding:8px 13px;font-size:12.5px;display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round"/></svg>${esc(t('CSV'))}</button>`;
   tb.innerHTML=`<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap">
     ${afChip}
     <div style="display:flex;gap:5px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px;${narrow?'overflow-x:auto;flex:1 1 100%':''}">${pills}</div>
@@ -409,25 +423,25 @@ function renderSelbar(){
   if(!ids.length){el.innerHTML='';return;}
   el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:linear-gradient(180deg,rgba(var(--acc-rgb),.1),rgba(var(--acc-rgb),.04));border:1px solid rgba(var(--acc-rgb),.3);border-radius:12px;padding:9px 10px 9px 15px;margin-bottom:12px">
     <span style="font-size:12.5px;font-weight:700;color:var(--acc)">${ids.length} selected</span><div style="flex:1"></div>
-    <button class="btn-sec" data-act="bulk" data-op="extend" style="width:auto;padding:7px 12px;font-size:12.5px">Extend +30d</button>
-    <button class="btn-sec" data-act="bulk" data-op="disable" style="width:auto;padding:7px 12px;font-size:12.5px">Disable</button>
-    ${isOwner()?'<button class="btn-sec" data-act="bulk" data-op="transfer" style="width:auto;padding:7px 12px;font-size:12.5px">Transfer to…</button>':''}
-    <button class="btn-danger" data-act="bulk" data-op="delete" style="width:auto;padding:7px 12px;font-size:12.5px">Delete</button>
-    <button data-act="bulk" data-op="clear" style="background:none;border:1px solid var(--line2);color:var(--faint);padding:7px 11px;border-radius:9px;font-size:12.5px;cursor:pointer">Clear</button></div>`;
+    <button class="btn-sec" data-act="bulk" data-op="extend" style="width:auto;padding:7px 12px;font-size:12.5px">${esc(t('Extend +30d'))}</button>
+    <button class="btn-sec" data-act="bulk" data-op="disable" style="width:auto;padding:7px 12px;font-size:12.5px">${esc(t('Disable'))}</button>
+    ${isOwner()?'<button class="btn-sec" data-act="bulk" data-op="transfer" style="width:auto;padding:7px 12px;font-size:12.5px">'+esc(t('Transfer to…'))+'</button>':''}
+    <button class="btn-danger" data-act="bulk" data-op="delete" style="width:auto;padding:7px 12px;font-size:12.5px">${esc(t('Delete'))}</button>
+    <button data-act="bulk" data-op="clear" style="background:none;border:1px solid var(--line2);color:var(--faint);padding:7px 11px;border-radius:9px;font-size:12.5px;cursor:pointer">${esc(t('Clear'))}</button></div>`;
 }
 
 function renderList(){
   renderKpi();renderToolbar();renderBanner();renderSelbar();
   const list=filteredKeys(),el=$('#list'),narrow=innerWidth<720,sc=scoped();
-  const cntLabel=(S.search||S.statusFilter!=='all')?(list.length+' of '+sc.length+' keys'):(sc.length+' keys total');
+  const cntLabel=(S.search||S.statusFilter!=='all')?(list.length+' '+t('of')+' '+sc.length+' '+t('keys')):(sc.length+' '+t('keys total'));
   $('#count').textContent=cntLabel;
-  if(!S.servers.length){el.innerHTML=`<div style="text-align:center;color:var(--faint);padding:70px 20px;background:var(--panel);border:1px solid var(--line);border-radius:16px"><div style="font-size:38px;margin-bottom:12px;color:var(--acc)">⌁</div>No servers yet.<br><button class="btn-sec" data-act="settings" style="width:auto;margin-top:14px;padding:10px 18px">Add your first server</button></div>`;return;}
+  if(!S.servers.length){el.innerHTML=`<div style="text-align:center;color:var(--faint);padding:70px 20px;background:var(--panel);border:1px solid var(--line);border-radius:16px"><div style="font-size:38px;margin-bottom:12px;color:var(--acc)">⌁</div>${esc(t('No servers yet.'))}<br><button class="btn-sec" data-act="settings" style="width:auto;margin-top:14px;padding:10px 18px">${esc(t('Add your first server'))}</button></div>`;return;}
   if(!list.length){el.innerHTML=`<div style="text-align:center;color:var(--faint);padding:70px 20px;background:var(--panel);border:1px solid var(--line);border-radius:16px"><div style="font-size:38px;margin-bottom:12px;color:var(--acc)">⌁</div>${S.search?'No keys match “'+esc(S.search)+'”':'No keys here yet.'}</div>`;return;}
   if(S.view==='table'&&!narrow)el.innerHTML=tableView(list);else el.innerHTML=cardView(list,narrow);
 }
 function kBits(k){const st=statusMeta(k),p=pctOf(k),now=Date.now()/1000;
   const usage=k.limit?(fmtBytes(k.used)+' / '+fmtBytes(k.limit)+(p?'  ·  '+p+'%':'')):fmtBytes(k.used)+'  ·  unlimited';
-  const expShort=k.pending?'on use':(!k.expiry?'∞':(k.expiry<=now?'Expired':((k.expiry-now)>=86400?Math.floor((k.expiry-now)/86400)+'d':Math.max(1,Math.floor((k.expiry-now)/3600))+'h')));
+  const expShort=k.pending?t('on use'):(!k.expiry?'∞':(k.expiry<=now?'Expired':((k.expiry-now)>=86400?Math.floor((k.expiry-now)/86400)+'d':Math.max(1,Math.floor((k.expiry-now)/3600))+'h')));
   const expCol=(!k.pending&&k.expiry&&(k.expiry-now)<5*86400)?'var(--warn)':(k.disabled?'var(--faint)':'var(--muted)');
   const last=k.pending?'—':(isOnline(k)?'now':fmtAgo(agoSec(k)));
   return {st,p,w:barWidth(k),usage,expShort,expCol,last};
@@ -438,21 +452,21 @@ function tableView(list){
       <div data-act="sel" data-id="${esc(k.id)}" data-stop="1" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div style="min-width:0"><div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k.name)}</div>
         <div class="mono" style="font-size:11px;color:var(--dim);margin-top:3px;display:flex;align-items:center;gap:7px">#${esc(k.id)}${isOwner()&&k.ownerName?`<span style="padding:1px 6px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)">${esc(k.ownerName)}</span>`:''}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint)"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
-      <div><span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${b.st.t}</span></div>
+      <div><span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${esc(t(b.st.t))}</span></div>
       <div style="min-width:0"><div style="height:6px;border-radius:99px;background:var(--panel2);overflow:hidden"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
         <div class="mono" style="font-size:11px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.usage)}</div></div>
       <div class="mono" style="display:flex;align-items:center;gap:6px;font-size:13px">${k.peakDevices!=null?k.peakDevices:'—'}${(k.peakDevices||0)>=5?'<span title="Possible shared account" style="font-size:9px;font-weight:700;color:var(--warn);background:rgba(245,196,81,.13);border:1px solid rgba(245,196,81,.3);padding:1px 5px;border-radius:5px;font-family:var(--sans)">SHARED?</span>':''}</div>
       <div class="mono" style="font-size:12.5px;color:${isOnline(k)?'var(--acc)':'var(--faint)'};white-space:nowrap">${esc(b.last)}</div>
       <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0">
         <span class="mono" style="font-size:12.5px;color:${b.expCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.expShort)}</span>
-        <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-stop="1" aria-label="Copy"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
-        <button class="icon-btn" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="QR"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M20 14v3M14 20h3" stroke-linecap="round"/></svg></button></div>
+        <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-stop="1" aria-label="${esc(t('Copy'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('QR'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M20 14v3M14 20h3" stroke-linecap="round"/></svg></button></div>
     </div>`;}).join('');
   const allSel=list.length&&list.every(k=>S.selected[k.id]);
   return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
     <div style="display:grid;grid-template-columns:26px 2.1fr 1fr 1.8fr .8fr 1.05fr 1.5fr;gap:13px;padding:11px 18px;border-bottom:1px solid var(--line2);background:var(--bg2);align-items:center">
       <div data-act="selall" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${allSel?'var(--acc)':'var(--line3)'};background:${allSel?'var(--acc)':'transparent'};color:${allSel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-      ${['Key','Status','Data usage','Devices','Last seen','Expiry / actions'].map((t,i)=>`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);font-weight:700;${i===5?'text-align:right':''}">${t}</div>`).join('')}
+      ${['Key','Status','Data usage','Devices','Last seen','Expiry / actions'].map((h,i)=>`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);font-weight:700;${i===5?'text-align:end':''}">${esc(t(h))}</div>`).join('')}
     </div>${rows}</div>`;
 }
 function cardView(list,narrow){
@@ -466,35 +480,35 @@ function cardView(list,narrow){
       <div style="height:7px;border-radius:99px;background:var(--panel2);overflow:hidden;margin:16px 0 7px"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
       <div class="mono" style="font-size:12px;color:var(--muted)">${esc(b.usage)}</div>
       <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:var(--muted)">
-        <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4" stroke-linecap="round"/></svg><span class="mono" style="color:${b.expCol}">${k.pending?'on use · '+(k.durationDays||0)+'d':fmtExpiry(k.expiry)}</span></span>
+        <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4" stroke-linecap="round"/></svg><span class="mono" style="color:${b.expCol}">${k.pending?t('on use')+' · '+(k.durationDays||0)+t('d'):fmtExpiry(k.expiry)}</span></span>
         <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/></svg><b class="mono" style="color:var(--text);font-weight:600">${k.peakDevices!=null?k.peakDevices:'—'}</b></span>
         <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg><span class="mono" style="color:${isOnline(k)?'var(--acc)':'var(--faint)'}">${esc(b.last)}</span></span>
         ${k.monthlyBytes?'<span style="display:flex;align-items:center;gap:6px">🔄 <b class="mono" style="color:var(--text);font-weight:600">'+fmtBytes(k.monthlyBytes)+'</b>/mo</span>':''}</div>
       <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg>Copy</button>
-        <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>QR</button>
-        <button class="btn-sec" data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px">Details</button></div>
+        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg>${esc(t('Copy'))}</button>
+        <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>${esc(t('QR'))}</button>
+        <button class="btn-sec" data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px">${esc(t('Details'))}</button></div>
     </div>`;}).join('')+`</div>`;
 }
 
 function renderRail(){
   const rail=$('#rail');if(!rail)return;const st=S.stats;
-  if(!st||!st.available){rail.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;font-size:12.5px;color:var(--muted);line-height:1.5"><b style="color:var(--text)">Advanced stats are off.</b> Enable metrics sharing for a server (Settings) to see live bandwidth, online users and ISP locations.</div>`;return;}
+  if(!st||!st.available){rail.innerHTML=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;font-size:12.5px;color:var(--muted);line-height:1.5"><b style="color:var(--text)">${esc(t('Advanced stats are off.'))}</b> ${esc(t('Enable metrics sharing for a server (Settings) to see live bandwidth, online users and ISP locations.'))}</div>`;return;}
   // bandwidth sparkline
   const sm=S.bwSamples.length?S.bwSamples:[0,0];const mn=Math.min(...sm),mx=Math.max(...sm),rng=(mx-mn)||1,SW=280,Hh=58,n=sm.length;
   const pts=sm.map((v,i)=>[(i/Math.max(1,n-1))*SW,Hh-4-((v-mn)/rng)*(Hh-10)]);
   const path='M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L');const area=path+(' L'+SW+' '+Hh+' L0 '+Hh+' Z');
   let html=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600">Live bandwidth</span><span style="font-size:10.5px;color:var(--acc);display:flex;align-items:center;gap:5px;font-weight:600"><span style="width:5px;height:5px;border-radius:50%;background:var(--acc);animation:ocPulse 1.6s infinite"></span>LIVE</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600">${esc(t('Live bandwidth'))}</span><span style="font-size:10.5px;color:var(--acc);display:flex;align-items:center;gap:5px;font-weight:600"><span style="width:5px;height:5px;border-radius:50%;background:var(--acc);animation:ocPulse 1.6s infinite"></span>${esc(t('LIVE'))}</span></div>
     <div style="display:flex;align-items:baseline;gap:6px"><span class="mono" style="font-weight:600;font-size:28px;letter-spacing:-1px;color:var(--acc)">${fmtBytes(st.bwCurrent)}</span><span class="mono" style="font-size:13px;color:var(--faint)">/s</span></div>
     <svg viewBox="0 0 280 60" preserveAspectRatio="none" style="width:100%;height:56px;margin-top:8px;display:block;overflow:visible"><defs><linearGradient id="ocBwG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#37d4e6" stop-opacity=".28"/><stop offset="1" stop-color="#37d4e6" stop-opacity="0"/></linearGradient></defs><path d="${area}" fill="url(#ocBwG)"/><path d="${path}" fill="none" stroke="#37d4e6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
     <div class="mono" style="display:flex;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--faint)"><span>peak ${fmtBytes(st.bwPeak)}/s</span><span>tunnel ${fmtDur(st.tunnelSec)}</span></div></div>`;
   // locations
   const locs=(st.locations||[]).map(l=>({cc:l.location||'',asn:l.asn,org:l.asOrg,bytes:(l.dataTransferred||{}).bytes||0})).filter(l=>l.bytes>0).sort((a,b)=>b.bytes-a.bytes).slice(0,6);
-  if(locs.length){const max=locs[0].bytes;html+=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin-bottom:14px">Connections by network · ISP</div>`+
+  if(locs.length){const max=locs[0].bytes;html+=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin-bottom:14px">${esc(t('Connections by network · ISP'))}</div>`+
     locs.map(l=>{const primary=l.org||(l.asn?'AS'+l.asn:countryName(l.cc));const sub=countryName(l.cc)+(l.asn?' · AS'+l.asn:'');return `<div style="display:flex;align-items:center;gap:11px;margin-bottom:13px"><span style="font-size:17px;width:22px;text-align:center;flex:none">${flag(l.cc)}</span><div style="flex:1;min-width:0"><div style="font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(primary)}</div><div class="mono" style="font-size:10.5px;color:var(--dim);margin-top:2px">${esc(sub)}</div></div><div style="width:88px;flex:none"><div style="height:5px;background:var(--panel2);border-radius:99px;overflow:hidden"><span style="display:block;height:100%;border-radius:99px;background:var(--acc);width:${Math.max(6,Math.round(l.bytes/max*100))}%"></span></div><div class="mono" style="font-size:11px;color:var(--muted);text-align:right;margin-top:5px">${fmtBytes(l.bytes)}</div></div></div>`;}).join('')+`</div>`;}
   // per-server
-  if(S.servers.length>1){html+=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin-bottom:6px">Per-server metrics</div>`+
+  if(S.servers.length>1){html+=`<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin-bottom:6px">${esc(t('Per-server metrics'))}</div>`+
     S.servers.map(s=>{const ps=(st.perServer||[]).find(p=>p.id===s.id)||{};const ks=S.keys.filter(k=>k.serverId===s.id);return `<div style="padding:12px 0;border-bottom:1px solid var(--panel2)"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="width:7px;height:7px;border-radius:50%;flex:none;background:${s.reachable?'var(--acc)':'var(--danger)'};box-shadow:0 0 6px ${s.reachable?'var(--acc)':'var(--danger)'}"></span><span style="font-size:12.5px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(s.name)}</span><span class="mono" style="font-size:11px;color:var(--dim)">${s.version?'v'+esc(s.version):''}</span></div><div class="mono" style="display:flex;flex-wrap:wrap;gap:13px;font-size:11.5px;color:var(--faint)"><span><b style="color:var(--text);font-weight:600">${ks.length}</b> keys</span><span><b style="color:var(--acc);font-weight:600">${ks.filter(isOnline).length}</b> online</span><span><b style="color:var(--text);font-weight:600">${fmtBytes(ps.dataBytes||0)}</b> 30d</span></div></div>`;}).join('')+`</div>`;}
   rail.innerHTML=html;
 }
@@ -510,7 +524,7 @@ function openDrawer(inner){
   return modalRoot.firstElementChild;
 }
 function keyById(id){return S.keys.find(k=>String(k.id)===String(id));}
-function renderQR(box,text){if(!box)return;if(typeof QRCode==='undefined'){box.parentElement.innerHTML='<div class="desc">QR unavailable offline.</div>';return;}new QRCode(box,{text,width:188,height:188,colorDark:'#0a0d12',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}
+function renderQR(box,text){if(!box)return;if(typeof QRCode==='undefined'){box.parentElement.innerHTML='<div class="desc">'+esc(t('QR unavailable offline.'))+'</div>';return;}new QRCode(box,{text,width:188,height:188,colorDark:'#0a0d12',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}
 
 const _srvOpts=()=>S.servers.map(s=>`<option value="${esc(s.id)}" ${s.reachable?'':'disabled'}>${esc(s.name)}${s.reachable?'':' · offline'}</option>`).join('');
 // A credit admin sells from the price list; everyone else keeps the free form.
@@ -521,17 +535,17 @@ function _pkgRow(p,cls){
 async function modalCreateBuy(){
   const idem=idemKey();   // this dialog is one purchase, however many attempts
   const multi=S.servers.length>1;
-  const ov=openSheet('<div class="h2">New user</div><p class="desc">Loading packages…</p>');
-  let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">New user</div><p class="err">${esc(e.message)}</p>`;return;}
+  const ov=openSheet('<div class="h2">'+esc(t('New user'))+'</div><p class="desc">'+esc(t('Loading packages…'))+'</p>');
+  let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('New user'))}</div><p class="err">${esc(e.message)}</p>`;return;}
   const rows=d.packages.map(p=>_pkgRow(p,'cpk')).join('')
-    ||'<div class="desc">No packages are available yet. Ask the owner to add one.</div>';
-  ov.querySelector('.sheet').innerHTML=`<div class="h2">New user</div>
+    ||'<div class="desc">'+esc(t('No packages are available yet. Ask the owner to add one.'))+'</div>';
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('New user'))}</div>
     <p class="desc">Pick a package. Its price comes out of your credit — you have <span class="mono" style="color:var(--acc)">${esc(fmtToman(d.credit))}</span>${d.discountPct?` · your discount ${d.discountPct}%`:''}.</p>
-    ${multi?'<div class="field"><label class="lab">Server</label><select id="cs" class="inp" style="cursor:pointer">'+_srvOpts()+'</select></div>':''}
-    <div class="field"><label class="lab">Name</label><input id="cn" class="inp" placeholder="e.g. Mohsen — iPhone" /></div>
-    <div class="field"><label class="lab">Package</label>${rows}</div>
-    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">Start countdown now</label><div style="font-size:12px;color:var(--dim);max-width:230px" id="csd">Off: the clock starts on the user's first connection.</div></div><div class="toggle" id="cst"><div class="tk"></div><div class="kn"></div></div></div></div>
-    <div id="ce" class="err"></div><button class="btn" id="cgo">Create user</button>`;
+    ${multi?'<div class="field"><label class="lab">'+esc(t('Server'))+'</label><select id="cs" class="inp" style="cursor:pointer">'+_srvOpts()+'</select></div>':''}
+    <div class="field"><label class="lab">${esc(t('Name'))}</label><input id="cn" class="inp" placeholder="${esc(t('e.g. Mohsen — iPhone'))}" /></div>
+    <div class="field"><label class="lab">${esc(t('Package'))}</label>${rows}</div>
+    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">${esc(t('Start countdown now'))}</label><div style="font-size:12px;color:var(--dim);max-width:230px" id="csd">${esc(t('Off: the clock starts on the user\'s first connection.'))}</div></div><div class="toggle" id="cst"><div class="tk"></div><div class="kn"></div></div></div></div>
+    <div id="ce" class="err"></div><button class="btn" id="cgo">${esc(t('Create user'))}</button>`;
   ov.querySelector('#cn').focus();
   let startNow=false;const stg=ov.querySelector('#cst');
   stg.onclick=()=>{startNow=!startNow;stg.classList.toggle('on',startNow);
@@ -541,29 +555,29 @@ async function modalCreateBuy(){
     const name=ov.querySelector('#cn').value.trim();
     const pick=[...ov.querySelectorAll('.cpk')].find(x=>x.checked);
     const er=ov.querySelector('#ce');er.textContent='';
-    if(!sid){er.textContent='No server available.';return;}
-    if(!name){er.textContent='Please enter a name.';return;}
-    if(!pick){er.textContent='Pick a package.';return;}
+    if(!sid){er.textContent=t('No server available.');return;}
+    if(!name){er.textContent=t('Please enter a name.');return;}
+    if(!pick){er.textContent=t('Pick a package.');return;}
     const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',idem,
           body:JSON.stringify({name,package_id:+pick.value,start_now:startNow})});
       await loadAll();renderApp();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
-    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create user';}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Create user');}
   };
 }
 function modalCreateFree(){
   const multi=S.servers.length>1;
   const srvOpts=_srvOpts();
-  const ov=openSheet(`<div class="h2">Create a new key</div><p class="desc">Generate one Outline access key for a single user.</p>
-    ${multi?'<div class="field"><label class="lab">Server</label><select id="cs" class="inp" style="cursor:pointer">'+srvOpts+'</select></div>':''}
-    <div class="field"><label class="lab">Name</label><input id="cn" class="inp" placeholder="e.g. Mohsen — iPhone" /></div>
-    <div class="field"><label class="lab">Data limit · GB</label><input id="cl" class="inp" type="number" min="0" placeholder="Gigabytes" />
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px">${[['10','10 GB'],['50','50 GB'],['100','100 GB'],['0','Unlimited']].map(([v,l])=>`<span class="chip" data-chip="cl" data-v="${v}">${l}</span>`).join('')}</div></div>
-    <div class="field"><label class="lab">Valid for</label><input id="cd" class="inp" type="number" min="0" placeholder="Days" />
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px">${[['30','30 days'],['90','90 days'],['365','1 year'],['0','No expiry']].map(([v,l])=>`<span class="chip" data-chip="cd" data-v="${v}">${l}</span>`).join('')}</div></div>
-    <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="cm" class="inp" type="number" min="0" placeholder="Auto-renew off" /><div class="desc" style="margin:9px 0 0;font-size:12px;color:var(--dim)">Monthly quota refreshes every 30 days.</div></div>
-    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">Start countdown now</label><div style="font-size:12px;color:var(--dim);max-width:230px" id="csd">Off: the clock starts on the user's first connection.</div></div><div class="toggle" id="cst"><div class="tk"></div><div class="kn"></div></div></div></div>
-    <div id="ce" class="err"></div><button class="btn" id="cgo">Create key</button>`);
+  const ov=openSheet(`<div class="h2">${esc(t('Create a new key'))}</div><p class="desc">${esc(t('Generate one Outline access key for a single user.'))}</p>
+    ${multi?'<div class="field"><label class="lab">'+esc(t('Server'))+'</label><select id="cs" class="inp" style="cursor:pointer">'+srvOpts+'</select></div>':''}
+    <div class="field"><label class="lab">${esc(t('Name'))}</label><input id="cn" class="inp" placeholder="${esc(t('e.g. Mohsen — iPhone'))}" /></div>
+    <div class="field"><label class="lab">${esc(t('Data limit · GB'))}</label><input id="cl" class="inp" type="number" min="0" placeholder="${esc(t('Gigabytes'))}" />
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px">${[['10','10 GB'],['50','50 GB'],['100','100 GB'],['0','Unlimited']].map(([v,l])=>`<span class="chip" data-chip="cl" data-v="${v}">${esc(t(l))}</span>`).join('')}</div></div>
+    <div class="field"><label class="lab">${esc(t('Valid for'))}</label><input id="cd" class="inp" type="number" min="0" placeholder="${esc(t('Days'))}" />
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px">${[['30','30 days'],['90','90 days'],['365','1 year'],['0','No expiry']].map(([v,l])=>`<span class="chip" data-chip="cd" data-v="${v}">${esc(t(l))}</span>`).join('')}</div></div>
+    <div class="field"><label class="lab">${esc(t('Monthly quota · GB (0 = off)'))}</label><input id="cm" class="inp" type="number" min="0" placeholder="${esc(t('Auto-renew off'))}" /><div class="desc" style="margin:9px 0 0;font-size:12px;color:var(--dim)">${esc(t('Monthly quota refreshes every 30 days.'))}</div></div>
+    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">${esc(t('Start countdown now'))}</label><div style="font-size:12px;color:var(--dim);max-width:230px" id="csd">${esc(t('Off: the clock starts on the user\'s first connection.'))}</div></div><div class="toggle" id="cst"><div class="tk"></div><div class="kn"></div></div></div></div>
+    <div id="ce" class="err"></div><button class="btn" id="cgo">${esc(t('Create key'))}</button>`);
   ov.querySelector('#cn').focus();
   let startNow=false;const stg=ov.querySelector('#cst');
   stg.onclick=()=>{startNow=!startNow;stg.classList.toggle('on',startNow);
@@ -571,18 +585,18 @@ function modalCreateFree(){
   ov.querySelector('#cgo').onclick=async()=>{
     const sid=multi?ov.querySelector('#cs').value:(S.servers[0]&&S.servers[0].id);
     const name=ov.querySelector('#cn').value.trim();const lg=parseFloat(ov.querySelector('#cl').value||'0')||0;const dd=parseInt(ov.querySelector('#cd').value||'0')||0;const mg=parseFloat(ov.querySelector('#cm').value||'0')||0;
-    const er=ov.querySelector('#ce');if(!sid){er.textContent='Add a server first.';return;}if(!name){er.textContent='Please enter a name.';return;}
+    const er=ov.querySelector('#ce');if(!sid){er.textContent=t('Add a server first.');return;}if(!name){er.textContent=t('Please enter a name.');return;}
     const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',idem,body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mg,start_now:startNow})});
       await refreshKeys();renderList();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
-    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create key';}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Create key');}
   };
 }
 function modalShare(k,fresh){const url=tagUrl(k);
-  const ov=openSheet(`<div class="h2">${fresh?'Key created':esc(k.name)}</div><p class="desc">Scan with the Outline app, or copy the link to share it.</p>
+  const ov=openSheet(`<div class="h2">${fresh?'Key created':esc(k.name)}</div><p class="desc">${esc(t('Scan with the Outline app, or copy the link to share it.'))}</p>
     <div style="display:grid;place-items:center;margin:4px 0 18px"><div id="qr" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div>
     <div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:13px;font-size:12px;word-break:break-all;color:var(--acc);line-height:1.5">${esc(url)}</div>
-    <div style="height:16px"></div><button class="btn" data-act="copytext" data-text="${esc(url)}">Copy link</button><div style="height:10px"></div><button class="btn-sec" data-act="close">Done</button>`);
+    <div style="height:16px"></div><button class="btn" data-act="copytext" data-text="${esc(url)}">${esc(t('Copy link'))}</button><div style="height:10px"></div><button class="btn-sec" data-act="close">${esc(t('Done'))}</button>`);
   renderQR(ov.querySelector('#qr'),url);
 }
 function modalDetail(k){const b=kBits(k),now=Date.now()/1000;
@@ -590,87 +604,87 @@ function modalDetail(k){const b=kBits(k),now=Date.now()/1000;
   openDrawer(`<div style="padding:20px 22px 18px;border-bottom:1px solid var(--panel2);background:linear-gradient(180deg,${b.st.bg},transparent)">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px"><div style="min-width:0"><div style="font-weight:800;font-size:20px;letter-spacing:-.5px;word-break:break-word">${esc(k.name)}</div>
         <div class="mono" style="font-size:12px;color:var(--dim);margin-top:6px;display:flex;gap:9px;align-items:center;flex-wrap:wrap">#${esc(k.id)}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint)"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvName(k.serverId))}</span></div></div>
-        <button data-act="close" aria-label="Close" style="background:var(--panel2);border:1px solid var(--line2);color:var(--muted);width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:17px;line-height:1;flex:none">×</button></div>
+        <button data-act="close" aria-label="${esc(t('Close'))}" style="background:var(--panel2);border:1px solid var(--line2);color:var(--muted);width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:17px;line-height:1;flex:none">×</button></div>
       <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln}"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${b.st.t}</span>
         <span class="mono" style="font-size:12px;color:var(--faint)">${k.pending?'starts on first use · '+(k.durationDays||0)+'d':(k.expiry?fmtExpiry(k.expiry)+' left':'no expiry')}</span></div></div>
     <div style="padding:20px 22px 0">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--faint);font-weight:600">Data usage</span><span class="mono" style="font-size:12px;color:var(--muted)">${fmtBytes(k.used)}${k.limit?' / '+fmtBytes(k.limit):' · ∞'}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px"><span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--faint);font-weight:600">${esc(t('Data usage'))}</span><span class="mono" style="font-size:12px;color:var(--muted)">${fmtBytes(k.used)}${k.limit?' / '+fmtBytes(k.limit):' · ∞'}</span></div>
       <div style="height:8px;border-radius:99px;background:var(--panel2);overflow:hidden"><div style="height:100%;width:${b.w}%;background:${barColor(k)};border-radius:99px"></div></div>
       <div class="mono" style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--faint);margin-top:7px"><span>${b.p?b.p+'% of limit':'unlimited'}</span><span>${k.monthlyBytes?fmtBytes(k.monthlyBytes)+'/mo':''}</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0">
         ${stat('Last seen',k.pending?'—':(isOnline(k)?'now':fmtAgo(agoSec(k))),isOnline(k)?'var(--acc)':null)}
         ${stat('Peak devices',(k.peakDevices!=null?k.peakDevices:'—')+'',(k.peakDevices||0)>=5?'var(--warn)':null)}
-        ${stat('Validity',k.pending?((k.durationDays||0)+'d on use'):(k.expiry?fmtExpiry(k.expiry):'∞'))}
+        ${stat('Validity',k.pending?((k.durationDays||0)+t('d')+' '+t('on use')):(k.expiry?fmtExpiry(k.expiry):'∞'))}
         ${stat('Tunnel time',fmtDur(k.tunnelSec||0))}</div>
       <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:11px;font-size:12.5px">Copy</button>
-        <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">QR</button>
-        ${can('keys.edit')?`<button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">Edit</button>`:''}</div>
+        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Copy'))}</button>
+        <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('QR'))}</button>
+        ${can('keys.edit')?`<button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Edit'))}</button>`:''}</div>
       ${!can('keys.edit')?'':`<div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn-sec" data-act="toggle" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px;${k.disabled?'background:rgba(var(--acc-rgb),.12);color:var(--acc);border-color:rgba(var(--acc-rgb),.32)':''}">${k.disabled?'Enable key':'Disable key'}</button>
-        <button class="btn-sec" data-act="resetkey" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">Reset usage</button>
-        ${can('keys.delete')?`<button class="btn-danger" data-act="delkey" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:none;width:auto;padding:11px 16px;font-size:12.5px">Delete</button>`:''}</div>`}
+        <button class="btn-sec" data-act="resetkey" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Reset usage'))}</button>
+        ${can('keys.delete')?`<button class="btn-danger" data-act="delkey" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:none;width:auto;padding:11px 16px;font-size:12.5px">${esc(t('Delete'))}</button>`:''}</div>`}
       <div style="height:24px"></div>
     </div>`);
 }
 function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.monthlyBytes?(k.monthlyBytes/1073741824):'';const multi=S.servers.length>1;
-  const ov=openSheet(`<div class="h2">Manage key</div><p class="mono desc" style="font-size:13px">#${esc(k.id)}${multi?'  ·  '+esc(srvName(k.serverId)):''}  ·  created ${fmtDate(k.createdTs)}${isOwner()&&k.ownerName?'  ·  '+esc(k.ownerName):''}</p>
-    <div class="field"><label class="lab">Name</label><input id="mn" class="inp" value="${esc(k.name)}" /></div>
-    ${isOwner()?`<div class="field"><label class="lab">Belongs to</label><select id="mow" class="inp" style="cursor:pointer"></select><div class="desc" style="margin-top:7px;font-size:11.5px">Moves this user onto that admin's page. Only admins with access to this server are listed.</div></div>`:''}
-    <div class="field"><label class="lab">Data limit · GB (0 = unlimited)</label><input id="ml" class="inp" type="number" min="0" value="${lim}" placeholder="Unlimited" /></div>
-    <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="mq" class="inp" type="number" min="0" value="${mon}" placeholder="Auto-renew off" /></div>
-    ${(S.me&&S.me.creditEnabled)?'<div class="field"><label class="lab">Renew</label><div id="mrn"><div class="desc">Loading packages…</div></div></div>':`<div class="field"><label class="lab">Validity · add or reduce</label>
-      <div style="display:flex;gap:8px"><input id="mx" class="inp" type="number" min="-3650" max="3650" placeholder="Days — positive extends, negative shortens" /><button class="btn-sec" id="mxgo" style="width:auto;padding:0 18px">Apply</button></div>
+  const ov=openSheet(`<div class="h2">${esc(t('Manage key'))}</div><p class="mono desc" style="font-size:13px">#${esc(k.id)}${multi?'  ·  '+esc(srvName(k.serverId)):''}  ·  created ${fmtDate(k.createdTs)}${isOwner()&&k.ownerName?'  ·  '+esc(k.ownerName):''}</p>
+    <div class="field"><label class="lab">${esc(t('Name'))}</label><input id="mn" class="inp" value="${esc(k.name)}" /></div>
+    ${isOwner()?`<div class="field"><label class="lab">${esc(t('Belongs to'))}</label><select id="mow" class="inp" style="cursor:pointer"></select><div class="desc" style="margin-top:7px;font-size:11.5px">Moves this user onto that admin's page. Only admins with access to this server are listed.</div></div>`:''}
+    <div class="field"><label class="lab">${esc(t('Data limit · GB (0 = unlimited)'))}</label><input id="ml" class="inp" type="number" min="0" value="${lim}" placeholder="${esc(t('Unlimited'))}" /></div>
+    <div class="field"><label class="lab">${esc(t('Monthly quota · GB (0 = off)'))}</label><input id="mq" class="inp" type="number" min="0" value="${mon}" placeholder="${esc(t('Auto-renew off'))}" /></div>
+    ${(S.me&&S.me.creditEnabled)?'<div class="field"><label class="lab">'+esc(t('Renew'))+'</label><div id="mrn"><div class="desc">'+esc(t('Loading packages…'))+'</div></div></div>':`<div class="field"><label class="lab">${esc(t('Validity · add or reduce'))}</label>
+      <div style="display:flex;gap:8px"><input id="mx" class="inp" type="number" min="-3650" max="3650" placeholder="${esc(t('Days — positive extends, negative shortens'))}" /><button class="btn-sec" id="mxgo" style="width:auto;padding:0 18px">${esc(t('Apply'))}</button></div>
       <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:9px">${[[-30,'−30d'],[-7,'−7d'],[7,'+7d'],[30,'+30d'],[90,'+90d'],[365,'+1y']].map(([d,l])=>`<span class="chip" data-chip="mx" data-v="${d}" style="flex:1;min-width:52px;text-align:center">${l}</span>`).join('')}</div></div>`}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
       <button class="btn-sec" data-act="config" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="width:auto;padding:11px 14px">⤓ Config</button>
       <button class="btn-sec" id="msub" style="width:auto;padding:11px 14px">🔗 Subscription</button>
       <button class="btn-sec" id="mreset" style="width:auto;padding:11px 14px">🔄 Reset usage</button>
       <button class="btn-sec" id="mtog" style="width:auto;padding:11px 14px">${k.disabled?'Enable':'Disable'}</button></div>
-    <div id="me" class="err"></div><button class="btn" id="msave">Save changes</button><div style="height:10px"></div>
-    <button class="btn-danger" id="mdel">Delete key</button>`);
+    <div id="me" class="err"></div><button class="btn" id="msave">${esc(t('Save changes'))}</button><div style="height:10px"></div>
+    <button class="btn-danger" id="mdel">${esc(t('Delete key'))}</button>`);
   const kb='/api/servers/'+k.serverId+'/keys/'+k.id;let disabled=k.disabled;
   if(ov.querySelector('#mow'))_ownerPicker(ov,k);
   if(ov.querySelector('#mrn'))_renewPicker(ov,k,kb);
   const daysIdem=idemKey();   // days stack up on a double-send even without money
   if(ov.querySelector('#mxgo'))ov.querySelector('#mxgo').onclick=async()=>{const d=parseInt(ov.querySelector('#mx').value||'0',10)||0;const er=ov.querySelector('#me');er.textContent='';
-    if(!d){er.textContent='Enter a number of days to add or reduce.';return;}
-    if(Math.abs(d)>3650){er.textContent='At most 3650 days at a time.';return;}
+    if(!d){er.textContent=t('Enter a number of days to add or reduce.');return;}
+    if(Math.abs(d)>3650){er.textContent=t('At most 3650 days at a time.');return;}
     try{await api(kb+'/extend',{method:'POST',idem:daysIdem,body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mtog').onclick=async()=>{try{await api(kb+'/'+(disabled?'enable':'disable'),{method:'POST'});disabled=!disabled;ov.querySelector('#mtog').textContent=disabled?'Enable':'Disable';toast(disabled?'Key disabled':'Key enabled');await refreshKeys();}catch(e){toast(e.message,1);}};
-  ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”?'))return;try{await api(kb+'/reset',{method:'POST'});toast('Usage reset');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
+  ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”?'))return;try{await api(kb+'/reset',{method:'POST'});toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#msub').onclick=async()=>{try{const r=await api(kb+'/sub',{method:'POST'});openSubSheet(k,r);}catch(e){toast(e.message,1);}};
-  ov.querySelector('#msave').onclick=async()=>{const name=ov.querySelector('#mn').value.trim();const lg=parseFloat(ov.querySelector('#ml').value||'0')||0;const mg=parseFloat(ov.querySelector('#mq').value||'0')||0;const er=ov.querySelector('#me');if(!name){er.textContent='Name cannot be empty.';return;}
+  ov.querySelector('#msave').onclick=async()=>{const name=ov.querySelector('#mn').value.trim();const lg=parseFloat(ov.querySelector('#ml').value||'0')||0;const mg=parseFloat(ov.querySelector('#mq').value||'0')||0;const er=ov.querySelector('#me');if(!name){er.textContent=t('Name cannot be empty.');return;}
     const b=ov.querySelector('#msave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{if(name!==k.name)await api(kb+'/name',{method:'PUT',body:JSON.stringify({name})});await api(kb+'/limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});
       const curMon=k.monthlyBytes?(k.monthlyBytes/1073741824):0;if(mg!==curMon)await api(kb+'/monthly',{method:'PUT',body:JSON.stringify({monthly_gb:mg})});
       const ow=ov.querySelector('#mow');
       if(ow&&ow.value!==String(k.ownerAdminId==null?'':k.ownerAdminId))
         await api(kb+'/owner',{method:'PUT',body:JSON.stringify({admin_id:ow.value===''?null:+ow.value})});
-      toast('Changes saved');closeModal();await loadAll();renderApp();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}};
-  ov.querySelector('#mdel').onclick=async()=>{if(!confirm('Delete “'+k.name+'”? This cannot be undone.'))return;try{await api(kb,{method:'DELETE'});toast('Key deleted');closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
+      toast(t('Changes saved'));closeModal();await loadAll();renderApp();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Save changes');}};
+  ov.querySelector('#mdel').onclick=async()=>{if(!confirm('Delete “'+k.name+'”? This cannot be undone.'))return;try{await api(kb,{method:'DELETE'});toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
 }
 function openSubSheet(k,info){
   const link=location.origin+info.path;const multi=S.servers.length>1;
-  const srv=multi?`<label class="lab" style="margin-top:2px">Servers in this subscription</label><div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px">${info.servers.map(s=>`<button class="chip${s.included?' sel':''}" data-subsrv="${esc(s.id)}" style="flex:none">${s.included?'✓ ':''}${esc(s.name)}</button>`).join('')}</div><p class="desc" style="font-size:12px;margin-bottom:16px">Include another server's config in this one link — handy for failover in v2ray.</p>`:'';
-  const s=openSheet(`<div class="h2">Subscription</div><p class="desc">One auto-updating link for <b>${esc(k.name)}</b>. Clients show data &amp; expiry and refresh it automatically.</p><div style="display:grid;place-items:center;margin:2px 0 16px"><div id="sq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:13px;font-size:12px;word-break:break-all;color:var(--acc)">${esc(link)}</div><div style="height:14px"></div>${srv}<button class="btn" data-act="copytext" data-text="${esc(link)}">Copy link</button><div style="height:10px"></div><button class="btn-sec" data-act="close">Done</button>`);
+  const srv=multi?`<label class="lab" style="margin-top:2px">${esc(t('Servers in this subscription'))}</label><div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px">${info.servers.map(s=>`<button class="chip${s.included?' sel':''}" data-subsrv="${esc(s.id)}" style="flex:none">${s.included?'✓ ':''}${esc(s.name)}</button>`).join('')}</div><p class="desc" style="font-size:12px;margin-bottom:16px">${esc(t('Include another server\'s config in this one link — handy for failover in v2ray.'))}</p>`:'';
+  const s=openSheet(`<div class="h2">${esc(t('Subscription'))}</div><p class="desc">One auto-updating link for <b>${esc(k.name)}</b>${esc(t('. Clients show data &amp; expiry and refresh it automatically.'))}</p><div style="display:grid;place-items:center;margin:2px 0 16px"><div id="sq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:13px;font-size:12px;word-break:break-all;color:var(--acc)">${esc(link)}</div><div style="height:14px"></div>${srv}<button class="btn" data-act="copytext" data-text="${esc(link)}">${esc(t('Copy link'))}</button><div style="height:10px"></div><button class="btn-sec" data-act="close">${esc(t('Done'))}</button>`);
   renderQR(s.querySelector('#sq'),link);
   s.querySelectorAll('[data-subsrv]').forEach(c=>c.onclick=async()=>{const tid=c.dataset.subsrv,inc=c.classList.contains('sel');c.style.opacity='.5';c.style.pointerEvents='none';try{const r=await api('/api/sub/'+info.token+'/servers/'+tid,{method:inc?'DELETE':'POST'});toast(inc?'Server removed':'Server added');await refreshKeys();openSubSheet(k,r);}catch(e){toast(e.message,1);c.style.opacity='1';c.style.pointerEvents='auto';}});
 }
 function modalConfig(k){
   let cfg=null;try{const m=(k.accessUrl||'').match(/^ss:\/\/([^@]+)@([^:\/?#]+):(\d+)/);if(m){let ui=m[1].replace(/-/g,'+').replace(/_/g,'/');while(ui.length%4)ui+='=';const dec=atob(ui),i=dec.indexOf(':');cfg={server:m[2],server_port:+m[3],method:dec.slice(0,i),password:dec.slice(i+1)};}}catch(e){}
-  if(!cfg){toast('Could not decode this key',1);return;}
+  if(!cfg){toast(t('Could not decode this key'),1);return;}
   const json=JSON.stringify({server:cfg.server,server_port:cfg.server_port,password:cfg.password,method:cfg.method},null,2);
-  openSheet(`<div class="h2">Dynamic-key config</div><p class="desc">Host this JSON at a URL and hand users a key that points to it — then you can repoint the server without redistributing keys.</p>
-    <div class="field"><label class="lab">JSON config</label><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:14px;font-size:12.5px;color:var(--acc);line-height:1.6;white-space:pre-wrap">${esc(json)}</div></div>
-    <button class="btn" data-act="copytext" data-text="${esc(json)}">Copy JSON</button><div style="height:10px"></div>
-    <button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}">Back</button>`);
+  openSheet(`<div class="h2">${esc(t('Dynamic-key config'))}</div><p class="desc">Host this JSON at a URL and hand users a key that points to it — then you can repoint the server without redistributing keys.</p>
+    <div class="field"><label class="lab">${esc(t('JSON config'))}</label><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:14px;font-size:12.5px;color:var(--acc);line-height:1.6;white-space:pre-wrap">${esc(json)}</div></div>
+    <button class="btn" data-act="copytext" data-text="${esc(json)}">${esc(t('Copy JSON'))}</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}">${esc(t('Back'))}</button>`);
 }
 function modalSettings(){
-  const rows=S.servers.map(s=>`<div class="srow" data-act="srvdetail" data-id="${esc(s.id)}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${s.reachable?'var(--acc)':'var(--danger)'};box-shadow:0 0 8px ${s.reachable?'var(--acc)':'var(--danger)'}"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(s.name)}</div><div class="mono" style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(s.host||'')}${s.version?' · v'+esc(s.version):''}${s.reachable?'':' · unreachable'}</div></div><span class="mono" style="font-size:11.5px;color:var(--faint)">${S.keys.filter(k=>k.serverId===s.id).length} keys</span><span style="color:var(--dim)">›</span></div>`).join('')||'<div class="desc">No servers yet.</div>';
-  const srow=(act,dot,title,sub)=>`<div class="srow" data-act="${act}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${dot}"></span><div style="flex:1"><div style="font-size:14px;font-weight:600">${title}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${sub}</div></div><span style="color:var(--dim)">›</span></div>`;
+  const rows=S.servers.map(s=>`<div class="srow" data-act="srvdetail" data-id="${esc(s.id)}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${s.reachable?'var(--acc)':'var(--danger)'};box-shadow:0 0 8px ${s.reachable?'var(--acc)':'var(--danger)'}"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(s.name)}</div><div class="mono" style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(s.host||'')}${s.version?' · v'+esc(s.version):''}${s.reachable?'':' · unreachable'}</div></div><span class="mono" style="font-size:11.5px;color:var(--faint)">${S.keys.filter(k=>k.serverId===s.id).length} ${esc(t('keys'))}</span><span style="color:var(--dim)">›</span></div>`).join('')||'<div class="desc">'+esc(t('No servers yet.'))+'</div>';
+  const srow=(act,dot,title,sub)=>(title=t(title),sub=t(sub),`<div class="srow" data-act="${act}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${dot}"></span><div style="flex:1"><div style="font-size:14px;font-weight:600">${title}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${sub}</div></div><span style="color:var(--dim)">›</span></div>`);
   const panel=[
-    can('bot.manage')?'<div class="srow" id="rowBot"><span class="sdot" id="botDot" style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--danger)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">Telegram bot</div><div class="mono" id="botSub" style="font-size:11.5px;color:var(--dim);margin-top:2px">Loading…</div></div><span style="color:var(--dim)">›</span></div>':'',
+    can('bot.manage')?'<div class="srow" id="rowBot"><span class="sdot" id="botDot" style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--danger)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">'+esc(t('Telegram bot'))+'</div><div class="mono" id="botSub" style="font-size:11.5px;color:var(--dim);margin-top:2px">'+esc(t('Loading…'))+'</div></div><span style="color:var(--dim)">›</span></div>':'',
     isOwner()?srow('admins','var(--acc)','Admins','Sub-admins, their servers &amp; rights'):'',
     isOwner()?srow('packages','var(--acc)','Packages','What admins on credit may sell'):'',
     isOwner()?srow('security','var(--acc)','Security','Password &amp; two-factor'):'',
@@ -679,13 +693,14 @@ function modalSettings(){
     isOwner()?srow('backup','var(--acc)','Backup &amp; restore','Download or restore all data'):'',
     // every admin can rotate their own password, not just the owner
     isOwner()?'':srow('account','var(--acc)','My account','Change your password'),
+    srow('lang','var(--acc)','Language',nextLangLabel()),
   ].filter(Boolean).join('');
-  openSheet(`<div class="h2">Servers &amp; settings</div><p class="desc">Manage your Outline servers, and configure the panel.</p>
-    ${rows}<div style="height:6px"></div>${can('servers.manage')?'<button class="btn" data-act="addserver">+ Add a server</button>':''}
-    ${panel?`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:24px 0 12px">Panel</div>${panel}`:''}`,{wide:true});
+  openSheet(`<div class="h2">${esc(t('Servers &amp; settings'))}</div><p class="desc">${esc(t('Manage your Outline servers, and configure the panel.'))}</p>
+    ${rows}<div style="height:6px"></div>${can('servers.manage')?'<button class="btn" data-act="addserver">'+esc(t('+ Add a server'))+'</button>':''}
+    ${panel?`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:24px 0 12px">${esc(t('Panel'))}</div>${panel}`:''}`,{wide:true});
   if($('#rowBot')){
     $('#rowBot').onclick=()=>modalBot();
-    api('/api/settings/bot').then(b=>{const d=$('#botDot'),su=$('#botSub');if(d)d.style.background=b.running?'var(--acc)':'var(--danger)';if(su)su.textContent=b.running?('Active · @'+(b.username||'bot')):(b.configured?'Configured · stopped':'Not configured');}).catch(()=>{});
+    api('/api/settings/bot').then(b=>{const d=$('#botDot'),su=$('#botSub');if(d)d.style.background=b.running?'var(--acc)':'var(--danger)';if(su)su.textContent=b.running?(t('Active')+' · @'+(b.username||'bot')):(b.configured?t('Configured · stopped'):t('Not configured'));}).catch(()=>{});
   }
 }
 async function _ownerPicker(ov,k){
@@ -700,18 +715,18 @@ async function _ownerPicker(ov,k){
 }
 async function _renewPicker(ov,k,kb){
   let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('#mrn').innerHTML=`<div class="err">${esc(e.message)}</div>`;return;}
-  const rows=d.packages.map(p=>_pkgRow(p,'mpk')).join('')||'<div class="desc">No packages available.</div>';
+  const rows=d.packages.map(p=>_pkgRow(p,'mpk')).join('')||'<div class="desc">'+esc(t('No packages available.'))+'</div>';
   ov.querySelector('#mrn').innerHTML=`<div class="desc" style="margin:0 0 8px">Renewing adds the package's time and data. You have <span class="mono" style="color:var(--acc)">${esc(fmtToman(d.credit))}</span>.</div>${rows}
-    <button class="btn-sec" id="mrgo" style="width:100%;margin-top:9px">Renew with this package</button>`;
+    <button class="btn-sec" id="mrgo" style="width:100%;margin-top:9px">${esc(t('Renew with this package'))}</button>`;
   const renewIdem=idemKey();   // one renewal, however many attempts
   ov.querySelector('#mrgo').onclick=async()=>{
     const pick=[...ov.querySelectorAll('.mpk')].find(x=>x.checked);
     const er=ov.querySelector('#me');er.textContent='';
-    if(!pick){er.textContent='Pick a package.';return;}
+    if(!pick){er.textContent=t('Pick a package.');return;}
     const b=ov.querySelector('#mrgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{await api(kb+'/extend',{method:'POST',idem:renewIdem,body:JSON.stringify({package_id:+pick.value})});
-      toast('Renewed');closeModal();await loadAll();renderApp();}
-    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Renew with this package';}
+      toast(t('Renewed'));closeModal();await loadAll();renderApp();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Renew with this package');}
   };
 }
 
@@ -721,7 +736,7 @@ async function _renewPicker(ov,k,kb){
 const _csvCell=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
 function exportCsv(){
   const rows=filteredKeys();
-  if(!rows.length)return toast('Nothing to export',1);
+  if(!rows.length)return toast(t('Nothing to export'),1);
   const gb=b=>b==null?'':(b/1073741824).toFixed(2);
   const iso=t=>t?new Date(t*1000).toISOString().slice(0,10):'';
   // no accessUrl: this file lands in Downloads, and it would be every user's key
@@ -750,12 +765,12 @@ async function renderAdmins(){
   const count=a=>S.keys.filter(k=>a.isOwner?k.ownerAdminId==null:k.ownerAdminId===a.id).length;
   const rows=d.admins.map(a=>{
     const n=count(a);
-    const where=a.isOwner?'All servers':a.servers.map(id=>{const sv=S.servers.find(x=>x.id===id);return sv?sv.name:id;}).join(', ');
+    const where=a.isOwner?t('All servers'):a.servers.map(id=>{const sv=S.servers.find(x=>x.id===id);return sv?sv.name:id;}).join(', ');
     return `<div class="card" style="padding:15px;margin-bottom:11px">
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
         <span style="width:9px;height:9px;border-radius:50%;flex:none;background:${a.disabled?'var(--danger)':'var(--acc)'}"></span>
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:15px">${esc(a.username)}${a.isOwner?' <span class="mono" style="font-size:10px;color:var(--faint)">OWNER</span>':''}${a.disabled?' <span class="mono" style="font-size:10px;color:var(--danger)">DISABLED</span>':''}</div>
+          <div style="font-weight:700;font-size:15px">${esc(a.username)}${a.isOwner?' <span class="mono" style="font-size:10px;color:var(--faint)">'+esc(t('OWNER'))+'</span>':''}${a.disabled?' <span class="mono" style="font-size:10px;color:var(--danger)">'+esc(t('DISABLED'))+'</span>':''}</div>
           <div class="mono" style="font-size:11.5px;color:var(--dim);margin-top:3px">${esc(where)}${a.creditEnabled&&a.discountPct?' · '+a.discountPct+'% off':''}</div>
         </div>
         <div style="text-align:right">
@@ -764,33 +779,33 @@ async function renderAdmins(){
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-        <button class="btn-sec" data-act="adminfilter" data-id="${a.isOwner?'owner':a.id}" style="width:auto;padding:8px 13px;font-size:12.5px">See their users</button>
-        ${a.creditEnabled?`<button class="btn-sec" data-act="adminledger" data-id="${a.id}" data-name="${esc(a.username)}" style="width:auto;padding:8px 13px;font-size:12.5px">Statement</button>`:''}
-        ${a.isOwner?'':`<button class="btn-sec" data-act="adminedit" data-id="${a.id}" style="width:auto;padding:8px 13px;font-size:12.5px">Manage</button>`}
+        <button class="btn-sec" data-act="adminfilter" data-id="${a.isOwner?'owner':a.id}" style="width:auto;padding:8px 13px;font-size:12.5px">${esc(t('See their users'))}</button>
+        ${a.creditEnabled?`<button class="btn-sec" data-act="adminledger" data-id="${a.id}" data-name="${esc(a.username)}" style="width:auto;padding:8px 13px;font-size:12.5px">${esc(t('Statement'))}</button>`:''}
+        ${a.isOwner?'':`<button class="btn-sec" data-act="adminedit" data-id="${a.id}" style="width:auto;padding:8px 13px;font-size:12.5px">${esc(t('Manage'))}</button>`}
       </div></div>`;
   }).join('');
-  el.innerHTML=rows+'<div style="height:6px"></div><button class="btn" data-act="adminadd">+ Add an admin</button>';
+  el.innerHTML=rows+'<div style="height:6px"></div><button class="btn" data-act="adminadd">'+esc(t('+ Add an admin'))+'</button>';
 }
 
 /* ---------- packages (owner defines, admins buy) ---------- */
 const fmtToman=n=>Number(n||0).toLocaleString('en-US')+' T';
-const pkgSize=p=>p.gb==null?'Unlimited data':(p.gb+' GB');
-const pkgTerm=p=>p.days?(p.days+' days'):'No expiry';
+const pkgSize=p=>p.gb==null?t('Unlimited data'):(p.gb+' '+t('GB'));
+const pkgTerm=p=>p.days?(p.days+' '+t('days')):t('No expiry');
 async function modalPackages(){
-  const ov=openSheet('<div class="h2">Packages</div><p class="desc">Loading…</p>',{wide:true});
-  let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">Packages</div><p class="err">${esc(e.message)}</p><button class="btn-sec" data-act="settings">Back</button>`;return;}
-  const rows=d.packages.map(p=>`<div class="srow" data-act="pkgedit" data-id="${p.id}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--acc)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(pkgSize(p))} · ${esc(pkgTerm(p))}${p.monthlyGb?' · '+p.monthlyGb+' GB/month':''}</div></div><span class="mono" style="font-size:12px;color:var(--acc)">${esc(fmtToman(p.basePrice))}</span><span style="color:var(--dim)">›</span></div>`).join('')||'<div class="desc">No packages yet. Admins on credit cannot sell until you add one.</div>';
-  ov.querySelector('.sheet').innerHTML=`<div class="h2">Packages</div><p class="desc">What your admins may sell. They pay the price out of their credit; each admin's discount applies on top.</p>
-    ${rows}<div style="height:6px"></div><button class="btn" data-act="pkgadd">+ Add a package</button>
-    <div style="height:10px"></div><button class="btn-sec" data-act="settings">Back</button>`;
+  const ov=openSheet('<div class="h2">'+esc(t('Packages'))+'</div><p class="desc">'+esc(t('Loading…'))+'</p>',{wide:true});
+  let d;try{d=await api('/api/packages');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Packages'))}</div><p class="err">${esc(e.message)}</p><button class="btn-sec" data-act="settings">${esc(t('Back'))}</button>`;return;}
+  const rows=d.packages.map(p=>`<div class="srow" data-act="pkgedit" data-id="${p.id}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:var(--acc)"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(p.name)}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(pkgSize(p))} · ${esc(pkgTerm(p))}${p.monthlyGb?' · '+p.monthlyGb+' '+t('GB/month'):''}</div></div><span class="mono" style="font-size:12px;color:var(--acc)">${esc(fmtToman(p.basePrice))}</span><span style="color:var(--dim)">›</span></div>`).join('')||'<div class="desc">'+esc(t('No packages yet. Admins on credit cannot sell until you add one.'))+'</div>';
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Packages'))}</div><p class="desc">What your admins may sell. They pay the price out of their credit; each admin's discount applies on top.</p>
+    ${rows}<div style="height:6px"></div><button class="btn" data-act="pkgadd">${esc(t('+ Add a package'))}</button>
+    <div style="height:10px"></div><button class="btn-sec" data-act="settings">${esc(t('Back'))}</button>`;
 }
 function _pkgForm(p){
-  return `<div class="field"><label class="lab">Name</label><input id="pn" class="inp" value="${p?esc(p.name):''}" placeholder="e.g. 5 GB · 1 month" /></div>
+  return `<div class="field"><label class="lab">${esc(t('Name'))}</label><input id="pn" class="inp" value="${p?esc(p.name):''}" placeholder="${esc(t('e.g. 5 GB · 1 month'))}" /></div>
     <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
-      <div class="field"><label class="lab">Data · GB (0 = unlimited)</label><input id="pg" class="inp" type="number" min="0" step="0.5" value="${p&&p.gb!=null?p.gb:''}" placeholder="0 = unlimited" /></div>
-      <div class="field"><label class="lab">Days (0 = no expiry)</label><input id="pd" class="inp" type="number" min="0" value="${p&&p.days?p.days:''}" placeholder="0 = no expiry" /></div></div>
-    <div class="field"><label class="lab">Monthly quota · GB (0 = off)</label><input id="pm" class="inp" type="number" min="0" step="0.5" value="${p&&p.monthlyGb?p.monthlyGb:''}" placeholder="Auto-renew off" /></div>
-    <div class="field"><label class="lab">Price · Toman</label><input id="pp" class="inp" type="number" min="0" value="${p?p.basePrice:''}" placeholder="e.g. 30000" /></div>
+      <div class="field"><label class="lab">${esc(t('Data · GB (0 = unlimited)'))}</label><input id="pg" class="inp" type="number" min="0" step="0.5" value="${p&&p.gb!=null?p.gb:''}" placeholder="${esc(t('0 = unlimited'))}" /></div>
+      <div class="field"><label class="lab">${esc(t('Days (0 = no expiry)'))}</label><input id="pd" class="inp" type="number" min="0" value="${p&&p.days?p.days:''}" placeholder="${esc(t('0 = no expiry'))}" /></div></div>
+    <div class="field"><label class="lab">${esc(t('Monthly quota · GB (0 = off)'))}</label><input id="pm" class="inp" type="number" min="0" step="0.5" value="${p&&p.monthlyGb?p.monthlyGb:''}" placeholder="${esc(t('Auto-renew off'))}" /></div>
+    <div class="field"><label class="lab">${esc(t('Price · Toman'))}</label><input id="pp" class="inp" type="number" min="0" value="${p?p.basePrice:''}" placeholder="${esc(t('e.g. 30000'))}" /></div>
     <div id="perr" class="err"></div>`;
 }
 function _pkgBody(ov){
@@ -800,35 +815,35 @@ function _pkgBody(ov){
           monthly_gb:num('#pm')||null,price:parseInt(ov.querySelector('#pp').value||'0',10)||0};
 }
 async function modalPackageAdd(){
-  const ov=openSheet(`<div class="h2">Add a package</div><p class="desc">Leave data or days at 0 for unlimited.</p>
-    ${_pkgForm(null)}<button class="btn" id="pgo">Create package</button><div style="height:10px"></div>
-    <button class="btn-sec" data-act="packages">Cancel</button>`,{wide:true});
+  const ov=openSheet(`<div class="h2">${esc(t('Add a package'))}</div><p class="desc">${esc(t('Leave data or days at 0 for unlimited.'))}</p>
+    ${_pkgForm(null)}<button class="btn" id="pgo">${esc(t('Create package'))}</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="packages">${esc(t('Cancel'))}</button>`,{wide:true});
   ov.querySelector('#pn').focus();
   ov.querySelector('#pgo').onclick=async()=>{
     const b=_pkgBody(ov),er=ov.querySelector('#perr');er.textContent='';
     if(!b.name){er.textContent='Enter a name.';return;}
     const btn=ov.querySelector('#pgo');btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
-    try{await api('/api/packages',{method:'POST',body:JSON.stringify(b)});toast('Package added');modalPackages();}
-    catch(e){er.textContent=e.message;btn.disabled=false;btn.textContent='Create package';}
+    try{await api('/api/packages',{method:'POST',body:JSON.stringify(b)});toast(t('Package added'));modalPackages();}
+    catch(e){er.textContent=e.message;btn.disabled=false;btn.textContent=t('Create package');}
   };
 }
 async function modalPackageEdit(id){
   const d=await api('/api/packages');const p=d.packages.find(x=>String(x.id)===String(id));
   if(!p)return modalPackages();
-  const ov=openSheet(`<div class="h2">${esc(p.name)}</div><p class="desc">Editing the price does not change what was already sold.</p>
-    ${_pkgForm(p)}<button class="btn" id="pgo">Save changes</button><div style="height:10px"></div>
-    <button class="btn-sec" data-act="packages">Back</button><div style="height:10px"></div>
-    <button class="btn-danger" id="pdel">Delete package</button>`,{wide:true});
+  const ov=openSheet(`<div class="h2">${esc(p.name)}</div><p class="desc">${esc(t('Editing the price does not change what was already sold.'))}</p>
+    ${_pkgForm(p)}<button class="btn" id="pgo">${esc(t('Save changes'))}</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="packages">${esc(t('Back'))}</button><div style="height:10px"></div>
+    <button class="btn-danger" id="pdel">${esc(t('Delete package'))}</button>`,{wide:true});
   ov.querySelector('#pgo').onclick=async()=>{
     const b=_pkgBody(ov),er=ov.querySelector('#perr');er.textContent='';
     if(!b.name){er.textContent='Enter a name.';return;}
     const btn=ov.querySelector('#pgo');btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
-    try{await api('/api/packages/'+p.id,{method:'PUT',body:JSON.stringify(b)});toast('Saved');modalPackages();}
-    catch(e){er.textContent=e.message;btn.disabled=false;btn.textContent='Save changes';}
+    try{await api('/api/packages/'+p.id,{method:'PUT',body:JSON.stringify(b)});toast(t('Saved'));modalPackages();}
+    catch(e){er.textContent=e.message;btn.disabled=false;btn.textContent=t('Save changes');}
   };
   ov.querySelector('#pdel').onclick=async()=>{
     if(!confirm('Delete “'+p.name+'”? Past sales keep their history.'))return;
-    try{await api('/api/packages/'+p.id,{method:'DELETE'});toast('Package deleted');modalPackages();}
+    try{await api('/api/packages/'+p.id,{method:'DELETE'});toast(t('Package deleted'));modalPackages();}
     catch(e){toast(e.message,1);}
   };
 }
@@ -836,14 +851,14 @@ async function modalPackageEdit(id){
 const LEDGER_LABEL={topup:'Credit added',purchase:'Sold',reversal:'Refunded (sale failed)',adjust:'Correction'};
 async function modalLedger(adminId,who){
   const url=adminId?('/api/admins/'+adminId+'/ledger'):'/api/me/ledger';
-  const ov=openSheet('<div class="h2">Statement</div><p class="desc">Loading…</p>',{wide:true});
-  let d;try{d=await api(url);}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">Statement</div><p class="err">${esc(e.message)}</p>`;return;}
+  const ov=openSheet('<div class="h2">'+esc(t('Statement'))+'</div><p class="desc">'+esc(t('Loading…'))+'</p>',{wide:true});
+  let d;try{d=await api(url);}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Statement'))}</div><p class="err">${esc(e.message)}</p>`;return;}
   const rows=d.entries.map(e=>{
     const up=e.delta>0;
     return `<div class="srow" style="cursor:default"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${up?'var(--acc)':'var(--dim)'}"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">${esc(LEDGER_LABEL[e.reason]||e.reason)}${e.package_name?' · '+esc(e.package_name):''}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(fmtDate(e.created_ts))}${e.key_id?' · user #'+esc(e.key_id):''}${e.note?' · '+esc(e.note):''}</div></div><div style="text-align:right"><div class="mono" style="font-size:12.5px;color:${up?'var(--ok,var(--acc))':'var(--text)'}">${up?'+':''}${esc(fmtToman(e.delta))}</div><div class="mono" style="font-size:11px;color:var(--faint);margin-top:2px">${esc(fmtToman(e.balance_after))}</div></div></div>`;
-  }).join('')||'<div class="desc">Nothing yet.</div>';
-  ov.querySelector('.sheet').innerHTML=`<div class="h2">Statement</div><p class="desc">${who?'Every movement of '+esc(who)+'’s credit.':'Every movement of your credit.'}</p>
-    ${rows}<div style="height:10px"></div><button class="btn-sec" data-act="${adminId?'adminedit':'close'}" ${adminId?`data-id="${adminId}"`:''}>Back</button>`;
+  }).join('')||'<div class="desc">'+esc(t('Nothing yet.'))+'</div>';
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Statement'))}</div><p class="desc">${who?'Every movement of '+esc(who)+'’s credit.':'Every movement of your credit.'}</p>
+    ${rows}<div style="height:10px"></div><button class="btn-sec" data-act="${adminId?'adminedit':'close'}" ${adminId?`data-id="${adminId}"`:''}>${esc(t('Back'))}</button>`;
 }
 
 /* ---------- admins (owner only) ---------- */
@@ -851,39 +866,39 @@ const CAP_LABELS={'keys.view':'See users & stats','keys.create':'Create users',
   'keys.edit':'Edit users','keys.delete':'Delete users',
   'servers.manage':'Manage servers','bot.manage':'Telegram bot'};
 async function modalAdmins(){
-  const ov=openSheet('<div class="h2">Admins</div><p class="desc">Loading…</p>',{wide:true});
-  let d;try{d=await api('/api/admins');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">Admins</div><p class="err">${esc(e.message)}</p><button class="btn-sec" data-act="settings">Back</button>`;return;}
+  const ov=openSheet('<div class="h2">'+esc(t('Admins'))+'</div><p class="desc">'+esc(t('Loading…'))+'</p>',{wide:true});
+  let d;try{d=await api('/api/admins');}catch(e){ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Admins'))}</div><p class="err">${esc(e.message)}</p><button class="btn-sec" data-act="settings">${esc(t('Back'))}</button>`;return;}
   const rows=d.admins.map(a=>{
-    const sub=a.isOwner?'Full access to everything'
-      :(a.servers.map(id=>{const s=(d.servers.find(x=>x.id===id)||{});return s.name||id;}).join(', ')+' · '+(a.caps.length?a.caps.length+' right'+(a.caps.length>1?'s':''):'no rights'));
-    return `<div class="srow" ${a.isOwner?'':`data-act="adminedit" data-id="${a.id}"`} style="${a.isOwner?'cursor:default':''}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${a.disabled?'var(--danger)':'var(--acc)'}"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(a.username)}${a.isOwner?' <span class="mono" style="font-size:10px;color:var(--faint)">OWNER</span>':''}${a.disabled?' <span class="mono" style="font-size:10px;color:var(--danger)">DISABLED</span>':''}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(sub)}</div></div>${a.isOwner?'':'<span style="color:var(--dim)">›</span>'}</div>`;
+    const sub=a.isOwner?t('Full access to everything')
+      :(a.servers.map(id=>{const s=(d.servers.find(x=>x.id===id)||{});return s.name||id;}).join('، ')+' · '+(a.caps.length?a.caps.length+' '+t('rights'):t('no rights')));
+    return `<div class="srow" ${a.isOwner?'':`data-act="adminedit" data-id="${a.id}"`} style="${a.isOwner?'cursor:default':''}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${a.disabled?'var(--danger)':'var(--acc)'}"></span><div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:600">${esc(a.username)}${a.isOwner?' <span class="mono" style="font-size:10px;color:var(--faint)">'+esc(t('OWNER'))+'</span>':''}${a.disabled?' <span class="mono" style="font-size:10px;color:var(--danger)">'+esc(t('DISABLED'))+'</span>':''}</div><div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(sub)}</div></div>${a.isOwner?'':'<span style="color:var(--dim)">›</span>'}</div>`;
   }).join('');
-  ov.querySelector('.sheet').innerHTML=`<div class="h2">Admins</div><p class="desc">Give someone a login limited to certain servers and rights. The owner always keeps full access.</p>
-    ${rows}<div style="height:6px"></div><button class="btn" data-act="adminadd">+ Add an admin</button>
-    <div style="height:10px"></div><button class="btn-sec" data-act="settings">Back</button>`;
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Admins'))}</div><p class="desc">${esc(t('Give someone a login limited to certain servers and rights. The owner always keeps full access.'))}</p>
+    ${rows}<div style="height:6px"></div><button class="btn" data-act="adminadd">${esc(t('+ Add an admin'))}</button>
+    <div style="height:10px"></div><button class="btn-sec" data-act="settings">${esc(t('Back'))}</button>`;
 }
 function _adminForm(d,a){
-  const servers=d.servers.map(s=>`<label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" class="asrv" value="${esc(s.id)}" ${a&&a.servers.includes(s.id)?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">${esc(s.name)}</span></label>`).join('')||'<div class="desc">No servers yet.</div>';
+  const servers=d.servers.map(s=>`<label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" class="asrv" value="${esc(s.id)}" ${a&&a.servers.includes(s.id)?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">${esc(s.name)}</span></label>`).join('')||'<div class="desc">'+esc(t('No servers yet.'))+'</div>';
   const caps=d.caps.map(c=>`<label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" class="acap" value="${esc(c)}" ${a&&a.caps.includes(c)?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">${esc(CAP_LABELS[c]||c)}</span></label>`).join('');
-  return `<div class="field"><label class="lab">Username</label><input id="aun" class="inp" ${a?`value="${esc(a.username)}" disabled`:'placeholder="e.g. sara"'} autocapitalize="off" spellcheck="false" /></div>
+  return `<div class="field"><label class="lab">${esc(t('Username'))}</label><input id="aun" class="inp" ${a?`value="${esc(a.username)}" disabled`:'placeholder="'+esc(t('e.g. sara'))+'"'} autocapitalize="off" spellcheck="false" /></div>
     <div class="field"><label class="lab">Password${a?' (leave blank to keep)':''}</label><input id="apw" class="inp" type="password" placeholder="${a?'••••••••':'At least 6 characters'}" autocomplete="new-password" /></div>
-    <div class="field"><label class="lab">Servers they can use</label>${servers}</div>
-    <div class="field"><label class="lab">What they can do</label>${caps}</div>
-    <div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="acr" ${a&&a.creditEnabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">Sell from packages, on credit<div style="font-size:11.5px;color:var(--dim);margin-top:2px">Off: they create users freely, like today.</div></span></label></div>
-    <div class="field"><label class="lab">Telegram ID <span style="color:var(--faint);font-weight:400">(optional)</span></label><input id="atg" class="inp" type="number" value="${a&&a.telegramId?a.telegramId:''}" placeholder="They get it by sending /id to the bot" /><div class="desc" style="margin-top:7px;font-size:11.5px">Links their Telegram to this account, so the bot and Mini App give them exactly these rights.</div></div>
+    <div class="field"><label class="lab">${esc(t('Servers they can use'))}</label>${servers}</div>
+    <div class="field"><label class="lab">${esc(t('What they can do'))}</label>${caps}</div>
+    <div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="acr" ${a&&a.creditEnabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">${esc(t('Sell from packages, on credit'))}<div style="font-size:11.5px;color:var(--dim);margin-top:2px">${esc(t('Off: they create users freely, like today.'))}</div></span></label></div>
+    <div class="field"><label class="lab">Telegram ID <span style="color:var(--faint);font-weight:400">${esc(t('(optional)'))}</span></label><input id="atg" class="inp" type="number" value="${a&&a.telegramId?a.telegramId:''}" placeholder="${esc(t('They get it by sending /id to the bot'))}" /><div class="desc" style="margin-top:7px;font-size:11.5px">Links their Telegram to this account, so the bot and Mini App give them exactly these rights.</div></div>
     <div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:11px">
-      <div class="field"><label class="lab">Discount %</label><input id="adsc" class="inp" type="number" min="0" max="100" value="${a?a.discountPct:0}" /></div>
+      <div class="field"><label class="lab">${esc(t('Discount %'))}</label><input id="adsc" class="inp" type="number" min="0" max="100" value="${a?a.discountPct:0}" /></div>
       <div class="field"><label class="lab">${a?'Balance':'Opening credit · Toman'}</label>${a?`<div class="inp mono" style="display:flex;align-items:center;color:var(--acc)">${esc(fmtToman(a.credit))}</div>`:'<input id="acrd" class="inp" type="number" min="0" placeholder="0" />'}</div></div>
-    ${a?`<div class="field"><label class="lab">Add or correct credit · Toman</label><div style="display:flex;gap:8px"><input id="atop" class="inp" type="number" placeholder="e.g. 500000 or -50000" /><button class="btn-sec" id="atopgo" style="width:auto;padding:0 18px">Apply</button></div><div class="desc" style="margin-top:7px;font-size:11.5px">Every change is recorded. <a id="aledger" style="color:var(--acc);cursor:pointer">See statement</a></div></div>`:''}
-    ${a?`<div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="adis" ${a.disabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">Disabled (signs them out immediately)</span></label></div>`:''}
+    ${a?`<div class="field"><label class="lab">${esc(t('Add or correct credit · Toman'))}</label><div style="display:flex;gap:8px"><input id="atop" class="inp" type="number" placeholder="${esc(t('e.g. 500000 or -50000'))}" /><button class="btn-sec" id="atopgo" style="width:auto;padding:0 18px">${esc(t('Apply'))}</button></div><div class="desc" style="margin-top:7px;font-size:11.5px">Every change is recorded. <a id="aledger" style="color:var(--acc);cursor:pointer">${esc(t('See statement'))}</a></div></div>`:''}
+    ${a?`<div class="field"><label class="srow" style="cursor:pointer;padding:11px 13px"><input type="checkbox" id="adis" ${a.disabled?'checked':''} style="width:17px;height:17px;accent-color:var(--acc)" /><span style="flex:1;font-size:13.5px">${esc(t('Disabled (signs them out immediately)'))}</span></label></div>`:''}
     <div id="aerr" class="err"></div>`;
 }
 const _picked=(ov,cls)=>[...ov.querySelectorAll('.'+cls)].filter(x=>x.checked).map(x=>x.value);
 async function modalAdminAdd(){
   const d=await api('/api/admins');
-  const ov=openSheet(`<div class="h2">Add an admin</div><p class="desc">They sign in with this username and password.</p>
-    ${_adminForm(d,null)}<button class="btn" id="ago">Create admin</button><div style="height:10px"></div>
-    <button class="btn-sec" data-act="admins">Cancel</button>`,{wide:true});
+  const ov=openSheet(`<div class="h2">${esc(t('Add an admin'))}</div><p class="desc">${esc(t('They sign in with this username and password.'))}</p>
+    ${_adminForm(d,null)}<button class="btn" id="ago">${esc(t('Create admin'))}</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="admins">${esc(t('Cancel'))}</button>`,{wide:true});
   ov.querySelector('#aun').focus();
   ov.querySelector('#ago').onclick=async()=>{
     const er=ov.querySelector('#aerr');er.textContent='';
@@ -893,22 +908,22 @@ async function modalAdminAdd(){
                 discount_pct:parseInt(ov.querySelector('#adsc').value||'0',10)||0,
                 credit:parseInt(ov.querySelector('#acrd').value||'0',10)||0,
                 telegram_id:parseInt(ov.querySelector('#atg').value||'0',10)||null};
-    if(!body.username){er.textContent='Enter a username.';return;}
-    if(body.password.length<6){er.textContent='Password must be at least 6 characters.';return;}
-    if(!body.servers.length){er.textContent='Pick at least one server.';return;}
+    if(!body.username){er.textContent=t('Enter a username.');return;}
+    if(body.password.length<6){er.textContent=t('Password must be at least 6 characters.');return;}
+    if(!body.servers.length){er.textContent=t('Pick at least one server.');return;}
     const b=ov.querySelector('#ago');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{await api('/api/admins',{method:'POST',body:JSON.stringify(body)});toast('Admin created');modalAdmins();}
-    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Create admin';}
+    try{await api('/api/admins',{method:'POST',body:JSON.stringify(body)});toast(t('Admin created'));modalAdmins();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Create admin');}
   };
 }
 async function modalAdminEdit(id){
   const d=await api('/api/admins');
   const a=d.admins.find(x=>String(x.id)===String(id));
   if(!a)return modalAdmins();
-  const ov=openSheet(`<div class="h2">${esc(a.username)}</div><p class="desc">Changes apply immediately, on their next request.</p>
-    ${_adminForm(d,a)}<button class="btn" id="ago">Save changes</button><div style="height:10px"></div>
-    <button class="btn-sec" data-act="admins">Back</button><div style="height:10px"></div>
-    <button class="btn-danger" id="adel">Delete admin</button>`,{wide:true});
+  const ov=openSheet(`<div class="h2">${esc(a.username)}</div><p class="desc">${esc(t('Changes apply immediately, on their next request.'))}</p>
+    ${_adminForm(d,a)}<button class="btn" id="ago">${esc(t('Save changes'))}</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="admins">${esc(t('Back'))}</button><div style="height:10px"></div>
+    <button class="btn-danger" id="adel">${esc(t('Delete admin'))}</button>`,{wide:true});
   ov.querySelector('#ago').onclick=async()=>{
     const er=ov.querySelector('#aerr');er.textContent='';
     const pw=ov.querySelector('#apw').value;
@@ -917,141 +932,149 @@ async function modalAdminEdit(id){
                 credit_enabled:ov.querySelector('#acr').checked,
                 discount_pct:parseInt(ov.querySelector('#adsc').value||'0',10)||0,
                 telegram_id:parseInt(ov.querySelector('#atg').value||'0',10)||null};
-    if(pw){if(pw.length<6){er.textContent='Password must be at least 6 characters.';return;}body.password=pw;}
-    if(!body.servers.length){er.textContent='Pick at least one server.';return;}
+    if(pw){if(pw.length<6){er.textContent=t('Password must be at least 6 characters.');return;}body.password=pw;}
+    if(!body.servers.length){er.textContent=t('Pick at least one server.');return;}
     const b=ov.querySelector('#ago');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{await api('/api/admins/'+a.id,{method:'PUT',body:JSON.stringify(body)});toast('Saved');modalAdmins();}
-    catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save changes';}
+    try{await api('/api/admins/'+a.id,{method:'PUT',body:JSON.stringify(body)});toast(t('Saved'));modalAdmins();}
+    catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Save changes');}
   };
   ov.querySelector('#atopgo').onclick=async()=>{
     const d2=parseInt(ov.querySelector('#atop').value||'0',10)||0;
     const er=ov.querySelector('#aerr');er.textContent='';
-    if(!d2){er.textContent='Enter an amount to add (or a negative one to correct).';return;}
+    if(!d2){er.textContent=t('Enter an amount to add (or a negative one to correct).');return;}
     try{await api('/api/admins/'+a.id+'/credit',{method:'POST',body:JSON.stringify({delta:d2,note:''})});
-      toast('Credit updated');modalAdminEdit(a.id);}catch(e){er.textContent=e.message;}
+      toast(t('Credit updated'));modalAdminEdit(a.id);}catch(e){er.textContent=e.message;}
   };
   ov.querySelector('#aledger').onclick=()=>modalLedger(a.id,a.username);
   ov.querySelector('#adel').onclick=async()=>{
     if(!confirm('Delete “'+a.username+'”? They are signed out immediately.'))return;
-    try{await api('/api/admins/'+a.id,{method:'DELETE'});toast('Admin deleted');modalAdmins();}
+    try{await api('/api/admins/'+a.id,{method:'DELETE'});toast(t('Admin deleted'));modalAdmins();}
     catch(e){toast(e.message,1);}
   };
 }
 function modalAddServer(){
-  const ov=openSheet(`<div class="h2">Add a server</div><p class="desc">Paste the API URL, or the full Outline Manager access config (JSON with apiUrl and certSha256).</p>
-    <div class="field"><label class="lab">Label</label><input id="an" class="inp" placeholder="e.g. Sweden · Hetzner" /></div>
-    <div class="field"><label class="lab">API URL or access config</label><textarea id="au" class="inp" placeholder='https://1.2.3.4:1234/xxxx   —or—   {"apiUrl":"…","certSha256":"…"}'></textarea></div>
-    <div id="ae" class="err"></div><button class="btn" id="ago">Connect &amp; add</button><div style="height:10px"></div><button class="btn-sec" data-act="settings">Cancel</button>`);
+  const ov=openSheet(`<div class="h2">${esc(t('Add a server'))}</div><p class="desc">Paste the API URL, or the full Outline Manager access config (JSON with apiUrl and certSha256).</p>
+    <div class="field"><label class="lab">${esc(t('Label'))}</label><input id="an" class="inp" placeholder="${esc(t('e.g. Sweden · Hetzner'))}" /></div>
+    <div class="field"><label class="lab">${esc(t('API URL or access config'))}</label><textarea id="au" class="inp" placeholder='https://1.2.3.4:1234/xxxx   —or—   {"apiUrl":"…","certSha256":"…"}'></textarea></div>
+    <div id="ae" class="err"></div><button class="btn" id="ago">${esc(t('Connect &amp; add'))}</button><div style="height:10px"></div><button class="btn-sec" data-act="settings">${esc(t('Cancel'))}</button>`);
   ov.querySelector('#an').focus();
-  ov.querySelector('#ago').onclick=async()=>{const name=ov.querySelector('#an').value.trim();const apiUrl=ov.querySelector('#au').value.trim();const er=ov.querySelector('#ae');if(!name){er.textContent='Enter a label.';return;}if(!apiUrl){er.textContent='Paste the API URL.';return;}
+  ov.querySelector('#ago').onclick=async()=>{const name=ov.querySelector('#an').value.trim();const apiUrl=ov.querySelector('#au').value.trim();const er=ov.querySelector('#ae');if(!name){er.textContent=t('Enter a label.');return;}if(!apiUrl){er.textContent=t('Paste the API URL.');return;}
     const b=ov.querySelector('#ago');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{await api('/api/servers',{method:'POST',body:JSON.stringify({name,apiUrl})});toast('Server connected');await loadAll();renderApp();modalSettings();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Connect & add';}};
+    try{await api('/api/servers',{method:'POST',body:JSON.stringify({name,apiUrl})});toast(t('Server connected'));await loadAll();renderApp();modalSettings();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Connect & add');}};
 }
 async function modalServerDetail(s){
-  const ov=openSheet(`<div class="h2">${esc(s.name)}</div><p class="desc">Loading…</p>`);
+  const ov=openSheet(`<div class="h2">${esc(s.name)}</div><p class="desc">${esc(t('Loading…'))}</p>`);
   let st;try{st=await api('/api/servers/'+s.id+'/settings');}catch(e){ov.querySelector('.desc').textContent=e.message;return;}
   const gl=st.globalLimit?(st.globalLimit/1073741824):'';
   ov.querySelector('.sheet').innerHTML=`${innerWidth<720?'<div class="grip"></div>':''}<div class="h2">${esc(s.name)}</div><p class="mono desc" style="font-size:13px">${esc(st.host||'')}${st.version?' · Outline v'+esc(st.version):''}</p>
-    <div class="field"><label class="lab">Label (shown in this panel)</label><input id="dl" class="inp" value="${esc(s.name)}" /></div>
-    <div class="field"><label class="lab">Outline server name</label><input id="dn" class="inp" value="${esc(st.name||'')}" /></div>
-    <div class="field"><label class="lab">Default data limit · all keys · GB</label><input id="dg" class="inp" type="number" min="0" value="${gl}" placeholder="No global limit" /></div>
-    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">Metrics sharing</label><div style="font-size:12px;color:var(--dim);max-width:220px">Live bandwidth, online users &amp; ISP locations.</div></div><div class="toggle ${st.metricsEnabled?'on':''}" id="dm"><div class="tk"></div><div class="kn"></div></div></div></div>
-    <div id="de" class="err"></div>${can('servers.manage')?'<button class="btn" id="dsave">Save</button><div style="height:10px"></div><button class="btn-danger" id="drm">Remove this server</button>':'<div class="desc">You can see this server but not change it.</div>'}`;
+    <div class="field"><label class="lab">${esc(t('Label (shown in this panel)'))}</label><input id="dl" class="inp" value="${esc(s.name)}" /></div>
+    <div class="field"><label class="lab">${esc(t('Outline server name'))}</label><input id="dn" class="inp" value="${esc(st.name||'')}" /></div>
+    <div class="field"><label class="lab">${esc(t('Default data limit · all keys · GB'))}</label><input id="dg" class="inp" type="number" min="0" value="${gl}" placeholder="${esc(t('No global limit'))}" /></div>
+    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">${esc(t('Metrics sharing'))}</label><div style="font-size:12px;color:var(--dim);max-width:220px">${esc(t('Live bandwidth, online users &amp; ISP locations.'))}</div></div><div class="toggle ${st.metricsEnabled?'on':''}" id="dm"><div class="tk"></div><div class="kn"></div></div></div></div>
+    <div id="de" class="err"></div>${can('servers.manage')?'<button class="btn" id="dsave">'+esc(t('Save'))+'</button><div style="height:10px"></div><button class="btn-danger" id="drm">'+esc(t('Remove this server'))+'</button>':'<div class="desc">'+esc(t('You can see this server but not change it.'))+'</div>'}`;
   if(!can('servers.manage'))return;   // nothing below is reachable for them
   let metrics=!!st.metricsEnabled;const tg=ov.querySelector('#dm');
   tg.onclick=async()=>{metrics=!metrics;tg.classList.toggle('on',metrics);try{await api('/api/servers/'+s.id+'/settings/metrics',{method:'PUT',body:JSON.stringify({enabled:metrics})});toast('Metrics '+(metrics?'enabled':'disabled'));}catch(e){toast(e.message,1);metrics=!metrics;tg.classList.toggle('on',metrics);}};
   ov.querySelector('#dsave').onclick=async()=>{const label=ov.querySelector('#dl').value.trim();const oname=ov.querySelector('#dn').value.trim();const lg=parseFloat(ov.querySelector('#dg').value||'0')||0;const b=ov.querySelector('#dsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';const er=ov.querySelector('#de');
-    try{if(label&&label!==s.name)await api('/api/servers/'+s.id,{method:'PUT',body:JSON.stringify({name:label})});if(oname&&oname!==st.name)await api('/api/servers/'+s.id+'/settings/name',{method:'PUT',body:JSON.stringify({name:oname})});await api('/api/servers/'+s.id+'/settings/global-limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});toast('Saved');await loadAll();renderApp();modalSettings();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save';}};
-  ov.querySelector('#drm').onclick=async()=>{if(!confirm('Remove “'+s.name+'” from this panel? (The Outline server itself is not deleted.)'))return;try{await api('/api/servers/'+s.id,{method:'DELETE'});toast('Server removed');await loadAll();renderApp();modalSettings();}catch(e){toast(e.message,1);}};
+    try{if(label&&label!==s.name)await api('/api/servers/'+s.id,{method:'PUT',body:JSON.stringify({name:label})});if(oname&&oname!==st.name)await api('/api/servers/'+s.id+'/settings/name',{method:'PUT',body:JSON.stringify({name:oname})});await api('/api/servers/'+s.id+'/settings/global-limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});toast(t('Saved'));await loadAll();renderApp();modalSettings();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Save');}};
+  ov.querySelector('#drm').onclick=async()=>{if(!confirm('Remove “'+s.name+'” from this panel? (The Outline server itself is not deleted.)'))return;try{await api('/api/servers/'+s.id,{method:'DELETE'});toast(t('Server removed'));await loadAll();renderApp();modalSettings();}catch(e){toast(e.message,1);}};
 }
 function modalBot(){
-  const ov=openSheet(`<div class="h2">Telegram bot</div><p class="desc">Paste your bot token from @BotFather and the numeric admin IDs. The bot runs inside the panel — no separate process.</p>
-    <div id="botStatus" class="desc" style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:16px">Loading…</div>
-    <div class="field"><label class="lab">Bot token</label><input id="bt" class="inp" placeholder="123456:ABC… (blank = keep current)" /></div>
-    <div class="field"><label class="lab">Admin Telegram IDs (comma separated)</label><input id="bi" class="inp" placeholder="e.g. 11111111, 22222222" /><div style="font-size:12px;color:var(--dim);margin-top:7px">Send /id to your bot to find an ID.</div></div>
-    <div class="field"><label class="lab">Mini App URL (public HTTPS base)</label><input id="bw" class="inp" placeholder="https://panel.example.com" /><div style="font-size:12px;color:var(--dim);margin-top:7px">Opens a Telegram Web App from the bot at <span class="mono">&lt;base&gt;/tma</span>. Must be HTTPS.</div></div>
-    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">Enabled</label><div style="font-size:12px;color:var(--dim)">Turn the bot on or off.</div></div><div class="toggle on" id="be"><div class="tk"></div><div class="kn"></div></div></div></div>
-    <div id="boterr" class="err"></div><button class="btn" id="bsave">Save &amp; apply</button><div style="height:10px"></div><button class="btn-sec" id="btest">Test token</button>`);
+  const ov=openSheet(`<div class="h2">${esc(t('Telegram bot'))}</div><p class="desc">Paste your bot token from @BotFather and the numeric admin IDs. The bot runs inside the panel — no separate process.</p>
+    <div id="botStatus" class="desc" style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:16px">${esc(t('Loading…'))}</div>
+    <div class="field"><label class="lab">${esc(t('Bot token'))}</label><input id="bt" class="inp" placeholder="${esc(t('123456:ABC… (blank = keep current)'))}" /></div>
+    <div class="field"><label class="lab">${esc(t('Admin Telegram IDs (comma separated)'))}</label><input id="bi" class="inp" placeholder="${esc(t('e.g. 11111111, 22222222'))}" /><div style="font-size:12px;color:var(--dim);margin-top:7px">${esc(t('Send /id to your bot to find an ID.'))}</div></div>
+    <div class="field"><label class="lab">${esc(t('Mini App URL (public HTTPS base)'))}</label><input id="bw" class="inp" placeholder="https://panel.example.com" /><div style="font-size:12px;color:var(--dim);margin-top:7px">Opens a Telegram Web App from the bot at <span class="mono">&lt;base&gt;/tma</span>${esc(t('. Must be HTTPS.'))}</div></div>
+    <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">${esc(t('Enabled'))}</label><div style="font-size:12px;color:var(--dim)">${esc(t('Turn the bot on or off.'))}</div></div><div class="toggle on" id="be"><div class="tk"></div><div class="kn"></div></div></div></div>
+    <div id="boterr" class="err"></div><button class="btn" id="bsave">${esc(t('Save &amp; apply'))}</button><div style="height:10px"></div><button class="btn-sec" id="btest">${esc(t('Test token'))}</button>`);
   let enabled=true;const tg=ov.querySelector('#be');tg.onclick=()=>{enabled=!enabled;tg.classList.toggle('on',enabled);};
-  const refresh=()=>api('/api/settings/bot').then(b=>{ov.querySelector('#botStatus').innerHTML=b.running?('<b style="color:var(--acc)">Running</b> as @'+esc(b.username||'bot')):(b.configured?'<b>Configured</b> but stopped.':'<b>Not configured</b> yet.');ov.querySelector('#bi').value=(b.adminIds||[]).join(', ');ov.querySelector('#bw').value=b.webappUrl||'';enabled=b.enabled;tg.classList.toggle('on',enabled);}).catch(()=>{});
+  const refresh=()=>api('/api/settings/bot').then(b=>{ov.querySelector('#botStatus').innerHTML=b.running?('<b style="color:var(--acc)">'+esc(t('Running'))+'</b> '+esc(t('as'))+' @'+esc(b.username||'bot')):(b.configured?'<b>'+esc(t('Configured'))+'</b> '+esc(t('but stopped.')):'<b>'+esc(t('Not configured'))+'</b> '+esc(t('yet.')));ov.querySelector('#bi').value=(b.adminIds||[]).join(', ');ov.querySelector('#bw').value=b.webappUrl||'';enabled=b.enabled;tg.classList.toggle('on',enabled);}).catch(()=>{});
   refresh();
-  ov.querySelector('#btest').onclick=async()=>{const tok=ov.querySelector('#bt').value.trim();const er=ov.querySelector('#boterr');if(!tok){er.textContent='Enter a token to test.';return;}er.textContent='';try{const r=await api('/api/settings/bot/test',{method:'POST',body:JSON.stringify({token:tok})});toast('Valid · @'+r.username);}catch(e){er.textContent=e.message;}};
+  ov.querySelector('#btest').onclick=async()=>{const tok=ov.querySelector('#bt').value.trim();const er=ov.querySelector('#boterr');if(!tok){er.textContent=t('Enter a token to test.');return;}er.textContent='';try{const r=await api('/api/settings/bot/test',{method:'POST',body:JSON.stringify({token:tok})});toast('Valid · @'+r.username);}catch(e){er.textContent=e.message;}};
   ov.querySelector('#bsave').onclick=async()=>{const tok=ov.querySelector('#bt').value.trim();const ids=ov.querySelector('#bi').value.trim();const wu=ov.querySelector('#bw').value.trim();const er=ov.querySelector('#boterr');er.textContent='';const b=ov.querySelector('#bsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{await api('/api/settings/bot',{method:'PUT',body:JSON.stringify({token:tok||null,adminIds:ids,enabled,webappUrl:wu})});toast('Saved');closeModal();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent='Save & apply';}};
+    try{await api('/api/settings/bot',{method:'PUT',body:JSON.stringify({token:tok||null,adminIds:ids,enabled,webappUrl:wu})});toast(t('Saved'));closeModal();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Save & apply');}};
 }
 function modalSecurity(){
-  const ov=openSheet(`<div class="h2">Security</div><p class="desc">Your account the panel password and set up two-factor authentication.</p>
-    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin-bottom:12px">Change password</div>
-    <div class="field"><label class="lab">Username</label><input id="pu" class="inp" value="${esc((S.me&&S.me.username)||'')}" autocapitalize="off" spellcheck="false" autocomplete="username" /></div>
-    <div class="field"><label class="lab">Current password</label><input id="pc" class="inp" type="password" autocomplete="current-password" /></div>
-    <div class="field"><label class="lab">New password <span style="color:var(--faint);font-weight:400">(leave blank to keep)</span></label><input id="pn" class="inp" type="password" autocomplete="new-password" /></div>
-    <div id="pwerr" class="err"></div><button class="btn" id="pwsave">Save changes</button>
-    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:26px 0 12px">Two-factor authentication</div>
-    <div id="tfa"><div class="desc">Loading…</div></div>`);
+  const ov=openSheet(`<div class="h2">${esc(t('Security'))}</div><p class="desc">${esc(t('Your account the panel password and set up two-factor authentication.'))}</p>
+    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin-bottom:12px">${esc(t('Change password'))}</div>
+    <div class="field"><label class="lab">${esc(t('Username'))}</label><input id="pu" class="inp" value="${esc((S.me&&S.me.username)||'')}" autocapitalize="off" spellcheck="false" autocomplete="username" /></div>
+    <div class="field"><label class="lab">${esc(t('Current password'))}</label><input id="pc" class="inp" type="password" autocomplete="current-password" /></div>
+    <div class="field"><label class="lab">New password <span style="color:var(--faint);font-weight:400">${esc(t('(leave blank to keep)'))}</span></label><input id="pn" class="inp" type="password" autocomplete="new-password" /></div>
+    <div id="pwerr" class="err"></div><button class="btn" id="pwsave">${esc(t('Save changes'))}</button>
+    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:26px 0 12px">${esc(t('Two-factor authentication'))}</div>
+    <div id="tfa"><div class="desc">${esc(t('Loading…'))}</div></div>`);
   ov.querySelector('#pwsave').onclick=async()=>{
     const cur=ov.querySelector('#pc').value,nw=ov.querySelector('#pn').value;
     const un=ov.querySelector('#pu').value.trim(),er=ov.querySelector('#pwerr');er.textContent='';
-    if(!cur){er.textContent='Enter your current password.';return;}
-    if(nw&&nw.length<6){er.textContent='New password must be at least 6 characters.';return;}
+    if(!cur){er.textContent=t('Enter your current password.');return;}
+    if(nw&&nw.length<6){er.textContent=t('New password must be at least 6 characters.');return;}
     const body={current:cur};
     if(nw)body.new=nw;
     if(un&&un!==(S.me&&S.me.username))body.username=un;
-    if(!body.new&&!body.username){er.textContent='Nothing to change.';return;}
+    if(!body.new&&!body.username){er.textContent=t('Nothing to change.');return;}
     const b=ov.querySelector('#pwsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{const r=await api('/api/settings/password',{method:'POST',body:JSON.stringify(body)});
       if(S.me)S.me.username=r.username;
       toast(body.username?'Account updated — sign in with “'+r.username+'” next time':'Password updated');
       ov.querySelector('#pc').value='';ov.querySelector('#pn').value='';}
     catch(e){er.textContent=e.message;}
-    finally{b.disabled=false;b.textContent='Save changes';}
+    finally{b.disabled=false;b.textContent=t('Save changes');}
   };
   const tfa=ov.querySelector('#tfa');
   const render=()=>api('/api/settings').then(s=>{
-    if(s.totpEnabled){tfa.innerHTML='<div class="desc" style="margin-bottom:10px">2FA is <b style="color:var(--acc)">enabled</b>.</div><div class="field"><label class="lab">Password to disable</label><input id="tpw" class="inp" type="password" /></div><button class="btn-danger" id="tdis">Disable 2FA</button>';
-      tfa.querySelector('#tdis').onclick=async()=>{try{await api('/api/settings/2fa/disable',{method:'POST',body:JSON.stringify({password:tfa.querySelector('#tpw').value})});toast('2FA disabled');render();}catch(e){toast(e.message,1);}};}
-    else{tfa.innerHTML='<button class="btn-sec" id="tstart">Set up 2FA</button>';
+    if(s.totpEnabled){tfa.innerHTML='<div class="desc" style="margin-bottom:10px">2FA is <b style="color:var(--acc)">enabled</b>.</div><div class="field"><label class="lab">'+esc(t('Password to disable'))+'</label><input id="tpw" class="inp" type="password" /></div><button class="btn-danger" id="tdis">'+esc(t('Disable 2FA'))+'</button>';
+      tfa.querySelector('#tdis').onclick=async()=>{try{await api('/api/settings/2fa/disable',{method:'POST',body:JSON.stringify({password:tfa.querySelector('#tpw').value})});toast(t('2FA disabled'));render();}catch(e){toast(e.message,1);}};}
+    else{tfa.innerHTML='<button class="btn-sec" id="tstart">'+esc(t('Set up 2FA'))+'</button>';
       tfa.querySelector('#tstart').onclick=async()=>{try{const r=await api('/api/settings/2fa/start',{method:'POST'});
-        tfa.innerHTML='<p class="desc">Scan with Google Authenticator / Authy, then enter the 6-digit code.</p><div style="display:grid;place-items:center;margin:4px 0 14px"><div id="tq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:12px;font-size:12px;word-break:break-all;color:var(--acc);margin-bottom:14px">'+esc(r.secret)+'</div><div class="field"><label class="lab">6-digit code</label><input id="tcode" class="inp" inputmode="numeric" placeholder="000000" /></div><div id="tferr" class="err"></div><button class="btn" id="tconf">Enable 2FA</button>';
+        tfa.innerHTML='<p class="desc">'+esc(t('Scan with Google Authenticator / Authy, then enter the 6-digit code.'))+'</p><div style="display:grid;place-items:center;margin:4px 0 14px"><div id="tq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:12px;font-size:12px;word-break:break-all;color:var(--acc);margin-bottom:14px">'+esc(r.secret)+'</div><div class="field"><label class="lab">'+esc(t('6-digit code'))+'</label><input id="tcode" class="inp" inputmode="numeric" placeholder="000000" /></div><div id="tferr" class="err"></div><button class="btn" id="tconf">'+esc(t('Enable 2FA'))+'</button>';
         renderQR(tfa.querySelector('#tq'),r.uri);
-        tfa.querySelector('#tconf').onclick=async()=>{try{await api('/api/settings/2fa/enable',{method:'POST',body:JSON.stringify({code:tfa.querySelector('#tcode').value})});toast('2FA enabled');render();}catch(e){tfa.querySelector('#tferr').textContent=e.message;}};
+        tfa.querySelector('#tconf').onclick=async()=>{try{await api('/api/settings/2fa/enable',{method:'POST',body:JSON.stringify({code:tfa.querySelector('#tcode').value})});toast(t('2FA enabled'));render();}catch(e){tfa.querySelector('#tferr').textContent=e.message;}};
       }catch(e){toast(e.message,1);}};}
-  }).catch(()=>{tfa.innerHTML='<div class="desc">Could not load 2FA status.</div>';});
+  }).catch(()=>{tfa.innerHTML='<div class="desc">'+esc(t('Could not load 2FA status.'))+'</div>';});
   render();
 }
 /* Panel knobs. The form is generated from the spec the API ships with the
    values, so adding a setting server-side needs no change here. */
+/* Knob labels come from the server's spec, so they are looked up by the knob's
+   key rather than by their English text — the server stays the source of truth
+   for what a knob *is*, the dictionary only for how it reads. English falls
+   through, so a knob added later is readable before it is translated. */
+function knobText(spec,which){
+  const k='knob.'+spec.key+'.'+which, v=t(k);
+  return v===k?(spec[which]||''):v;
+}
 async function modalKnobs(){
-  const ov=openSheet('<div class="h2">Panel settings</div><p class="desc">Loading…</p>',{wide:true});
+  const ov=openSheet('<div class="h2">'+esc(t('Panel settings'))+'</div><p class="desc">'+esc(t('Loading…'))+'</p>',{wide:true});
   let d;try{d=await api('/api/settings/panel');}
-  catch(e){ov.querySelector('.sheet').innerHTML='<div class="h2">Panel settings</div><p class="err">'+esc(e.message)+'</p>';return;}
+  catch(e){ov.querySelector('.sheet').innerHTML='<div class="h2">'+esc(t('Panel settings'))+'</div><p class="err">'+esc(e.message)+'</p>';return;}
   const field=s=>{
     const v=d.values[s.key];
     const range=s.type==='str'?'':`<span class="mono" style="color:var(--faint);font-weight:400"> ${s.min}–${s.max}</span>`;
     return `<div class="field">
-      <label class="lab">${esc(s.label)}${range}</label>
+      <label class="lab">${esc(knobText(s,'label'))}${range}</label>
       <input class="inp knob" data-key="${esc(s.key)}" data-type="${esc(s.type)}"
              ${s.type==='str'?'':'type="number" min="'+s.min+'" max="'+s.max+'"'}
              value="${esc(v)}" />
-      ${s.help?`<div style="font-size:11.5px;color:var(--dim);margin-top:7px;line-height:1.5">${esc(s.help)}</div>`:''}
+      ${s.help?`<div style="font-size:11.5px;color:var(--dim);margin-top:7px;line-height:1.5">${esc(knobText(s,'help'))}</div>`:''}
     </div>`;};
-  ov.querySelector('.sheet').innerHTML=`<div class="h2">Panel settings</div>
-    <p class="desc">Everything the panel runs on. Changes apply immediately — no restart.</p>
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Panel settings'))}</div>
+    <p class="desc">${esc(t('Everything the panel runs on. Changes apply immediately — no restart.'))}</p>
     ${d.spec.map(field).join('')}
     <div id="kerr" class="err"></div>
-    <button class="btn" id="ksave">Save</button><div style="height:10px"></div>
-    <button class="btn-sec" id="kreset">Reset all to defaults</button>`;
+    <button class="btn" id="ksave">${esc(t('Save'))}</button><div style="height:10px"></div>
+    <button class="btn-sec" id="kreset">${esc(t('Reset all to defaults'))}</button>`;
   ov.querySelector('#ksave').onclick=async()=>{
     const body={};
     ov.querySelectorAll('.knob').forEach(i=>{
       body[i.dataset.key]=i.dataset.type==='str'?i.value.trim():Number(i.value);});
     const er=ov.querySelector('#kerr'),b=ov.querySelector('#ksave');
     er.textContent='';b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{await api('/api/settings/panel',{method:'PUT',body:JSON.stringify(body)});toast('Settings saved');closeModal();}
+    try{await api('/api/settings/panel',{method:'PUT',body:JSON.stringify(body)});toast(t('Settings saved'));closeModal();}
     catch(e){er.textContent=e.message;}
-    finally{b.disabled=false;b.textContent='Save';}
+    finally{b.disabled=false;b.textContent=t('Save');}
   };
   ov.querySelector('#kreset').onclick=async()=>{
-    try{await api('/api/settings/panel/reset',{method:'POST'});toast('Back to defaults');modalKnobs();}
+    try{await api('/api/settings/panel/reset',{method:'POST'});toast(t('Back to defaults'));modalKnobs();}
     catch(e){ov.querySelector('#kerr').textContent=e.message;}
   };
 }
@@ -1059,9 +1082,9 @@ async function modalKnobs(){
 /* Activity log. Keyset paging: "Load more" passes the last id back, so page 50
    costs what page 1 does. */
 async function modalAudit(){
-  const ov=openDrawer('<div style="padding:22px 20px 0"><div class="h2">Activity log</div>'+
-    '<p class="desc">Every change made through the panel. Passwords and tokens are never stored.</p>'+
-    '<div id="alist"><div class="desc">Loading…</div></div></div>');
+  const ov=openDrawer('<div style="padding:22px 20px 0"><div class="h2">'+esc(t('Activity log'))+'</div>'+
+    '<p class="desc">'+esc(t('Every change made through the panel. Passwords and tokens are never stored.'))+'</p>'+
+    '<div id="alist"><div class="desc">'+esc(t('Loading…'))+'</div></div></div>');
   let before=null,rows=[];
   const dot=s=>s>=500?'var(--danger)':s>=400?'var(--warn)':'var(--acc)';
   // "POST /api/servers/{sid}/keys" -> "Create key" reads better than a route
@@ -1073,10 +1096,10 @@ async function modalAudit(){
     [/\/api\/admins/,'Admin management'],[/\/api\/packages/,'Package management'],
     [/\/api\/servers$/,'Server management'],[/\/api\/restore/,'Restored a backup'],
     [/\/api\/settings/,'Changed settings']];
-  const label=a=>{for(const [re,t] of VERBS)if(re.test(a))return t;return a;};
+  const label=a=>{for(const [re,txt] of VERBS)if(re.test(a))return t(txt);return a;};
   const draw=()=>{
     const el=ov.querySelector('#alist');
-    if(!rows.length){el.innerHTML='<div class="desc">Nothing recorded yet.</div>';return;}
+    if(!rows.length){el.innerHTML='<div class="desc">'+esc(t('Nothing recorded yet.'))+'</div>';return;}
     el.innerHTML=rows.map(e=>`<div style="display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--panel2)">
         <span style="width:7px;height:7px;border-radius:50%;flex:none;margin-top:6px;background:${dot(e.status||0)}"></span>
         <div style="flex:1;min-width:0">
@@ -1085,7 +1108,7 @@ async function modalAudit(){
             ${esc(e.actor_name||'not signed in')} · ${new Date(e.ts*1000).toLocaleString()} · ${e.status}${e.ip?' · '+esc(e.ip):''}</div>
           ${e.detail?`<div class="mono" style="font-size:10.5px;color:var(--dim);margin-top:4px;word-break:break-all">${esc(e.detail.slice(0,180))}</div>`:''}
         </div></div>`).join('')+
-      (before?'<button class="btn-sec" id="amore" style="margin:14px 0 24px">Load more</button>':'<div style="height:24px"></div>');
+      (before?'<button class="btn-sec" id="amore" style="margin:14px 0 24px">'+esc(t('Load more'))+'</button>':'<div style="height:24px"></div>');
     const m=ov.querySelector('#amore');if(m)m.onclick=load;
   };
   async function load(){
@@ -1099,38 +1122,38 @@ async function modalAudit(){
 /* Any admin's own password. The owner's lives in Security along with 2FA;
    a sub-admin previously had no way to change theirs at all. */
 function modalAccount(){
-  const ov=openSheet(`<div class="h2">My account</div>
+  const ov=openSheet(`<div class="h2">${esc(t('My account'))}</div>
     <p class="desc">Signed in as <b>${esc((S.me&&S.me.username)||'')}</b>.</p>
-    <div class="field"><label class="lab">Current password</label><input id="ac" class="inp" type="password" autocomplete="current-password" /></div>
-    <div class="field"><label class="lab">New password</label><input id="an" class="inp" type="password" autocomplete="new-password" /></div>
-    <div id="aerr" class="err"></div><button class="btn" id="asave">Change password</button>`);
+    <div class="field"><label class="lab">${esc(t('Current password'))}</label><input id="ac" class="inp" type="password" autocomplete="current-password" /></div>
+    <div class="field"><label class="lab">${esc(t('New password'))}</label><input id="an" class="inp" type="password" autocomplete="new-password" /></div>
+    <div id="aerr" class="err"></div><button class="btn" id="asave">${esc(t('Change password'))}</button>`);
   ov.querySelector('#asave').onclick=async()=>{
     const cur=ov.querySelector('#ac').value,nw=ov.querySelector('#an').value,er=ov.querySelector('#aerr');
     er.textContent='';
-    if(!cur){er.textContent='Enter your current password.';return;}
-    if(nw.length<6){er.textContent='New password must be at least 6 characters.';return;}
+    if(!cur){er.textContent=t('Enter your current password.');return;}
+    if(nw.length<6){er.textContent=t('New password must be at least 6 characters.');return;}
     const b=ov.querySelector('#asave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{await api('/api/me/password',{method:'POST',body:JSON.stringify({current:cur,new:nw})});
-      toast('Password changed');closeModal();}
+      toast(t('Password changed'));closeModal();}
     catch(e){er.textContent=e.message;}
-    finally{b.disabled=false;b.textContent='Change password';}
+    finally{b.disabled=false;b.textContent=t('Change password');}
   };
 }
 
 function modalBackup(){
-  const ov=openSheet(`<div class="h2">Backup &amp; restore</div><p class="desc">Download a JSON snapshot of every server, key and setting. Keep it somewhere safe.</p>
-    <button class="btn" id="bkdl">⤓ Download backup</button>
-    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:26px 0 12px">Restore</div>
-    <p class="desc">Restoring <b>replaces</b> all current data.</p>
+  const ov=openSheet(`<div class="h2">${esc(t('Backup &amp; restore'))}</div><p class="desc">Download a JSON snapshot of every server, key and setting. Keep it somewhere safe.</p>
+    <button class="btn" id="bkdl">${esc(t('⤓ Download backup'))}</button>
+    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:26px 0 12px">${esc(t('Restore'))}</div>
+    <p class="desc">Restoring <b>${esc(t('replaces'))}</b> all current data.</p>
     <input id="bkfile" class="inp" type="file" accept="application/json,.json" style="padding:11px" />
-    <div id="bkerr" class="err"></div><div style="height:12px"></div><button class="btn-danger" id="bkres">Restore from file</button>`);
-  ov.querySelector('#bkdl').onclick=async()=>{try{const r=await fetch('/api/backup',{credentials:'same-origin'});if(!r.ok)throw new Error('Download failed');const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='outline-panel-backup.json';a.click();URL.revokeObjectURL(a.href);toast('Backup downloaded');}catch(e){toast(e.message,1);}};
-  ov.querySelector('#bkres').onclick=async()=>{const f=ov.querySelector('#bkfile').files[0];const er=ov.querySelector('#bkerr');er.textContent='';if(!f){er.textContent='Choose a backup file first.';return;}if(!confirm('Restore will REPLACE all current data. Continue?'))return;const b=ov.querySelector('#bkres');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{const data=JSON.parse(await f.text());const r=await api('/api/restore',{method:'POST',body:JSON.stringify(data)});toast('Restored '+r.servers+' servers, '+r.keys+' keys');closeModal();await loadAll();renderApp();}catch(e){er.textContent=e.message||'Invalid backup file';b.disabled=false;b.textContent='Restore from file';}};
+    <div id="bkerr" class="err"></div><div style="height:12px"></div><button class="btn-danger" id="bkres">${esc(t('Restore from file'))}</button>`);
+  ov.querySelector('#bkdl').onclick=async()=>{try{const r=await fetch('/api/backup',{credentials:'same-origin'});if(!r.ok)throw new Error('Download failed');const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='outline-panel-backup.json';a.click();URL.revokeObjectURL(a.href);toast(t('Backup downloaded'));}catch(e){toast(e.message,1);}};
+  ov.querySelector('#bkres').onclick=async()=>{const f=ov.querySelector('#bkfile').files[0];const er=ov.querySelector('#bkerr');er.textContent='';if(!f){er.textContent=t('Choose a backup file first.');return;}if(!confirm(t('Restore will REPLACE all current data. Continue?')))return;const b=ov.querySelector('#bkres');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{const data=JSON.parse(await f.text());const r=await api('/api/restore',{method:'POST',body:JSON.stringify(data)});toast(t('Restored')+' '+r.servers+' '+t('servers')+'، '+r.keys+' '+t('keys'));closeModal();await loadAll();renderApp();}catch(e){er.textContent=e.message||t('Invalid backup file');b.disabled=false;b.textContent=t('Restore from file');}};
 }
 
 /* ---------- actions ---------- */
-async function copyKey(id){const k=keyById(id);if(!k)return;try{await navigator.clipboard.writeText(tagUrl(k));toast('Copied to clipboard');}catch(_){prompt('Copy:',tagUrl(k));}}
+async function copyKey(id){const k=keyById(id);if(!k)return;try{await navigator.clipboard.writeText(tagUrl(k));toast(t('Copied to clipboard'));}catch(_){prompt('Copy:',tagUrl(k));}}
 async function bulkTransfer(){
   const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));
   if(!ids.length)return;
@@ -1143,9 +1166,9 @@ async function bulkTransfer(){
     targets.map(a=>`<option value="${a.id}">${esc(a.username)}</option>`).join('');
   const ov=openSheet(`<div class="h2">Transfer ${ids.length} user${ids.length===1?'':'s'}</div>
     <p class="desc">They move onto that admin's page and off everyone else's.${targets.length?'':' No sub-admin has access to every server in this selection.'}</p>
-    <div class="field"><label class="lab">Belongs to</label><select id="bt" class="inp" style="cursor:pointer">${opts}</select></div>
-    <div id="bterr" class="err"></div><button class="btn" id="btgo">Transfer</button><div style="height:10px"></div>
-    <button class="btn-sec" data-act="close">Cancel</button>`);
+    <div class="field"><label class="lab">${esc(t('Belongs to'))}</label><select id="bt" class="inp" style="cursor:pointer">${opts}</select></div>
+    <div id="bterr" class="err"></div><button class="btn" id="btgo">${esc(t('Transfer'))}</button><div style="height:10px"></div>
+    <button class="btn-sec" data-act="close">${esc(t('Cancel'))}</button>`);
   ov.querySelector('#btgo').onclick=async()=>{
     const v=ov.querySelector('#bt').value;const b=ov.querySelector('#btgo');
     b.disabled=true;b.innerHTML='<span class="spin"></span>';
@@ -1166,7 +1189,7 @@ async function bulk(op){if(op==='transfer')return bulkTransfer();
     if(op==='extend')await api(kb+'/extend',{method:'POST',idem:idemKey(),body:JSON.stringify({days:30})});
     else if(op==='disable')await api(kb+'/disable',{method:'POST'});
     else if(op==='delete')await api(kb,{method:'DELETE'});}catch(e){toast(e.message,1);}}
-  S.selected={};toast('Done');await refreshKeys();renderList();}
+  S.selected={};toast(t('Done'));await refreshKeys();renderList();}
 
 /* ---------- event delegation ---------- */
 document.addEventListener('click',e=>{
@@ -1196,19 +1219,20 @@ document.addEventListener('click',e=>{
     case 'sel':{if(S.selected[d.id])delete S.selected[d.id];else S.selected[d.id]=true;renderList();break;}
     case 'bulk':bulk(d.op);break;
     case 'copy':copyKey(d.id);break;
-    case 'copytext':navigator.clipboard.writeText(d.text).then(()=>toast('Copied')).catch(()=>prompt('Copy:',d.text));break;
+    case 'copytext':navigator.clipboard.writeText(d.text).then(()=>toast(t('Copied'))).catch(()=>prompt('Copy:',d.text));break;
     case 'share':{const k=keyById(d.id);if(k)modalShare(k);break;}
     case 'detail':{const k=keyById(d.id);if(k)modalDetail(k);break;}
     case 'manage':{const k=keyById(d.id);if(k){closeModal();modalManage(k);}break;}
     case 'config':{const k=keyById(d.id);if(k)modalConfig(k);break;}
     case 'toggle':{const k=keyById(d.id);if(k){const kb='/api/servers/'+k.serverId+'/keys/'+k.id;api(kb+'/'+(k.disabled?'enable':'disable'),{method:'POST'}).then(async()=>{toast(k.disabled?'Key enabled':'Key disabled');closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
-    case 'resetkey':{const k=keyById(d.id);if(k&&confirm('Reset usage for “'+k.name+'”?')){api('/api/servers/'+k.serverId+'/keys/'+k.id+'/reset',{method:'POST'}).then(async()=>{toast('Usage reset');closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
-    case 'delkey':{const k=keyById(d.id);if(k&&confirm('Delete “'+k.name+'”?')){api('/api/servers/'+k.serverId+'/keys/'+k.id,{method:'DELETE'}).then(async()=>{toast('Key deleted');closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
+    case 'resetkey':{const k=keyById(d.id);if(k&&confirm('Reset usage for “'+k.name+'”?')){api('/api/servers/'+k.serverId+'/keys/'+k.id+'/reset',{method:'POST'}).then(async()=>{toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
+    case 'delkey':{const k=keyById(d.id);if(k&&confirm('Delete “'+k.name+'”?')){api('/api/servers/'+k.serverId+'/keys/'+k.id,{method:'DELETE'}).then(async()=>{toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
     case 'addserver':modalAddServer();break;
     case 'srvdetail':{const s=S.servers.find(x=>x.id===d.id);if(s)modalServerDetail(s);break;}
     case 'security':modalSecurity();break;
     case 'knobs':modalKnobs();break;
     case 'audit':modalAudit();break;
+    case 'lang':toggleLang();break;
     case 'account':modalAccount();break;
     case 'backup':modalBackup();break;
     case 'palette':openPalette();break;
@@ -1224,24 +1248,25 @@ document.addEventListener('click',e=>{const c=e.target.closest('[data-chip]');if
 const _ic=p=>`<svg class="ci" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 function paletteCommands(){
   const c=[
-    {need:'keys.create',label:'New key',hint:'N',icon:_ic('<path d="M12 5v14M5 12h14"/>'),kw:'create add',run:()=>modalCreate()},
-    {label:'Search keys',hint:'/',icon:_ic('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),kw:'find',run:()=>setTimeout(()=>($('#search')||$('#msearch'))?.focus(),60)},
-    {label:'Toggle table / card view',icon:_ic('<path d="M3 6h18M3 12h18M3 18h18"/>'),kw:'layout',run:()=>{S.view=S.view==='table'?'cards':'table';localStorage.setItem('oc_view',S.view);renderList();}},
-    {need:'servers.manage',label:'Add server',icon:_ic('<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 8h.01M7 17h.01"/>'),kw:'server',run:()=>modalAddServer()},
-    {label:'Settings',icon:_ic('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 12.6H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 6"/>'),kw:'config',run:()=>modalSettings()},
-    {need:'owner',label:'Security & two-factor',icon:_ic('<path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7z"/>'),kw:'2fa password',run:()=>modalSecurity()},
-    {need:'owner',label:'Backup & restore',icon:_ic('<path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>'),kw:'export import',run:()=>modalBackup()},
-    {label:'Keyboard shortcuts',hint:'?',icon:_ic('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M8 13h8"/>'),kw:'help keys',run:()=>openShortcuts()},
-    {label:'Sign out',icon:_ic('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),kw:'logout',run:()=>signOut()},
+    {need:'keys.create',label:t('New key'),hint:'N',icon:_ic('<path d="M12 5v14M5 12h14"/>'),kw:'create add',run:()=>modalCreate()},
+    {label:t('Search keys'),hint:'/',icon:_ic('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),kw:'find',run:()=>setTimeout(()=>($('#search')||$('#msearch'))?.focus(),60)},
+    {label:t('Toggle table / card view'),icon:_ic('<path d="M3 6h18M3 12h18M3 18h18"/>'),kw:'layout',run:()=>{S.view=S.view==='table'?'cards':'table';localStorage.setItem('oc_view',S.view);renderList();}},
+    {need:'servers.manage',label:t('Add server'),icon:_ic('<rect x="3" y="4" width="18" height="8" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 8h.01M7 17h.01"/>'),kw:'server',run:()=>modalAddServer()},
+    {label:t('Settings'),icon:_ic('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 12.6H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 6"/>'),kw:'config',run:()=>modalSettings()},
+    {need:'owner',label:t('Security & two-factor'),icon:_ic('<path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7z"/>'),kw:'2fa password',run:()=>modalSecurity()},
+    {need:'owner',label:t('Backup & restore'),icon:_ic('<path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>'),kw:'export import',run:()=>modalBackup()},
+    {label:t('Keyboard shortcuts'),hint:'?',icon:_ic('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M8 13h8"/>'),kw:'help keys',run:()=>openShortcuts()},
+    {label:t('Sign out'),icon:_ic('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>'),kw:'logout',run:()=>signOut()},
   ];
   // drop what this admin cannot do — the palette is a shortcut to the same
   // actions, so it must hide the same things the chrome does
   const allowed=c.filter(x=>!x.need||(x.need==='owner'?isOwner():can(x.need)));
   c.length=0;c.push(...allowed);
   const sf=_ic('<path d="M3 4h18M6 12h12M10 20h4"/>');
-  c.push({label:'Show all servers',icon:sf,kw:'filter',run:()=>{S.srvFilter='all';renderSrv();renderList();renderRail();}});
-  (S.servers||[]).forEach(s=>c.push({label:'Filter · '+s.name,icon:sf,kw:'filter server',run:()=>{S.srvFilter=s.id;S.srvMenuOpen=false;renderSrv();renderList();renderRail();}}));
-  [['Online','online'],['Active','active'],['Pending','pending'],['Disabled','disabled'],['All statuses','all']].forEach(([l,v])=>c.push({label:'Status · '+l,icon:sf,kw:'filter status',run:()=>{S.statusFilter=v;renderList();}}));
+  c.push({label:t('Language')+' · '+nextLangLabel(),icon:sf,kw:'language زبان fa en',run:()=>toggleLang()});
+  c.push({label:t('Show all servers'),icon:sf,kw:'filter',run:()=>{S.srvFilter='all';renderSrv();renderList();renderRail();}});
+  (S.servers||[]).forEach(s=>c.push({label:t('Filter ·')+' '+s.name,icon:sf,kw:'filter server',run:()=>{S.srvFilter=s.id;S.srvMenuOpen=false;renderSrv();renderList();renderRail();}}));
+  [['Online','online'],['Active','active'],['Pending','pending'],['Disabled','disabled'],['All statuses','all']].forEach(([l,v])=>c.push({label:t('Status ·')+' '+t(l),icon:sf,kw:'filter status',run:()=>{S.statusFilter=v;renderList();}}));
   return c;
 }
 function openPalette(){
@@ -1251,8 +1276,8 @@ function openPalette(){
     <div class="sheet" style="max-width:560px;padding:0;overflow:hidden">
       <div style="display:flex;align-items:center;gap:11px;padding:14px 16px;border-bottom:1px solid var(--line)">
         ${_ic('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>')}
-        <input id="cmdq" class="inp" autocomplete="off" placeholder="Type a command…" style="border:none;background:none;padding:0;font-size:16px;box-shadow:none" />
-        <span class="hint" style="font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid var(--line2);border-radius:6px;padding:2px 7px">ESC</span>
+        <input id="cmdq" class="inp" autocomplete="off" placeholder="${esc(t('Type a command…'))}" style="border:none;background:none;padding:0;font-size:16px;box-shadow:none" />
+        <span class="hint" style="font-family:var(--mono);font-size:11px;color:var(--faint);border:1px solid var(--line2);border-radius:6px;padding:2px 7px">${esc(t('ESC'))}</span>
       </div>
       <div id="cmdlist" style="max-height:54vh;overflow:auto;padding:8px"></div>
     </div></div>`;
@@ -1260,7 +1285,7 @@ function openPalette(){
   const draw=()=>{const ql=q.value.trim().toLowerCase();
     filtered=cmds.filter(c=>!ql||c.label.toLowerCase().includes(ql)||(c.kw||'').includes(ql));
     if(idx>=filtered.length)idx=Math.max(0,filtered.length-1);
-    list.innerHTML=filtered.length?filtered.map((c,i)=>`<div class="cmd-item${i===idx?' on':''}" data-i="${i}">${c.icon||''}<span>${esc(c.label)}</span>${c.hint?'<span class="hint">'+esc(c.hint)+'</span>':''}</div>`).join(''):'<div style="padding:26px;text-align:center;color:var(--faint);font-size:14px">No matching commands</div>';};
+    list.innerHTML=filtered.length?filtered.map((c,i)=>`<div class="cmd-item${i===idx?' on':''}" data-i="${i}">${c.icon||''}<span>${esc(c.label)}</span>${c.hint?'<span class="hint">'+esc(c.hint)+'</span>':''}</div>`).join(''):'<div style="padding:26px;text-align:center;color:var(--faint);font-size:14px">'+esc(t('No matching commands'))+'</div>';};
   const run=i=>{const c=filtered[i];if(c){closeModal();c.run();}};
   q.addEventListener('input',()=>{idx=0;draw();});
   q.addEventListener('keydown',e=>{
@@ -1274,9 +1299,9 @@ function openPalette(){
 function openShortcuts(){
   const row=(k,d)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid var(--line)"><span style="color:var(--muted);font-size:14px">${d}</span><span>${k.split('+').map(x=>'<kbd>'+x+'</kbd>').join(' ')}</span></div>`;
   modalRoot.innerHTML=`<div class="overlay center"><div class="sheet" style="max-width:420px"><div class="grip" style="display:${innerWidth<720?'block':'none'}"></div>
-    <div class="h2">Keyboard shortcuts</div><p class="desc" style="margin-bottom:14px">Move faster across the panel.</p>
+    <div class="h2">${esc(t('Keyboard shortcuts'))}</div><p class="desc" style="margin-bottom:14px">${esc(t('Move faster across the panel.'))}</p>
     ${row('⌘+K','Command palette')}${row('/','Focus search')}${row('N','New key')}${row('?','This help')}${row('Esc','Close / clear selection')}
-    <div style="height:16px"></div><button class="btn-sec" data-act="close">Close</button></div></div>`;
+    <div style="height:16px"></div><button class="btn-sec" data-act="close">${esc(t('Close'))}</button></div></div>`;
 }
 document.addEventListener('keydown',e=>{
   if((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K')){e.preventDefault();if(modalRoot.innerHTML&&$('#cmdq')){closeModal();}else{closeModal();openPalette();}return;}
