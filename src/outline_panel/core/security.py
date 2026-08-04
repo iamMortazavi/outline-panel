@@ -78,8 +78,32 @@ def totp_provisioning_uri(secret_b32: str, account: str, issuer: str = "Outline 
             f"&issuer={quote(issuer)}&digits=6&period=30")
 
 
+_TOKEN_ALPHABET = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
 def random_token(nbytes: int = 16) -> str:
     return secrets.token_urlsafe(nbytes)
+
+
+def profile_token(key_id: str) -> str:
+    """The customer's profile token: ``<key id>-<random>``.
+
+    The id prefix is a label, not a lookup — it makes a support conversation
+    possible ("customer 230") without anyone having to read out the random part.
+    Only the random half is secret, and it stays full length.
+
+    It is deliberately *not* re-derived when a key rotates: the token is the
+    customer's permanent address, so after a rotation the prefix names the key
+    they started with rather than the one they hold. A stale label beats a link
+    that stops working.
+    """
+    safe = "".join(c for c in str(key_id) if c.isalnum())[:12] or "u"
+    # Alphanumerics only, rather than token_urlsafe: that alphabet includes '-'
+    # and '_', which next to the separator reads as "3---jeqDH". A customer
+    # looking at that assumes the link arrived mangled and asks for another.
+    # 12 chars from 62 is ~71 bits — far past guessing.
+    rand = "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(12))
+    return f"{safe}-{rand}"
 
 
 # ------------------------------------------------ Telegram Mini App (Web App)

@@ -116,8 +116,16 @@
   <div class="scrim" id="scrim"><div class="qrbox"><div class="nm" id="qrnm"></div><div class="qr" id="qr"></div><button class="btn btn-sec" id="qrclose" style="width:100%" onclick="closeQR()">Close</button></div></div>
   <div id="toast"></div>
 <script>
-const token=decodeURIComponent(location.pathname.replace(/^\/sub\//,'').replace(/\/.*$/,''));
-const subUrl=location.origin+'/sub/'+token;
+/* This page is reached two ways: the long-standing `/sub/<token>` on the panel
+   domain, and the short `/<token>` on the customer profile host. Stripping only
+   the `/sub/` prefix left the short form's token as "/1-abc" — leading slash and
+   all — which then 404'd against an endpoint that had the key perfectly well. */
+const token=decodeURIComponent(
+  location.pathname.replace(/^\/sub\//,'').replace(/^\//,'').replace(/\/.*$/,''));
+/* Advertise the address the customer actually arrived on, so the link they copy
+   is the short one when there is a short one. */
+const onProfileHost=!/^\/sub\//.test(location.pathname);
+const subUrl=location.origin+(onProfileHost?'/':'/sub/')+token;
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function fmtB(n){if(n==null)return '∞';n=Number(n);const u=['B','KB','MB','GB','TB'];let i=0;while(Math.abs(n)>=1024&&i<u.length-1){n/=1024;i++;}return (n>=100||i===0?n.toFixed(0):n.toFixed(1))+' '+u[i];}
 function expiry(ts){if(!ts)return{t:t('No expiry'),d:null};const left=ts-Date.now()/1000;if(left<=0)return{t:t('Expired'),d:'expired'};const d=Math.floor(left/86400),h=Math.floor((left%86400)/3600);return{t:(d>0?d+'d '+h+'h':h+'h'),d:new Date(ts*1000).toLocaleDateString()};}

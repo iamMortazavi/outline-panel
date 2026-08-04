@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -11,6 +13,7 @@ from ...core.settings import (
     BOT_ENABLED,
     BOT_TOKEN,
     KNOBS,
+    PROFILE_BASE_URL,
     TOTP_ENABLED,
     TOTP_SECRET,
     WEBAPP_URL,
@@ -35,6 +38,41 @@ async def get_settings():
 
 
 # ------------------------------------------------------------- panel knobs
+class ProfileBody(BaseModel):
+    baseUrl: str = ""
+
+
+@router.get("/profile")
+async def get_profile_settings():
+    base = await settings.get_profile_base()
+    return {"baseUrl": base or "", "host": await settings.get_profile_host() or ""}
+
+
+@router.put("/profile")
+async def set_profile_settings(body: ProfileBody):
+    """Set the customer profile site.
+
+    Empty clears it, which puts the panel back to serving everything on one
+    host. Anything else must be an absolute http(s) URL: the value becomes the
+    hostname the guard compares against, and a bare "star.example.com" would
+    parse with no hostname at all and silently gate nothing.
+    """
+    raw = (body.baseUrl or "").strip().rstrip("/")
+    if not raw:
+        await settings.set(PROFILE_BASE_URL, None)
+        return {"baseUrl": "", "host": ""}
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a full URL, e.g. https://star.example.com")
+    if parsed.path.strip("/"):
+        raise HTTPException(status_code=400,
+                            detail="Use the site root, with no path")
+    await settings.set(PROFILE_BASE_URL, raw)
+    return {"baseUrl": raw, "host": parsed.hostname.lower()}
+
+
 @router.get("/panel")
 async def get_panel_settings():
     """Current values plus the spec that describes them.
