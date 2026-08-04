@@ -476,6 +476,21 @@
       'd': ' روز',
       'Enable metrics sharing for a server (Settings) to see live bandwidth, online users and ISP locations.': 'برای دیدن پهنای باند زنده، کاربران آنلاین و موقعیت ISP، اشتراک‌گذاری متریک را برای یک سرور روشن کنید (تنظیمات).',
 
+
+      /* ---- customer profile + rotation ---- */
+      'New config': 'کانفیگ جدید',
+      'New config issued': 'کانفیگ جدید صادر شد',
+      'Working…': 'در حال انجام…',
+      'Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.': 'برای «{name}» کانفیگ جدید صادر شود؟ لینکش عوض نمی‌شود و حجمی که مصرف کرده منتقل می‌شود.',
+      'Customer profile site': 'سایت پروفایل مشتری',
+      'Customer links': 'لینک‌های مشتری',
+      'The short link you give customers': 'لینک کوتاهی که به مشتری می‌دهید',
+
+
+      /* ---- customer profile settings ---- */
+      'Point a subdomain here and customers get a short link like star.example.com/230-x7k2. It keeps working when you issue them a new config.': 'یک ساب‌دامین به اینجا وصل کنید تا مشتری یک لینک کوتاه مثل star.example.com/230-x7k2 بگیرد. وقتی کانفیگ جدید صادر کنید همان لینک کار می‌کند.',
+      'Leave empty to serve everything on this one domain. Point the DNS at this server first.': 'خالی بگذارید تا همه‌چیز روی همین دامنه سرو شود. اول DNS را به این سرور وصل کنید.',
+
       /* ---- API error codes ---- */
       'err.credit.insufficient':
         'اعتبار کافی نیست: {package} قیمتش {price} {currency} است ولی موجودی شما {credit} {currency} است',

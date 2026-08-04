@@ -639,7 +639,8 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px">
       <button class="btn-sec" data-act="config" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="width:auto;padding:11px 14px">⤓ Config</button>
       <button class="btn-sec" id="msub" style="width:auto;padding:11px 14px">🔗 Subscription</button>
-      <button class="btn-sec" id="mreset" style="width:auto;padding:11px 14px">🔄 Reset usage</button>
+      <button class="btn-sec" id="mreset" style="width:auto;padding:11px 14px">🔄 ${esc(t('Reset usage'))}</button>
+      <button class="btn-sec" id="mrot" style="width:auto;padding:11px 14px">♻️ ${esc(t('New config'))}</button>
       <button class="btn-sec" id="mtog" style="width:auto;padding:11px 14px">${k.disabled?'Enable':'Disable'}</button></div>
     <div id="me" class="err"></div><button class="btn" id="msave">${esc(t('Save changes'))}</button><div style="height:10px"></div>
     <button class="btn-danger" id="mdel">${esc(t('Delete key'))}</button>`);
@@ -653,6 +654,22 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     try{await api(kb+'/extend',{method:'POST',idem:daysIdem,body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mtog').onclick=async()=>{try{await api(kb+'/'+(disabled?'enable':'disable'),{method:'POST'});disabled=!disabled;ov.querySelector('#mtog').textContent=disabled?'Enable':'Disable';toast(disabled?'Key disabled':'Key enabled');await refreshKeys();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”?'))return;try{await api(kb+'/reset',{method:'POST'});toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
+  ov.querySelector('#mrot').onclick=async()=>{
+    if(!confirm(t('Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.').replace('{name}',k.name)))return;
+    const b=ov.querySelector('#mrot');b.disabled=true;b.textContent=t('Working…');
+    try{const r=await api(kb+'/rotate',{method:'POST'});
+      toast(t('New config issued'));closeModal();await loadAll();renderApp();
+      const nk=S.keys.find(x=>x.serverId===k.serverId&&String(x.id)===String(r.id));
+      if(nk)modalShare(nk,true);}
+    catch(e){toast(e.message,1);b.disabled=false;b.textContent='♻️ '+t('New config');}};
+  ov.querySelector('#mrot').onclick=async()=>{
+    if(!confirm(t('Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.').replace('{name}',k.name)))return;
+    const b=ov.querySelector('#mrot');b.disabled=true;b.textContent=t('Working…');
+    try{const r=await api(kb+'/rotate',{method:'POST'});
+      toast(t('New config issued'));closeModal();await loadAll();renderApp();
+      const nk=S.keys.find(x=>x.serverId===k.serverId&&String(x.id)===String(r.id));
+      if(nk)modalShare(nk,true);}
+    catch(e){toast(e.message,1);b.disabled=false;b.textContent='♻️ '+t('New config');}};
   ov.querySelector('#msub').onclick=async()=>{try{const r=await api(kb+'/sub',{method:'POST'});openSubSheet(k,r);}catch(e){toast(e.message,1);}};
   ov.querySelector('#msave').onclick=async()=>{const name=ov.querySelector('#mn').value.trim();const lg=parseFloat(ov.querySelector('#ml').value||'0')||0;const mg=parseFloat(ov.querySelector('#mq').value||'0')||0;const er=ov.querySelector('#me');if(!name){er.textContent=t('Name cannot be empty.');return;}
     const b=ov.querySelector('#msave');b.disabled=true;b.innerHTML='<span class="spin"></span>';
@@ -665,7 +682,8 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
   ov.querySelector('#mdel').onclick=async()=>{if(!confirm('Delete “'+k.name+'”? This cannot be undone.'))return;try{await api(kb,{method:'DELETE'});toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
 }
 function openSubSheet(k,info){
-  const link=location.origin+info.path;const multi=S.servers.length>1;
+  // profileUrl is the short customer link; fall back to this origin's /sub
+  const link=info.profileUrl||(location.origin+info.path);const multi=S.servers.length>1;
   const srv=multi?`<label class="lab" style="margin-top:2px">${esc(t('Servers in this subscription'))}</label><div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:6px">${info.servers.map(s=>`<button class="chip${s.included?' sel':''}" data-subsrv="${esc(s.id)}" style="flex:none">${s.included?'✓ ':''}${esc(s.name)}</button>`).join('')}</div><p class="desc" style="font-size:12px;margin-bottom:16px">${esc(t('Include another server\'s config in this one link — handy for failover in v2ray.'))}</p>`:'';
   const s=openSheet(`<div class="h2">${esc(t('Subscription'))}</div><p class="desc">One auto-updating link for <b>${esc(k.name)}</b>${esc(t('. Clients show data &amp; expiry and refresh it automatically.'))}</p><div style="display:grid;place-items:center;margin:2px 0 16px"><div id="sq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:13px;font-size:12px;word-break:break-all;color:var(--acc)">${esc(link)}</div><div style="height:14px"></div>${srv}<button class="btn" data-act="copytext" data-text="${esc(link)}">${esc(t('Copy link'))}</button><div style="height:10px"></div><button class="btn-sec" data-act="close">${esc(t('Done'))}</button>`);
   renderQR(s.querySelector('#sq'),link);
@@ -690,6 +708,7 @@ function modalSettings(){
     isOwner()?srow('security','var(--acc)','Security','Password &amp; two-factor'):'',
     isOwner()?srow('knobs','var(--acc)','Panel settings','Thresholds, intervals, cache &amp; currency'):'',
     isOwner()?srow('audit','var(--acc)','Activity log','Who did what, and when'):'',
+    isOwner()?srow('profile','var(--acc)','Customer links','The short link you give customers'):'',
     isOwner()?srow('backup','var(--acc)','Backup &amp; restore','Download or restore all data'):'',
     // every admin can rotate their own password, not just the owner
     isOwner()?'':srow('account','var(--acc)','My account','Change your password'),
@@ -1079,6 +1098,30 @@ async function modalKnobs(){
   };
 }
 
+/* The customer profile site. When set, that hostname serves the profile and
+   nothing else — the dashboard and /api answer 404 there, so a link forwarded
+   between customers never carries the panel's address with it. */
+async function modalProfile(){
+  const ov=openSheet('<div class="h2">'+esc(t('Customer links'))+'</div><p class="desc">'+esc(t('Loading…'))+'</p>');
+  let d;try{d=await api('/api/settings/profile');}
+  catch(e){ov.querySelector('.sheet').innerHTML='<div class="h2">'+esc(t('Customer links'))+'</div><p class="err">'+esc(e.message)+'</p>';return;}
+  ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('Customer links'))}</div>
+    <p class="desc">${esc(t('Point a subdomain here and customers get a short link like star.example.com/230-x7k2. It keeps working when you issue them a new config.'))}</p>
+    <div class="field"><label class="lab">${esc(t('Customer profile site'))}</label>
+      <input id="pfu" class="inp" placeholder="https://star.example.com" value="${esc(d.baseUrl||'')}" />
+      <div style="font-size:12px;color:var(--dim);margin-top:7px;line-height:1.5">${esc(t('Leave empty to serve everything on this one domain. Point the DNS at this server first.'))}</div></div>
+    <div id="pferr" class="err"></div><button class="btn" id="pfsave">${esc(t('Save'))}</button>`;
+  ov.querySelector('#pfsave').onclick=async()=>{
+    const er=ov.querySelector('#pferr'),b=ov.querySelector('#pfsave');
+    er.textContent='';b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    try{await api('/api/settings/profile',{method:'PUT',
+          body:JSON.stringify({baseUrl:ov.querySelector('#pfu').value.trim()})});
+      toast(t('Settings saved'));closeModal();}
+    catch(e){er.textContent=e.message;}
+    finally{b.disabled=false;b.textContent=t('Save');}
+  };
+}
+
 /* Activity log. Keyset paging: "Load more" passes the last id back, so page 50
    costs what page 1 does. */
 async function modalAudit(){
@@ -1232,6 +1275,7 @@ document.addEventListener('click',e=>{
     case 'security':modalSecurity();break;
     case 'knobs':modalKnobs();break;
     case 'audit':modalAudit();break;
+    case 'profile':modalProfile();break;
     case 'lang':toggleLang();break;
     case 'account':modalAccount();break;
     case 'backup':modalBackup();break;

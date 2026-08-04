@@ -19,6 +19,11 @@ BOT_ENABLED = "bot_enabled"       # "1"/"0"
 TOTP_SECRET = "totp_secret"
 TOTP_ENABLED = "totp_enabled"     # "1"/"0"
 SUB_BASE_URL = "sub_base_url"
+# Public base URL customers are given, e.g. https://star.example.com. Their
+# profile is that host + "/<token>". Declared here and read through
+# `get_profile_base()`; when it is set, that hostname serves the profile and
+# nothing else — see web.profile.
+PROFILE_BASE_URL = "profile_base_url"
 WEBAPP_URL = "webapp_url"         # public https base, e.g. https://panel.example.com
 
 # ---------------------------------------------------------------- panel knobs
@@ -211,6 +216,21 @@ class SettingsStore:
         if int(uid) in await self.get_admin_ids():
             return await self.db.get_owner()
         return None
+
+    async def get_profile_base(self) -> str | None:
+        """Base URL of the customer profile site, or None when not configured."""
+        url = (await self.get(PROFILE_BASE_URL) or "").strip().rstrip("/")
+        return url or None
+
+    async def get_profile_host(self) -> str | None:
+        """Just the hostname, lowercased and without a port — what a Host header
+        is compared against."""
+        base = await self.get_profile_base()
+        if not base:
+            return None
+        from urllib.parse import urlparse
+        host = (urlparse(base).hostname or "").strip().lower()
+        return host or None
 
     async def get_webapp_url(self) -> str | None:
         """Public HTTPS base URL of the panel, or None. The Mini App lives at

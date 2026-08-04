@@ -544,8 +544,13 @@ async def _sub_info(token: str, admin: dict) -> dict:
     """
     members = await db.get_keys_by_sub_token(token)
     member_sids = {m["server_id"] for m in members}
+    base = await settings.get_profile_base()
     return {
         "token": token,
+        # The short customer link when a profile host is configured, the
+        # long-standing /sub/ path otherwise — one field, so the UI shows
+        # whatever this panel is actually able to serve.
+        "profileUrl": f"{base}/{token}" if base else None,
         "path": f"/sub/{token}",
         "members": [
             {"serverId": m["server_id"],
@@ -568,9 +573,97 @@ async def make_sub_link(sid: str, kid: str,
     meta = await ensure_local(sid, kid)
     token = meta.get("sub_token")
     if not token:
-        token = security.random_token()
+        token = security.profile_token(kid)
         await db.set_sub_token(sid, kid, token)
     return await _sub_info(token, admin)
+
+
+@router.post("/servers/{sid}/keys/{kid}/rotate")
+async def rotate_key(sid: str, kid: str,
+                     admin: dict = Depends(require("keys.edit"))):
+    """Give this customer a fresh Outline key, keeping everything else.
+
+    For when a config stops working — the address gets blocked, or the key
+    leaks. The profile URL does not change, so the customer re-opens the link
+    they already have and finds the new config waiting.
+
+    **Outline counts usage per key.** A new key starts at zero, so replacing one
+    naively hands the customer their whole allowance back — the same shape of
+    hole as the free-renewal paths closed earlier, except this one refunds data
+    instead of money. The remaining allowance is carried across instead: the new
+    key's ceiling is the old ceiling minus what was already spent.
+
+    Order matters. The new key is created *before* the old one is deleted, so a
+    failure half way leaves the customer with a working config and at worst a
+    stale key to clean up — rather than no config at all.
+    """
+    api = api_or_404(sid)
+    meta = await ensure_local(sid, kid)
+
+    try:
+        usage = await api.get_transfer_metrics()
+        used = int(usage.get(str(kid), 0))
+    except OutlineError as e:
+        raise errors.upstream(str(e))
+
+    old_limit = meta.get("limit_bytes")
+    if old_limit is None:
+        new_limit = None                      # unlimited stays unlimited
+    else:
+        # Never below zero: a key already over its ceiling rotates to 0, which
+        # Outline reads as "blocked" — the same state it was in.
+        new_limit = max(0, int(old_limit) - used)
+
+    name = meta.get("name") or f"Key {kid}"
+    try:
+        fresh = await api.create_key(name=name, limit_bytes=new_limit)
+    except OutlineError as e:
+        raise errors.upstream(str(e))
+    new_kid = fresh["id"]
+
+    try:
+        await db.add_key(sid, new_kid, name, new_limit,
+                         meta.get("duration_days"),
+                         owner_admin_id=meta.get("owner_admin_id"))
+        # Carry the clock exactly: a rotation is not a renewal, and must not
+        # restart a validity period the customer has already been running down.
+        if meta.get("activated_ts"):
+            await db.activate(sid, new_kid, int(meta["activated_ts"]),
+                              int(meta.get("expiry_ts") or 0))
+        if meta.get("monthly_bytes"):
+            await db.set_monthly(sid, new_kid, int(meta["monthly_bytes"]),
+                                 meta.get("reset_ts"))
+        if meta.get("disabled"):
+            await api.set_data_limit(new_kid, 0)
+            await db.set_disabled(sid, new_kid, True)
+        if meta.get("sub_token"):
+            await db.set_sub_token(sid, new_kid, meta["sub_token"])
+    except Exception as e:  # noqa: BLE001 — don't strand a half-built key
+        log.exception("rotate: persist failed, removing the new key")
+        try:
+            await api.delete_key(new_kid)
+        except OutlineError:
+            pass
+        await db.delete_key(sid, new_kid)
+        raise HTTPException(status_code=500, detail=f"Could not rotate: {e}")
+
+    # Only now is the old one safe to drop.
+    try:
+        await api.delete_key(kid)
+    except OutlineError as e:
+        if e.status != 404:
+            # The customer already has a working config; say so rather than
+            # rolling back, and leave the stale key for the admin to remove.
+            log.warning("rotate: new key %s is live but the old one (%s) "
+                        "could not be deleted: %s", new_kid, kid, e)
+    await db.delete_key(sid, kid)
+    sub_router.invalidate(meta.get("sub_token"))
+
+    metrics.inc("outline_panel_keys_rotated_total", {"server": sid})
+    return {"ok": True, "id": new_kid, "previousId": kid,
+            "accessUrl": fresh.get("accessUrl"),
+            "limit": new_limit, "carriedUsed": used,
+            "subToken": meta.get("sub_token")}
 
 
 @router.post("/sub/{token}/servers/{target}")

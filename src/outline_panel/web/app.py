@@ -40,6 +40,8 @@ from .observability import (
     metrics_endpoint,
     observability_middleware,
 )
+from .profile import profile_host_guard
+from .profile import router as profile_router
 from .routers import (
     admins,
     audit,
@@ -102,6 +104,9 @@ app.middleware("http")(audit_middleware)
 # Outermost of the two, so the request id is set before anything else logs and
 # the timing covers the whole chain.
 app.middleware("http")(observability_middleware)
+# Outermost: the profile host must be gated before anything else looks at the
+# request, so a 404 there costs nothing and leaks nothing.
+app.middleware("http")(profile_host_guard)
 
 
 @app.middleware("http")
@@ -192,5 +197,9 @@ async def http_exc_handler(request, exc: HTTPException):
             body["params"] = exc.params
     return JSONResponse(status_code=exc.status_code, content=body)
 
+
+# Registered after every real route, so `/{token}` only sees what nothing else
+# claimed — /healthz, /metrics, /tma and the API all match first.
+app.include_router(profile_router)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
