@@ -322,6 +322,29 @@ class DB:
         await self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_rate ON rate_events(bucket, ts)")
 
+    async def _m006_backfill_profile_tokens(self) -> None:
+        """Give every existing key a profile link.
+
+        New keys get one at creation, but a panel upgrading into this feature
+        has a table full of customers with `sub_token IS NULL` — and a link that
+        has to be issued by hand, one key at a time, is a link most customers
+        never get. A migration rather than a script so it runs everywhere,
+        exactly once, without anyone remembering.
+
+        Only NULLs are touched, so it cannot disturb a subscription that already
+        has a token — including the shared token that ties a multi-server
+        subscription together.
+        """
+        from . import security
+        cur = await self.conn.execute(
+            "SELECT server_id, key_id FROM keys WHERE sub_token IS NULL")
+        rows = await cur.fetchall()
+        for r in rows:
+            await self.conn.execute(
+                "UPDATE keys SET sub_token = ? WHERE server_id = ? AND key_id = ?",
+                (security.profile_token(r["key_id"]), r["server_id"], r["key_id"]),
+            )
+
     async def _m005_server_health(self) -> None:
         """Probe history, so a flapping server is visible rather than momentary."""
         await self.conn.execute(_HEALTH_SCHEMA)
@@ -1076,4 +1099,5 @@ _MIGRATIONS = (
     DB._m003_idempotency,
     DB._m004_locks_and_rate,
     DB._m005_server_health,
+    DB._m006_backfill_profile_tokens,
 )

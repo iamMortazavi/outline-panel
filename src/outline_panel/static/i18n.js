@@ -491,6 +491,13 @@
       'Point a subdomain here and customers get a short link like star.example.com/230-x7k2. It keeps working when you issue them a new config.': 'یک ساب‌دامین به اینجا وصل کنید تا مشتری یک لینک کوتاه مثل star.example.com/230-x7k2 بگیرد. وقتی کانفیگ جدید صادر کنید همان لینک کار می‌کند.',
       'Leave empty to serve everything on this one domain. Point the DNS at this server first.': 'خالی بگذارید تا همه‌چیز روی همین دامنه سرو شود. اول DNS را به این سرور وصل کنید.',
 
+
+      /* ---- per-key customer link ---- */
+      'Copy customer link': 'کپی لینک مشتری',
+      'Customer link copied': 'لینک مشتری کپی شد',
+      'This key has no customer link yet': 'این کلید هنوز لینک مشتری ندارد',
+      'Link': 'لینک',
+
       /* ---- API error codes ---- */
       'err.credit.insufficient':
         'اعتبار کافی نیست: {package} قیمتش {price} {currency} است ولی موجودی شما {credit} {currency} است',

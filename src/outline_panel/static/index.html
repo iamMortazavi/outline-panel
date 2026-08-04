@@ -459,7 +459,8 @@ function tableView(list){
       <div class="mono" style="font-size:12.5px;color:${isOnline(k)?'var(--acc)':'var(--faint)'};white-space:nowrap">${esc(b.last)}</div>
       <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0">
         <span class="mono" style="font-size:12.5px;color:${b.expCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.expShort)}</span>
-        <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-stop="1" aria-label="${esc(t('Copy'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn" data-act="copylink" data-id="${esc(k.id)}" data-stop="1" aria-label="${esc(t('Copy customer link'))}" title="${esc(t('Copy customer link'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
+        <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-stop="1" aria-label="${esc(t('Copy'))}" title="${esc(t('Copy config'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
         <button class="icon-btn" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('QR'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M20 14v3M14 20h3" stroke-linecap="round"/></svg></button></div>
     </div>`;}).join('');
   const allSel=list.length&&list.every(k=>S.selected[k.id]);
@@ -486,6 +487,7 @@ function cardView(list,narrow){
         ${k.monthlyBytes?'<span style="display:flex;align-items:center;gap:6px">🔄 <b class="mono" style="color:var(--text);font-weight:600">'+fmtBytes(k.monthlyBytes)+'</b>/mo</span>':''}</div>
       <div style="display:flex;gap:8px;margin-top:16px">
         <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg>${esc(t('Copy'))}</button>
+        <button class="btn-sec" data-act="copylink" data-id="${esc(k.id)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>${esc(t('Link'))}</button>
         <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>${esc(t('QR'))}</button>
         <button class="btn-sec" data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px">${esc(t('Details'))}</button></div>
     </div>`;}).join('')+`</div>`;
@@ -618,6 +620,7 @@ function modalDetail(k){const b=kBits(k),now=Date.now()/1000;
         ${stat('Tunnel time',fmtDur(k.tunnelSec||0))}</div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Copy'))}</button>
+        <button class="btn-sec" data-act="copylink" data-id="${esc(k.id)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Link'))}</button>
         <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('QR'))}</button>
         ${can('keys.edit')?`<button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Edit'))}</button>`:''}</div>
       ${!can('keys.edit')?'':`<div style="display:flex;gap:8px;margin-top:8px">
@@ -1196,6 +1199,17 @@ function modalBackup(){
 }
 
 /* ---------- actions ---------- */
+/* The customer's page, not the raw config. profileUrl is absolute when a
+   profile host is set and a bare path otherwise, so resolve it against this
+   origin before putting it on the clipboard — a reseller pasting "/sub/x" into
+   a chat has pasted nothing useful. */
+async function copyProfile(id){
+  const k=keyById(id);if(!k)return;
+  if(!k.profileUrl){toast(t('This key has no customer link yet'),1);return;}
+  const url=new URL(k.profileUrl,location.origin).href;
+  try{await navigator.clipboard.writeText(url);toast(t('Customer link copied'));}
+  catch(_){prompt(t('Copy customer link')+':',url);}
+}
 async function copyKey(id){const k=keyById(id);if(!k)return;try{await navigator.clipboard.writeText(tagUrl(k));toast(t('Copied to clipboard'));}catch(_){prompt('Copy:',tagUrl(k));}}
 async function bulkTransfer(){
   const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));
@@ -1262,6 +1276,7 @@ document.addEventListener('click',e=>{
     case 'sel':{if(S.selected[d.id])delete S.selected[d.id];else S.selected[d.id]=true;renderList();break;}
     case 'bulk':bulk(d.op);break;
     case 'copy':copyKey(d.id);break;
+    case 'copylink':copyProfile(d.id);break;
     case 'copytext':navigator.clipboard.writeText(d.text).then(()=>toast(t('Copied'))).catch(()=>prompt('Copy:',d.text));break;
     case 'share':{const k=keyById(d.id);if(k)modalShare(k);break;}
     case 'detail':{const k=keyById(d.id);if(k)modalDetail(k);break;}

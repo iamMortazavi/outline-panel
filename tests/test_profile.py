@@ -328,3 +328,121 @@ async def test_clearing_it_restores_one_host_mode(app):
     assert (await star.get("/")).status_code == 200
     await star.aclose()
     await c.aclose()
+
+
+# ------------------------------------------------- every key gets a link
+async def test_a_new_key_gets_its_link_immediately(app):
+    """A link the reseller has to remember to generate is a link most customers
+    never receive."""
+    application, deps, fake = app
+    c = await _c(application)
+    r = await c.post("/api/servers/s1/keys", json={"name": "Ali", "limit_gb": 5})
+    body = r.json()
+    assert body["subToken"], "created without a customer link"
+    assert body["subToken"].startswith(f"{body['id']}-")
+    row = await deps.db.get_key("s1", body["id"])
+    assert row["sub_token"] == body["subToken"]
+    await c.aclose()
+
+
+async def test_the_key_list_carries_the_link(app):
+    application, deps, fake = app
+    c = await _c(application)
+    await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
+    kid = await _key(c)
+    k = (await c.get("/api/keys")).json()["keys"][0]
+    assert k["profileUrl"] == f"https://star.example.com/{k['subToken']}"
+    await c.aclose()
+
+
+async def test_without_a_profile_host_the_link_is_a_path(app):
+    """Still usable — the browser resolves it against the panel's own origin."""
+    application, deps, fake = app
+    c = await _c(application)
+    kid = await _key(c)
+    k = (await c.get("/api/keys")).json()["keys"][0]
+    assert k["profileUrl"] == f"/sub/{k['subToken']}"
+    await c.aclose()
+
+
+async def test_the_backfill_gives_every_old_key_a_link():
+    """A panel upgrading into this feature has a table full of customers with no
+    token. The migration is what stops that being a manual job per key."""
+    import sqlite3
+
+    from outline_panel.core.db import _MIGRATIONS, DB
+    path = os.path.join(tempfile.mkdtemp(), "old.db")
+    raw = sqlite3.connect(path)
+    raw.executescript("""
+        CREATE TABLE keys (server_id TEXT, key_id TEXT, name TEXT, limit_bytes INTEGER,
+            duration_days INTEGER, activated_ts INTEGER, expiry_ts INTEGER,
+            disabled INTEGER DEFAULT 0, monthly_bytes INTEGER, reset_ts INTEGER,
+            sub_token TEXT, created_ts INTEGER, owner_admin_id INTEGER,
+            PRIMARY KEY (server_id, key_id));
+        INSERT INTO keys (server_id,key_id,name,sub_token) VALUES ('s1','1','a',NULL);
+        INSERT INTO keys (server_id,key_id,name,sub_token) VALUES ('s1','2','b',NULL);
+        INSERT INTO keys (server_id,key_id,name,sub_token) VALUES ('s1','3','c','shared-token');
+        INSERT INTO keys (server_id,key_id,name,sub_token) VALUES ('s2','4','c','shared-token');
+    """)
+    raw.commit()
+    raw.close()
+
+    db = DB(path)
+    await db.init()
+    assert await db.schema_version() == len(_MIGRATIONS)
+    rows = {(k["server_id"], k["key_id"]): k["sub_token"] for k in await db.all_keys()}
+    assert all(rows.values()), "a key was left without a link"
+    assert rows[("s1", "1")].startswith("1-") and rows[("s1", "2")].startswith("2-")
+    assert rows[("s1", "1")] != rows[("s1", "2")]
+    # an existing shared token ties a multi-server subscription together and
+    # must survive untouched
+    assert rows[("s1", "3")] == "shared-token" == rows[("s2", "4")]
+    await db.close()
+
+
+async def test_a_link_never_changes_on_restart():
+    """Once issued, a link is the customer's address. Re-running init must not
+    reissue it — a changed link is a customer who can no longer reach their
+    config, and they would have no way to know."""
+    import sqlite3
+
+    from outline_panel.core.db import DB
+    path = os.path.join(tempfile.mkdtemp(), "x.db")
+    raw = sqlite3.connect(path)
+    raw.executescript("""
+        CREATE TABLE keys (server_id TEXT, key_id TEXT, name TEXT, limit_bytes INTEGER,
+            duration_days INTEGER, activated_ts INTEGER, expiry_ts INTEGER,
+            disabled INTEGER DEFAULT 0, monthly_bytes INTEGER, reset_ts INTEGER,
+            sub_token TEXT, created_ts INTEGER, owner_admin_id INTEGER,
+            PRIMARY KEY (server_id, key_id));
+        INSERT INTO keys (server_id,key_id,name,sub_token) VALUES ('s1','7','Ali',NULL);
+    """)
+    raw.commit()
+    raw.close()
+
+    db = DB(path)
+    await db.init()                       # backfill issues one
+    first = (await db.get_key("s1", "7"))["sub_token"]
+    await db.close()
+    assert first and first.startswith("7-")
+
+    for _ in range(3):                    # restarts must not touch it
+        db = DB(path)
+        await db.init()
+        assert (await db.get_key("s1", "7"))["sub_token"] == first
+        await db.close()
+
+
+async def test_an_adopted_key_also_gets_a_link(app):
+    """A key made straight from Outline Manager has no row here until someone
+    edits it. It must not end up a quiet second class with no page."""
+    application, deps, fake = app
+    c = await _c(application)
+    made = await fake.create_key(name="made-outside")
+    assert await deps.db.get_key("s1", made["id"]) is None
+    r = await c.put(f"/api/servers/s1/keys/{made['id']}/name", json={"name": "Sara"})
+    assert r.status_code == 200
+    row = await deps.db.get_key("s1", made["id"])
+    assert row["sub_token"], "adopted key has no customer link"
+    assert row["sub_token"].startswith(f"{made['id']}-")
+    await c.aclose()
