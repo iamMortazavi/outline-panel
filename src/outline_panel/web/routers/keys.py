@@ -170,6 +170,10 @@ class CreateBody(BaseModel):
     # Credit-enabled admins must buy a package; the fields above are then
     # ignored, since the package decides what the user gets.
     package_id: int | None = None
+    # Extra servers to put this customer on, beyond the one in the path. One
+    # subscription, one link, a config on each — see mirror_onto for why the
+    # allowance is not divided.
+    extra_servers: list[str] = []
 
 
 class NameBody(BaseModel):
@@ -345,6 +349,38 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
             "pending": duration is not None and not start_now}
 
 
+async def _add_extra_servers(key: dict, extras: list[str], sid: str,
+                             admin: dict) -> dict:
+    """Mirror a freshly created key onto the other servers that were picked.
+
+    Failures here do **not** undo the creation. The customer already has a
+    working config and, for a credit admin, the package is already paid for —
+    unwinding that because a third server was briefly unreachable would be worse
+    than handing back a key that works on two. The ones that failed are named in
+    the response so the panel can say so.
+    """
+    wanted = [t for t in dict.fromkeys(extras) if t and t != sid]
+    if not wanted or not key.get("subToken"):
+        return key
+    added, failed = [], []
+    for target in wanted:
+        if not can_see(admin, target) or reg.meta(target) is None:
+            failed.append({"id": target, "error": "Unknown server"})
+            continue
+        try:
+            await mirror_onto(key["subToken"], target)
+            added.append(target)
+        except HTTPException as e:
+            failed.append({"id": target, "error": str(e.detail)})
+        except Exception as e:  # noqa: BLE001
+            log.exception("could not mirror new key onto %s", target)
+            failed.append({"id": target, "error": str(e)})
+    key["servers"] = [sid, *added]
+    if failed:
+        key["serverErrors"] = failed
+    return key
+
+
 @router.post("/servers/{sid}/keys")
 async def create_key(sid: str, request: Request, body: CreateBody,
                      admin: dict = Depends(require("keys.create"))):
@@ -360,6 +396,7 @@ async def create_key(sid: str, request: Request, body: CreateBody,
         if not bought:
             key = await create_key_for(sid, body.name, body.limit_gb, body.days,
                                        body.monthly_gb, body.start_now, mine)
+            key = await _add_extra_servers(key, body.extra_servers, sid, admin)
             await guard.done(key)
             return key
         pkg, _price, entry = bought
@@ -379,6 +416,7 @@ async def create_key(sid: str, request: Request, body: CreateBody,
         raise
     # now that the key exists, point the charge at what it bought
     await db.tag_ledger(entry, sid, key["id"])
+    key = await _add_extra_servers(key, body.extra_servers, sid, admin)
     await guard.done(key)
     return key
 
@@ -688,23 +726,24 @@ async def rotate_key(sid: str, kid: str,
             "subToken": meta.get("sub_token")}
 
 
-@router.post("/sub/{token}/servers/{target}")
-async def sub_add_server(token: str, target: str,
-                         admin: dict = Depends(require("keys.edit"))):
-    """Mirror the subscription onto `target`: create a key there (cloning the
-    primary's name/limit/duration) and join it to the same token."""
-    # `target`, not `sid`, so enforce_scope never sees it: check it by hand or
-    # this route mints a key on any server in the panel.
-    if not can_see(admin, target):
-        raise errors.unknown_server()
-    # A mirror is a whole second key with the primary's allowance — product, and
-    # it was free. A credit admin buys a package per server instead.
-    deny_free(admin)
+async def mirror_onto(token: str, target: str) -> None:
+    """Put this subscription on `target` too, cloning the primary.
+
+    The customer gets the same allowance on every server they are given. That
+    is a deliberate business decision by the panel owner, not an oversight: a
+    multi-server subscription is sold for failover, people realistically use one
+    server at a time, and metering it any other way either cuts someone off
+    mid-month or doubles what they pay for a fallback they rarely touch. It does
+    mean a determined customer could spend the full allowance on each server —
+    the owner absorbs that.
+
+    Caller checks scope. Raises on failure; nothing is left half-built.
+    """
     members = await db.get_keys_by_sub_token(token)
     if not members:
         raise errors.unknown_subscription()
     if any(m["server_id"] == target for m in members):
-        return await _sub_info(token, admin)  # already included
+        return                                   # already included
     api = api_or_404(target)
     primary = members[0]
     name = primary.get("name") or "user"
@@ -736,6 +775,17 @@ async def sub_add_server(token: str, target: str,
             pass
         raise HTTPException(status_code=500, detail=f"Failed to add server: {e}")
     sub_router.invalidate(token)
+
+
+@router.post("/sub/{token}/servers/{target}")
+async def sub_add_server(token: str, target: str,
+                         admin: dict = Depends(require("keys.edit"))):
+    """Add `target` to an existing customer's subscription."""
+    # `target`, not `sid`, so enforce_scope never sees it: check it by hand or
+    # this route mints a key on any server in the panel.
+    if not can_see(admin, target):
+        raise errors.unknown_server()
+    await mirror_onto(token, target)
     return await _sub_info(token, admin)
 
 
