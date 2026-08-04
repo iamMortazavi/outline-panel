@@ -69,6 +69,7 @@ async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
         # Server briefly unreachable — surface the error, don't drop its keys.
         return {"serverId": sid, "serverName": m["name"], "keys": [], "error": str(e)}
     local = {k["key_id"]: k for k in await db.keys_for(sid)}
+    base = await settings.get_profile_base()
     out = []
     for k in keys:
         kid = k["id"]
@@ -103,6 +104,11 @@ async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
             "activated": activated,
             "pending": duration is not None and not activated,
             "disabled": bool(meta.get("disabled")),
+            "subToken": meta.get("sub_token"),
+            # Absolute when a profile host is configured; otherwise a path the
+            # browser resolves against the panel's own origin.
+            "profileUrl": (f"{base}/{meta['sub_token']}" if base and meta.get("sub_token")
+                           else (f"/sub/{meta['sub_token']}" if meta.get("sub_token") else None)),
             "lastSeen": c.get("lastSeen"),
             "peakDevices": c.get("peakDevices"),
             "tunnelSec": c.get("tunnelSec"),
@@ -130,9 +136,17 @@ async def list_keys(server: str | None = None,
 
 # --------------------------------------------------------------- write helpers
 async def ensure_local(sid: str, kid: str) -> dict:
+    """The local row for a key, creating one if the panel has not seen it.
+
+    This is the adoption path: a key made straight from Outline Manager has no
+    row here until someone edits it. It gets a customer link at the same moment,
+    for the same reason a newly created key does — otherwise adopted keys are a
+    quiet second class with no page to send anyone to.
+    """
     meta = await db.get_key(sid, kid)
     if not meta:
         await db.add_key(sid, kid, "", None, None)
+        await db.set_sub_token(sid, kid, security.profile_token(kid))
         meta = await db.get_key(sid, kid)
     return meta
 
@@ -308,6 +322,9 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
             await db.activate(sid, key["id"], now, now + duration * 86400)
         if monthly_bytes:
             await db.set_monthly(sid, key["id"], monthly_bytes, now + await settings.cycle_seconds())
+        # Issued here rather than on demand: a link the reseller has to remember
+        # to generate is a link most customers never receive.
+        await db.set_sub_token(sid, key["id"], security.profile_token(key["id"]))
     except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
         log.exception("DB persist failed; deleting orphan key %s", key.get("id"))
         try:
@@ -316,7 +333,12 @@ async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
             pass
         raise HTTPException(status_code=500, detail=f"Failed to persist key: {e}")
     metrics.inc("outline_panel_keys_created_total", {"server": sid})
+    base = await settings.get_profile_base()
+    tok = (await db.get_key(sid, key["id"]) or {}).get("sub_token")
     return {"id": key["id"], "serverId": sid, "name": name,
+            "subToken": tok,
+            "profileUrl": (f"{base}/{tok}" if base and tok
+                           else (f"/sub/{tok}" if tok else None)),
             "accessUrl": key["accessUrl"], "limit": limit_bytes,
             "monthlyBytes": monthly_bytes, "createdTs": now,
             "durationDays": duration,

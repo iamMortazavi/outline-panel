@@ -156,7 +156,11 @@ async def test_a_pre_multi_server_database_is_carried_over():
     assert rows["2"]["disabled"] == 1
     # the columns added after that era exist and default to "the owner's"
     assert rows["1"]["owner_admin_id"] is None
-    assert rows["1"]["sub_token"] is None
+    # ...and the backfill reaches even these, so a customer from the very first
+    # release still ends up with a page to be sent to
+    assert rows["1"]["sub_token"].startswith("1-")
+    assert rows["2"]["sub_token"].startswith("2-")
+    assert rows["1"]["sub_token"] != rows["2"]["sub_token"]
     await db.close()
 
 
