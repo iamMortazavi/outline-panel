@@ -195,12 +195,33 @@ async def test_credit_admin_cannot_top_up_a_key_for_free(app):
     # the stored allowance never moved
     assert (await deps.db.get_key("s1", kid))["limit_bytes"] == 1024
 
-    sub = await c.post(f"/api/servers/s1/keys/{kid}/sub")
-    assert sub.status_code == 200
-    token = sub.json()["token"]
-    # a mirror is a whole second key with the same allowance, and it was free
-    assert (await c.post(f"/api/sub/{token}/servers/s2")).status_code == 403
-    assert len(await deps.db.get_keys_by_sub_token(token)) == 1
+    await c.aclose()
+
+
+async def test_a_credit_admin_may_put_a_customer_on_several_servers(app):
+    """Mirroring is the one thing on this list the owner decided to give away.
+
+    A multi-server subscription is sold for failover and people use one server
+    at a time, so metering it any other way either cuts someone off mid-month or
+    doubles what they pay for a fallback they rarely touch. The owner absorbs
+    the risk that someone spends the full allowance on each. The *top-up* paths
+    above stay closed — those add product to a single key with nothing bought.
+    """
+    application, deps, fakes = app
+    aid = await _mk_sub(deps, servers="s1,s2", credit=100_000)
+    key = await fakes["s1"].create_key(name="mine")
+    await deps.db.add_key("s1", key["id"], "mine", 1024, 30, owner_admin_id=aid)
+    c = await _login(application, "sara", "sara-pw")
+
+    token = (await c.post(f"/api/servers/s1/keys/{key['id']}/sub")).json()["token"]
+    r = await c.post(f"/api/sub/{token}/servers/s2")
+    assert r.status_code == 200
+    members = await deps.db.get_keys_by_sub_token(token)
+    assert {m["server_id"] for m in members} == {"s1", "s2"}
+    # the mirror carries the primary's allowance, not a fresh one
+    assert all(m["limit_bytes"] == 1024 for m in members)
+    # ...and it is free: the balance did not move
+    assert (await deps.db.get_admin(aid))["credit"] == 100_000
     await c.aclose()
 
 

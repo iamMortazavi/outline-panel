@@ -528,6 +528,20 @@ function openDrawer(inner){
 function keyById(id){return S.keys.find(k=>String(k.id)===String(id));}
 function renderQR(box,text){if(!box)return;if(typeof QRCode==='undefined'){box.parentElement.innerHTML='<div class="desc">'+esc(t('QR unavailable offline.'))+'</div>';return;}new QRCode(box,{text,width:188,height:188,colorDark:'#0a0d12',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}
 
+/* Servers this customer will get a config on. All ticked by default, so a new
+   customer has failover unless someone deliberately narrows it. The first
+   reachable one becomes the primary — the key is created there and mirrored
+   onto the rest, which is what ties them to one link. */
+const _srvPicker=()=>{
+  if(S.servers.length<2)return '';
+  return `<div class="field"><label class="lab">${esc(t('Servers for this user'))}</label>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">${S.servers.map(sv=>`
+      <label class="chip${sv.reachable?'':' '}" style="display:inline-flex;align-items:center;gap:7px;cursor:${sv.reachable?'pointer':'not-allowed'};opacity:${sv.reachable?1:.45}">
+        <input type="checkbox" class="csrv" value="${esc(sv.id)}" ${sv.reachable?'checked':'disabled'}
+               style="width:15px;height:15px;accent-color:var(--acc)" />${esc(sv.name)}${sv.reachable?'':' · '+esc(t('offline'))}</label>`).join('')}</div>
+    <div style="font-size:12px;color:var(--dim);margin-top:8px;line-height:1.5">${esc(t('One link, a config on each. The full allowance applies on every server.'))}</div></div>`;
+};
+const _pickedServers=ov=>[...ov.querySelectorAll('.csrv')].filter(x=>x.checked).map(x=>x.value);
 const _srvOpts=()=>S.servers.map(s=>`<option value="${esc(s.id)}" ${s.reachable?'':'disabled'}>${esc(s.name)}${s.reachable?'':' · offline'}</option>`).join('');
 // A credit admin sells from the price list; everyone else keeps the free form.
 function modalCreate(){return (S.me&&S.me.creditEnabled)?modalCreateBuy():modalCreateFree();}
@@ -543,7 +557,7 @@ async function modalCreateBuy(){
     ||'<div class="desc">'+esc(t('No packages are available yet. Ask the owner to add one.'))+'</div>';
   ov.querySelector('.sheet').innerHTML=`<div class="h2">${esc(t('New user'))}</div>
     <p class="desc">Pick a package. Its price comes out of your credit — you have <span class="mono" style="color:var(--acc)">${esc(fmtToman(d.credit))}</span>${d.discountPct?` · your discount ${d.discountPct}%`:''}.</p>
-    ${multi?'<div class="field"><label class="lab">'+esc(t('Server'))+'</label><select id="cs" class="inp" style="cursor:pointer">'+_srvOpts()+'</select></div>':''}
+    ${_srvPicker()}
     <div class="field"><label class="lab">${esc(t('Name'))}</label><input id="cn" class="inp" placeholder="${esc(t('e.g. Mohsen — iPhone'))}" /></div>
     <div class="field"><label class="lab">${esc(t('Package'))}</label>${rows}</div>
     <div class="field"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><label class="lab" style="margin-bottom:2px">${esc(t('Start countdown now'))}</label><div style="font-size:12px;color:var(--dim);max-width:230px" id="csd">${esc(t('Off: the clock starts on the user\'s first connection.'))}</div></div><div class="toggle" id="cst"><div class="tk"></div><div class="kn"></div></div></div></div>
@@ -553,25 +567,31 @@ async function modalCreateBuy(){
   stg.onclick=()=>{startNow=!startNow;stg.classList.toggle('on',startNow);
     ov.querySelector('#csd').textContent=startNow?'On: the clock starts the moment the key is created.':"Off: the clock starts on the user's first connection.";};
   ov.querySelector('#cgo').onclick=async()=>{
-    const sid=multi?ov.querySelector('#cs').value:(S.servers[0]&&S.servers[0].id);
+    const picked=multi?_pickedServers(ov):[(S.servers[0]||{}).id].filter(Boolean);
+    const sid=picked[0], extra_servers=picked.slice(1);
     const name=ov.querySelector('#cn').value.trim();
     const pick=[...ov.querySelectorAll('.cpk')].find(x=>x.checked);
     const er=ov.querySelector('#ce');er.textContent='';
-    if(!sid){er.textContent=t('No server available.');return;}
+    if(!sid){er.textContent=t('Pick at least one server.');return;}
     if(!name){er.textContent=t('Please enter a name.');return;}
     if(!pick){er.textContent=t('Pick a package.');return;}
     const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',idem,
-          body:JSON.stringify({name,package_id:+pick.value,start_now:startNow})});
+          body:JSON.stringify({name,package_id:+pick.value,start_now:startNow,extra_servers})});
+      if(k.serverErrors&&k.serverErrors.length)toast(t('Created, but some servers failed')+': '+k.serverErrors.map(e=>srvName(e.id)).join('، '),1);
       await loadAll();renderApp();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
     catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Create user');}
   };
 }
 function modalCreateFree(){
+  // One id for this dialog, however many times Create is pressed — the same
+  // rule as the credit sheet. It was missing here, so submitting this form
+  // threw "idem is not defined" and created nothing.
+  const idem=idemKey();
   const multi=S.servers.length>1;
   const srvOpts=_srvOpts();
   const ov=openSheet(`<div class="h2">${esc(t('Create a new key'))}</div><p class="desc">${esc(t('Generate one Outline access key for a single user.'))}</p>
-    ${multi?'<div class="field"><label class="lab">'+esc(t('Server'))+'</label><select id="cs" class="inp" style="cursor:pointer">'+srvOpts+'</select></div>':''}
+    ${_srvPicker()}
     <div class="field"><label class="lab">${esc(t('Name'))}</label><input id="cn" class="inp" placeholder="${esc(t('e.g. Mohsen — iPhone'))}" /></div>
     <div class="field"><label class="lab">${esc(t('Data limit · GB'))}</label><input id="cl" class="inp" type="number" min="0" placeholder="${esc(t('Gigabytes'))}" />
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:9px">${[['10','10 GB'],['50','50 GB'],['100','100 GB'],['0','Unlimited']].map(([v,l])=>`<span class="chip" data-chip="cl" data-v="${v}">${esc(t(l))}</span>`).join('')}</div></div>
@@ -585,11 +605,13 @@ function modalCreateFree(){
   stg.onclick=()=>{startNow=!startNow;stg.classList.toggle('on',startNow);
     ov.querySelector('#csd').textContent=startNow?'On: the clock starts the moment the key is created.':"Off: the clock starts on the user's first connection.";};
   ov.querySelector('#cgo').onclick=async()=>{
-    const sid=multi?ov.querySelector('#cs').value:(S.servers[0]&&S.servers[0].id);
+    const picked=multi?_pickedServers(ov):[(S.servers[0]||{}).id].filter(Boolean);
+    const sid=picked[0], extra_servers=picked.slice(1);
     const name=ov.querySelector('#cn').value.trim();const lg=parseFloat(ov.querySelector('#cl').value||'0')||0;const dd=parseInt(ov.querySelector('#cd').value||'0')||0;const mg=parseFloat(ov.querySelector('#cm').value||'0')||0;
-    const er=ov.querySelector('#ce');if(!sid){er.textContent=t('Add a server first.');return;}if(!name){er.textContent=t('Please enter a name.');return;}
+    const er=ov.querySelector('#ce');if(!sid){er.textContent=t('Pick at least one server.');return;}if(!name){er.textContent=t('Please enter a name.');return;}
     const b=ov.querySelector('#cgo');b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',idem,body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mg,start_now:startNow})});
+    try{const k=await api('/api/servers/'+sid+'/keys',{method:'POST',idem,body:JSON.stringify({name,limit_gb:lg,days:dd,monthly_gb:mg,start_now:startNow,extra_servers})});
+      if(k.serverErrors&&k.serverErrors.length)toast(t('Created, but some servers failed')+': '+k.serverErrors.map(e=>srvName(e.id)).join('، '),1);
       await refreshKeys();renderList();modalShare({id:k.id,serverId:sid,name,accessUrl:k.accessUrl},true);}
     catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Create key');}
   };

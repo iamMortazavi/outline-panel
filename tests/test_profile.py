@@ -31,12 +31,17 @@ async def app():
     from outline_panel.web import deps
     await deps.db.init()
     await deps.settings.bootstrap()
-    fake = FakeOutline()
-    deps.reg.servers["s1"] = {"id": "s1", "name": "Tokyo",
-                              "api_url": "https://1.2.3.4:1/x",
-                              "cert_sha256": None, "api": fake}
-    await deps.db.add_server("s1", "Tokyo", "https://1.2.3.4:1/x")
-    yield appmod.app, deps, fake
+    # two servers: the multi-server tests need somewhere to mirror onto, and
+    # `fake` stays s1 so the single-server tests read unchanged
+    fakes = {}
+    for sid, name in (("s1", "Tokyo"), ("s2", "Berlin")):
+        f = FakeOutline()
+        fakes[sid] = f
+        deps.reg.servers[sid] = {"id": sid, "name": name,
+                                 "api_url": "https://1.2.3.4:1/x",
+                                 "cert_sha256": None, "api": f}
+        await deps.db.add_server(sid, name, "https://1.2.3.4:1/x")
+    yield appmod.app, deps, fakes
     await deps.db.close()
 
 
@@ -78,7 +83,8 @@ def test_a_hostile_key_id_cannot_shape_the_token():
 async def test_rotation_carries_the_used_bytes(app):
     """The hole this closes: a fresh key starts at zero usage, so without the
     carry-over the customer gets their whole allowance back for free."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c, gb=50)
     fake.usage[kid] = 30 * GB                     # 30 of 50 GB spent
@@ -98,7 +104,8 @@ async def test_rotation_carries_the_used_bytes(app):
 
 async def test_rotation_keeps_the_profile_link(app):
     """The whole point: the customer re-opens the link they already have."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
@@ -115,7 +122,8 @@ async def test_rotation_keeps_the_profile_link(app):
 async def test_rotation_does_not_restart_the_clock(app):
     """A rotation is not a renewal — the validity the customer has been running
     down has to survive it."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c, days=30)
     await deps.db.activate("s1", kid, 1_700_000_000, 1_700_500_000)
@@ -129,7 +137,8 @@ async def test_rotation_does_not_restart_the_clock(app):
 
 
 async def test_rotation_keeps_owner_monthly_and_disabled_state(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     from outline_panel.core import security
     h, s = security.hash_password("sara-pw")
     aid = await deps.db.add_admin("sara", h, s, caps="keys.view,keys.edit",
@@ -150,7 +159,8 @@ async def test_rotation_keeps_owner_monthly_and_disabled_state(app):
 
 
 async def test_an_unlimited_key_stays_unlimited(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c, gb=0)
     fake.usage[kid] = 900 * GB
@@ -163,7 +173,8 @@ async def test_an_unlimited_key_stays_unlimited(app):
 async def test_a_key_already_over_its_ceiling_rotates_to_zero(app):
     """Not a negative limit — Outline reads 0 as blocked, which is the state it
     was already in."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c, gb=10)
     fake.usage[kid] = 25 * GB
@@ -173,7 +184,8 @@ async def test_a_key_already_over_its_ceiling_rotates_to_zero(app):
 
 
 async def test_the_old_key_is_gone_and_only_one_remains(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     new_kid = (await c.post(f"/api/servers/s1/keys/{kid}/rotate")).json()["id"]
@@ -186,7 +198,8 @@ async def test_the_old_key_is_gone_and_only_one_remains(app):
 async def test_a_failure_leaves_the_customer_connected(app):
     """The new key is created before the old one is deleted, so a failure must
     not take away the config they already had."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     from outline_panel.core.outline_api import OutlineError
     c = await _c(application)
     kid = await _key(c)
@@ -203,7 +216,8 @@ async def test_a_failure_leaves_the_customer_connected(app):
 
 
 async def test_rotation_needs_keys_edit_and_ownership(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     from outline_panel.core import security
     h, s = security.hash_password("sara-pw")
     await deps.db.add_admin("sara", h, s, caps="keys.view", servers="s1")
@@ -218,7 +232,8 @@ async def test_rotation_needs_keys_edit_and_ownership(app):
 
 
 async def test_rotation_is_audited(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     await c.post(f"/api/servers/s1/keys/{kid}/rotate")
@@ -232,7 +247,8 @@ async def test_rotation_is_audited(app):
 async def test_the_profile_host_serves_only_the_profile(app):
     """This URL goes to every customer and gets forwarded. Whoever ends up with
     it must not also be holding the address of the admin panel."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
@@ -262,7 +278,8 @@ async def test_the_profile_host_serves_only_the_profile(app):
 async def test_a_route_name_is_never_mistaken_for_a_token(app, path):
     """A token is recognised by shape, and several real route names share it —
     "metrics" is seven alphanumerics. Those must not slip past the guard."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
     await c.aclose()
@@ -274,7 +291,8 @@ async def test_a_route_name_is_never_mistaken_for_a_token(app, path):
 
 
 async def test_the_panel_host_is_untouched(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
     assert (await c.get("/api/me")).status_code == 200
@@ -283,7 +301,8 @@ async def test_the_panel_host_is_untouched(app):
 
 
 async def test_the_profile_url_is_handed_to_the_reseller(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
@@ -295,7 +314,8 @@ async def test_the_profile_url_is_handed_to_the_reseller(app):
 
 async def test_without_a_profile_host_nothing_changes(app):
     """Unset is the default, and must leave the panel exactly as it was."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     body = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()
@@ -310,14 +330,16 @@ async def test_without_a_profile_host_nothing_changes(app):
 async def test_the_profile_url_must_be_a_real_origin(app, bad):
     """A bare hostname parses with no hostname at all, which would silently gate
     nothing — the setting would look applied and do nothing."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     assert (await c.put("/api/settings/profile", json={"baseUrl": bad})).status_code == 400
     await c.aclose()
 
 
 async def test_clearing_it_restores_one_host_mode(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
     assert (await c.put("/api/settings/profile", json={"baseUrl": ""})).json()["host"] == ""
@@ -334,7 +356,8 @@ async def test_clearing_it_restores_one_host_mode(app):
 async def test_a_new_key_gets_its_link_immediately(app):
     """A link the reseller has to remember to generate is a link most customers
     never receive."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     r = await c.post("/api/servers/s1/keys", json={"name": "Ali", "limit_gb": 5})
     body = r.json()
@@ -346,7 +369,8 @@ async def test_a_new_key_gets_its_link_immediately(app):
 
 
 async def test_the_key_list_carries_the_link(app):
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
     kid = await _key(c)
@@ -357,7 +381,8 @@ async def test_the_key_list_carries_the_link(app):
 
 async def test_without_a_profile_host_the_link_is_a_path(app):
     """Still usable — the browser resolves it against the panel's own origin."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     k = (await c.get("/api/keys")).json()["keys"][0]
@@ -436,7 +461,8 @@ async def test_a_link_never_changes_on_restart():
 async def test_an_adopted_key_also_gets_a_link(app):
     """A key made straight from Outline Manager has no row here until someone
     edits it. It must not end up a quiet second class with no page."""
-    application, deps, fake = app
+    application, deps, fakes = app
+    fake = fakes["s1"]
     c = await _c(application)
     made = await fake.create_key(name="made-outside")
     assert await deps.db.get_key("s1", made["id"]) is None
@@ -445,4 +471,92 @@ async def test_an_adopted_key_also_gets_a_link(app):
     row = await deps.db.get_key("s1", made["id"])
     assert row["sub_token"], "adopted key has no customer link"
     assert row["sub_token"].startswith(f"{made['id']}-")
+    await c.aclose()
+
+
+# ------------------------------------------- several servers from the start
+async def test_creating_on_several_servers_gives_one_link(app):
+    """One subscription, one link, a config on each — the whole point of asking
+    at creation instead of making it a second trip through the panel."""
+    application, deps, fakes = app
+    c = await _c(application)
+    r = await c.post("/api/servers/s1/keys",
+                     json={"name": "Ali", "limit_gb": 50, "days": 30,
+                           "extra_servers": ["s2"]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["servers"] == ["s1", "s2"]
+    assert "serverErrors" not in body
+
+    members = await deps.db.get_keys_by_sub_token(body["subToken"])
+    assert {m["server_id"] for m in members} == {"s1", "s2"}
+    # the mirror carries the primary's allowance, deliberately undivided
+    assert all(m["limit_bytes"] == 50 * GB for m in members)
+    assert all(m["duration_days"] == 30 for m in members)
+    await c.aclose()
+
+
+async def test_the_customer_page_lists_every_server(app):
+    application, deps, fakes = app
+    c = await _c(application)
+    body = (await c.post("/api/servers/s1/keys",
+                         json={"name": "Ali", "limit_gb": 10,
+                               "extra_servers": ["s2"]})).json()
+    pub = httpx.AsyncClient(transport=httpx.ASGITransport(app=application),
+                            base_url="http://panel.example.com")
+    info = (await pub.get(f"/sub/{body['subToken']}/info")).json()
+    assert len(info["servers"]) == 2
+    assert {s["server"] for s in info["servers"]} == {"Tokyo", "Berlin"}
+    await pub.aclose()
+    await c.aclose()
+
+
+async def test_an_unreachable_extra_server_does_not_undo_the_sale(app):
+    """The customer already has a working config and, on credit, the package is
+    already paid for. Unwinding that because one server blipped is worse than
+    handing back a key that works on the others."""
+    application, deps, fakes = app
+    from outline_panel.core.outline_api import OutlineError
+
+    async def refuse(*a, **kw):
+        raise OutlineError("unreachable")
+
+    fakes["s2"].create_key = refuse
+    c = await _c(application)
+    r = await c.post("/api/servers/s1/keys",
+                     json={"name": "Ali", "limit_gb": 5, "extra_servers": ["s2"]})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["servers"] == ["s1"]
+    assert [e["id"] for e in body["serverErrors"]] == ["s2"]
+    assert await deps.db.get_key("s1", body["id"]) is not None
+    await c.aclose()
+
+
+async def test_extra_servers_are_scoped_to_the_admin(app):
+    """A sub-admin cannot use this to mint a key on a server they were never
+    given — the same rule sub_add_server enforces by hand."""
+    application, deps, fakes = app
+    from outline_panel.core import security
+    h, s = security.hash_password("sara-pw")
+    await deps.db.add_admin("sara", h, s, caps="keys.view,keys.create,keys.edit",
+                            servers="s1")
+    c = await _c(application, "sara", "sara-pw")
+    body = (await c.post("/api/servers/s1/keys",
+                         json={"name": "Ali", "limit_gb": 5,
+                               "extra_servers": ["s2"]})).json()
+    assert body["servers"] == ["s1"]
+    assert [e["id"] for e in body["serverErrors"]] == ["s2"]
+    assert not await deps.db.keys_for("s2")
+    await c.aclose()
+
+
+async def test_a_repeated_or_self_referencing_server_is_ignored(app):
+    application, deps, fakes = app
+    c = await _c(application)
+    body = (await c.post("/api/servers/s1/keys",
+                         json={"name": "Ali", "limit_gb": 5,
+                               "extra_servers": ["s1", "s2", "s2"]})).json()
+    assert body["servers"] == ["s1", "s2"]
+    assert len(await deps.db.get_keys_by_sub_token(body["subToken"])) == 2
     await c.aclose()

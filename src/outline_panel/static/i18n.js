@@ -498,6 +498,13 @@
       'This key has no customer link yet': 'این کلید هنوز لینک مشتری ندارد',
       'Link': 'لینک',
 
+
+      /* ---- multi-server at creation ---- */
+      'Servers for this user': 'سرورهای این کاربر',
+      'offline': 'آفلاین',
+      'One link, a config on each. The full allowance applies on every server.': 'یک لینک، روی هر سرور یک کانفیگ. حجم کامل روی هر سرور اعمال می‌شود.',
+      'Created, but some servers failed': 'ساخته شد، ولی بعضی سرورها ناموفق بودند',
+
       /* ---- API error codes ---- */
       'err.credit.insufficient':
         'اعتبار کافی نیست: {package} قیمتش {price} {currency} است ولی موجودی شما {credit} {currency} است',
