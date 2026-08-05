@@ -155,16 +155,21 @@ async def change_password(body: PasswordBody, admin: dict = Depends(current_admi
     return {"ok": True, "username": (await db.get_admin(admin["id"]))["username"]}
 
 
+# The owner's original three. Kept for older clients, but they now write the
+# same per-admin columns /api/me/2fa/* does — two places storing one secret is
+# how you end up enabled in one and disabled in the other. `settings` is still
+# written alongside so a rollback to the previous version still finds it.
 @router.post("/2fa/start")
-async def start_2fa():
+async def start_2fa(admin: dict = Depends(require_owner)):
     """Generate a fresh secret and return its provisioning URI for QR display."""
-    if await settings.get_bool(TOTP_ENABLED):
+    if admin["totp_enabled"] or await settings.get_bool(TOTP_ENABLED):
         raise HTTPException(status_code=400, detail="2FA is already enabled")
     secret = security.generate_totp_secret()
     await settings.set(TOTP_SECRET, secret)
+    await db.update_admin(admin["id"], totp_secret=secret)
     return {
         "secret": secret,
-        "uri": security.totp_provisioning_uri(secret, "admin"),
+        "uri": security.totp_provisioning_uri(secret, admin["username"]),
     }
 
 
@@ -173,13 +178,14 @@ class CodeBody(BaseModel):
 
 
 @router.post("/2fa/enable")
-async def enable_2fa(body: CodeBody):
-    secret = await settings.get(TOTP_SECRET)
+async def enable_2fa(body: CodeBody, admin: dict = Depends(require_owner)):
+    secret = admin["totp_secret"] or await settings.get(TOTP_SECRET)
     if not secret:
         raise HTTPException(status_code=400, detail="Start 2FA setup first")
     if not security.verify_totp(secret, body.code):
         raise HTTPException(status_code=400, detail="Code did not match — try again")
     await settings.set_bool(TOTP_ENABLED, True)
+    await db.update_admin(admin["id"], totp_secret=secret, totp_enabled=1)
     return {"ok": True}
 
 
@@ -188,11 +194,12 @@ class PasswordOnly(BaseModel):
 
 
 @router.post("/2fa/disable")
-async def disable_2fa(body: PasswordOnly):
+async def disable_2fa(body: PasswordOnly, admin: dict = Depends(require_owner)):
     if not await settings.verify_admin_password(body.password):
         raise HTTPException(status_code=401, detail="Password is wrong")
     await settings.set_bool(TOTP_ENABLED, False)
     await settings.set(TOTP_SECRET, None)
+    await db.update_admin(admin["id"], totp_secret=None, totp_enabled=0)
     return {"ok": True}
 
 

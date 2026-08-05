@@ -345,6 +345,35 @@ class DB:
                 (security.profile_token(r["key_id"]), r["server_id"], r["key_id"]),
             )
 
+    async def _m007_per_admin_totp(self) -> None:
+        """A second factor for every admin, not only the owner.
+
+        The secret lived in `settings`, which holds one global row — so 2FA
+        protected the login that happens rarely and left every reseller, who
+        signs in daily and spends credit, on a password alone.
+
+        The owner's existing secret is carried into their row so nobody has to
+        re-enroll and no one is briefly left without the factor they had. The
+        `settings` copy is deliberately not deleted here: if this panel ever
+        rolls back a version, the old code still finds it and the owner can
+        still get in.
+        """
+        cur = await self.conn.execute("PRAGMA table_info(admins)")
+        cols = [r[1] for r in await cur.fetchall()]
+        if "totp_secret" not in cols:
+            await self.conn.execute("ALTER TABLE admins ADD COLUMN totp_secret TEXT")
+        if "totp_enabled" not in cols:
+            await self.conn.execute(
+                "ALTER TABLE admins ADD COLUMN totp_enabled INTEGER DEFAULT 0")
+        cur = await self.conn.execute(
+            "SELECT key, value FROM settings WHERE key IN ('totp_secret','totp_enabled')")
+        old = {r["key"]: r["value"] for r in await cur.fetchall()}
+        if old.get("totp_secret"):
+            await self.conn.execute(
+                "UPDATE admins SET totp_secret = ?, totp_enabled = ? WHERE is_owner = 1",
+                (old["totp_secret"], 1 if old.get("totp_enabled") == "1" else 0),
+            )
+
     async def _m005_server_health(self) -> None:
         """Probe history, so a flapping server is visible rather than momentary."""
         await self.conn.execute(_HEALTH_SCHEMA)
@@ -597,7 +626,8 @@ class DB:
         """Update only the named columns. Unknown ones are ignored, so a caller
         can pass a whole request body without smuggling in `is_owner`."""
         allowed = ("username", "pw_hash", "pw_salt", "caps", "servers", "disabled",
-                   "credit_enabled", "discount_pct", "telegram_id")
+                   "credit_enabled", "discount_pct", "telegram_id",
+                   "totp_secret", "totp_enabled")
                    # never "credit": it moves only through the ledger
         cols = [c for c in allowed if c in fields]
         if not cols:
@@ -999,7 +1029,11 @@ class DB:
                  "reset_ts", "sub_token", "created_ts", "owner_admin_id")
     _ADMIN_COLS = ("id", "username", "pw_hash", "pw_salt", "is_owner", "caps",
                    "servers", "disabled", "created_ts", "credit",
-                   "credit_enabled", "discount_pct", "telegram_id")
+                   "credit_enabled", "discount_pct", "telegram_id",
+                   # carried like pw_hash is: a backup already holds what it
+                   # takes to sign in, and dropping these on restore would
+                   # silently turn everyone's second factor off.
+                   "totp_secret", "totp_enabled")
     _PACKAGE_COLS = ("id", "name", "gb", "days", "monthly_gb", "price", "created_ts")
     _LEDGER_COLS = ("id", "admin_id", "delta", "balance_after", "reason",
                     "package_id", "package_name", "price_before_discount",
@@ -1100,4 +1134,5 @@ _MIGRATIONS = (
     DB._m004_locks_and_rate,
     DB._m005_server_health,
     DB._m006_backfill_profile_tokens,
+    DB._m007_per_admin_totp,
 )

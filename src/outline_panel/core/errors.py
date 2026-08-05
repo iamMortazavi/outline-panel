@@ -97,6 +97,14 @@ def bad_totp():
     return PanelError(401, "auth.totp_invalid", "Invalid 2FA code")
 
 
+def totp_already_on():
+    return PanelError(400, "auth.totp_already_on", "Two-factor is already on")
+
+
+def totp_not_started():
+    return PanelError(400, "auth.totp_not_started", "Start two-factor setup first")
+
+
 def wrong_password():
     return PanelError(401, "auth.wrong_password", "Current password is wrong")
 

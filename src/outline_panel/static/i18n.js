@@ -482,6 +482,16 @@
       'New config issued': 'کانفیگ جدید صادر شد',
       'Working…': 'در حال انجام…',
       'Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.': 'برای «{name}» کانفیگ جدید صادر شود؟ لینکش عوض نمی‌شود و حجمی که مصرف کرده منتقل می‌شود.',
+      /* ---- two-factor, for every admin ---- */
+      'Signed in as {name}': 'وارد شده به‌عنوان {name}',
+      'Two-factor': 'ورود دو مرحله‌ای',
+      'Two-factor is': 'ورود دو مرحله‌ای',
+      'on': 'روشن',
+      'A code from your phone on top of your password. Recommended for anyone who sells.':
+        'یک کد از گوشی‌تان علاوه بر رمز عبور. برای هرکسی که می‌فروشد توصیه می‌شود.',
+      'Finish setting up 2FA': 'تکمیل راه‌اندازی دو مرحله‌ای',
+      'Your password &amp; two-factor': 'رمز عبور و ورود دو مرحله‌ای شما',
+
       /* ---- bulk actions on a selection ---- */
       'selected': 'انتخاب‌شده',
       'Servers…': 'سرورها…',
@@ -551,6 +561,8 @@
       'err.auth.bad_credentials': 'نام کاربری یا رمز عبور اشتباه است',
       'err.auth.totp_required': 'کد دو مرحله‌ای لازم است',
       'err.auth.totp_invalid': 'کد دو مرحله‌ای نامعتبر',
+      'err.auth.totp_already_on': 'ورود دو مرحله‌ای از قبل روشن است',
+      'err.auth.totp_not_started': 'اول راه‌اندازی دو مرحله‌ای را شروع کنید',
       'err.auth.wrong_password': 'رمز عبور فعلی اشتباه است',
       'err.auth.rate_limited': 'تلاش‌های زیاد. چند دقیقه بعد دوباره امتحان کنید.',
       'err.sub.rate_limited': 'درخواست بیش از حد — کمی بعد دوباره تلاش کنید',

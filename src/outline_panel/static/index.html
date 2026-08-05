@@ -755,7 +755,7 @@ function modalSettings(){
     isOwner()?srow('profile','var(--acc)','Customer links','The short link you give customers'):'',
     isOwner()?srow('backup','var(--acc)','Backup &amp; restore','Download or restore all data'):'',
     // every admin can rotate their own password, not just the owner
-    isOwner()?'':srow('account','var(--acc)','My account','Change your password'),
+    isOwner()?'':srow('account','var(--acc)','My account','Your password &amp; two-factor'),
     srow('lang','var(--acc)','Language',nextLangLabel()),
   ].filter(Boolean).join('');
   openSheet(`<div class="h2">${esc(t('Servers &amp; settings'))}</div><p class="desc">${esc(t('Manage your Outline servers, and configure the panel.'))}</p>
@@ -1087,18 +1087,7 @@ function modalSecurity(){
     catch(e){er.textContent=e.message;}
     finally{b.disabled=false;b.textContent=t('Save changes');}
   };
-  const tfa=ov.querySelector('#tfa');
-  const render=()=>api('/api/settings').then(s=>{
-    if(s.totpEnabled){tfa.innerHTML='<div class="desc" style="margin-bottom:10px">2FA is <b style="color:var(--acc)">enabled</b>.</div><div class="field"><label class="lab">'+esc(t('Password to disable'))+'</label><input id="tpw" class="inp" type="password" /></div><button class="btn-danger" id="tdis">'+esc(t('Disable 2FA'))+'</button>';
-      tfa.querySelector('#tdis').onclick=async()=>{try{await api('/api/settings/2fa/disable',{method:'POST',body:JSON.stringify({password:tfa.querySelector('#tpw').value})});toast(t('2FA disabled'));render();}catch(e){toast(e.message,1);}};}
-    else{tfa.innerHTML='<button class="btn-sec" id="tstart">'+esc(t('Set up 2FA'))+'</button>';
-      tfa.querySelector('#tstart').onclick=async()=>{try{const r=await api('/api/settings/2fa/start',{method:'POST'});
-        tfa.innerHTML='<p class="desc">'+esc(t('Scan with Google Authenticator / Authy, then enter the 6-digit code.'))+'</p><div style="display:grid;place-items:center;margin:4px 0 14px"><div id="tq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div><div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:12px;font-size:12px;word-break:break-all;color:var(--acc);margin-bottom:14px">'+esc(r.secret)+'</div><div class="field"><label class="lab">'+esc(t('6-digit code'))+'</label><input id="tcode" class="inp" inputmode="numeric" placeholder="000000" /></div><div id="tferr" class="err"></div><button class="btn" id="tconf">'+esc(t('Enable 2FA'))+'</button>';
-        renderQR(tfa.querySelector('#tq'),r.uri);
-        tfa.querySelector('#tconf').onclick=async()=>{try{await api('/api/settings/2fa/enable',{method:'POST',body:JSON.stringify({code:tfa.querySelector('#tcode').value})});toast(t('2FA enabled'));render();}catch(e){tfa.querySelector('#tferr').textContent=e.message;}};
-      }catch(e){toast(e.message,1);}};}
-  }).catch(()=>{tfa.innerHTML='<div class="desc">'+esc(t('Could not load 2FA status.'))+'</div>';});
-  render();
+  render2fa(ov.querySelector('#tfa'));
 }
 /* Panel knobs. The form is generated from the spec the API ships with the
    values, so adding a setting server-side needs no change here. */
@@ -1210,14 +1199,54 @@ async function modalAudit(){
   load();
 }
 
+/* Two-factor enrolment, for whoever is signed in. One implementation on
+   /api/me/2fa/*: the owner's Security sheet and a reseller's My-account sheet
+   are the same job, and two copies is how one ends up saying "enabled" while
+   the other says "off". */
+function render2fa(box){
+  if(!box)return;
+  const draw=()=>api('/api/me/2fa').then(s=>{
+    if(s.enabled){
+      box.innerHTML='<div class="desc" style="margin-bottom:10px">'+esc(t('Two-factor is'))+' <b style="color:var(--acc)">'+esc(t('on'))+'</b>.</div>'+
+        '<div class="field"><label class="lab">'+esc(t('Password to disable'))+'</label><input id="tpw" class="inp" type="password" autocomplete="current-password" /></div>'+
+        '<div id="tferr" class="err"></div><button class="btn-danger" id="tdis">'+esc(t('Disable 2FA'))+'</button>';
+      box.querySelector('#tdis').onclick=async()=>{
+        try{await api('/api/me/2fa/disable',{method:'POST',body:JSON.stringify({password:box.querySelector('#tpw').value})});
+          toast(t('2FA disabled'));draw();}
+        catch(e){box.querySelector('#tferr').textContent=e.message;}};
+      return;
+    }
+    box.innerHTML='<p class="desc" style="margin-bottom:12px">'+esc(t('A code from your phone on top of your password. Recommended for anyone who sells.'))+'</p>'+
+      '<button class="btn-sec" id="tstart">'+esc(s.pending?t('Finish setting up 2FA'):t('Set up 2FA'))+'</button>';
+    box.querySelector('#tstart').onclick=async()=>{
+      let r;try{r=await api('/api/me/2fa/start',{method:'POST'});}catch(e){return toast(e.message,1);}
+      box.innerHTML='<p class="desc">'+esc(t('Scan with Google Authenticator / Authy, then enter the 6-digit code.'))+'</p>'+
+        '<div style="display:grid;place-items:center;margin:4px 0 14px"><div id="tq" style="padding:14px;background:#fff;border-radius:16px;line-height:0"></div></div>'+
+        '<div class="mono" style="background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:12px;font-size:12px;word-break:break-all;color:var(--acc);margin-bottom:14px">'+esc(r.secret)+'</div>'+
+        '<div class="field"><label class="lab">'+esc(t('6-digit code'))+'</label><input id="tcode" class="inp" inputmode="numeric" autocomplete="one-time-code" placeholder="000000" /></div>'+
+        '<div id="tferr" class="err"></div><button class="btn" id="tconf">'+esc(t('Enable 2FA'))+'</button>';
+      renderQR(box.querySelector('#tq'),r.uri);
+      const go=async()=>{try{await api('/api/me/2fa/enable',{method:'POST',body:JSON.stringify({code:box.querySelector('#tcode').value.trim()})});
+        toast(t('2FA enabled'));draw();}catch(e){box.querySelector('#tferr').textContent=e.message;}};
+      box.querySelector('#tconf').onclick=go;
+      box.querySelector('#tcode').addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+      box.querySelector('#tcode').focus();
+    };
+  }).catch(()=>{box.innerHTML='<div class="desc">'+esc(t('Could not load 2FA status.'))+'</div>';});
+  draw();
+}
+
 /* Any admin's own password. The owner's lives in Security along with 2FA;
    a sub-admin previously had no way to change theirs at all. */
 function modalAccount(){
   const ov=openSheet(`<div class="h2">${esc(t('My account'))}</div>
-    <p class="desc">Signed in as <b>${esc((S.me&&S.me.username)||'')}</b>.</p>
+    <p class="desc">${t('Signed in as {name}').replace('{name}','<b>'+esc((S.me&&S.me.username)||'')+'</b>')}</p>
     <div class="field"><label class="lab">${esc(t('Current password'))}</label><input id="ac" class="inp" type="password" autocomplete="current-password" /></div>
     <div class="field"><label class="lab">${esc(t('New password'))}</label><input id="an" class="inp" type="password" autocomplete="new-password" /></div>
-    <div id="aerr" class="err"></div><button class="btn" id="asave">${esc(t('Change password'))}</button>`);
+    <div id="aerr" class="err"></div><button class="btn" id="asave">${esc(t('Change password'))}</button>
+    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);font-weight:600;margin:26px 0 12px">${esc(t('Two-factor'))}</div>
+    <div id="tfa"></div>`);
+  render2fa(ov.querySelector('#tfa'));
   ov.querySelector('#asave').onclick=async()=>{
     const cur=ov.querySelector('#ac').value,nw=ov.querySelector('#an').value,er=ov.querySelector('#aerr');
     er.textContent='';
