@@ -15,6 +15,7 @@ from ...core.utils import gb_to_bytes
 from .. import idempotency
 from ..deps import (
     api_or_404,
+    assert_key_access,
     can_see,
     db,
     enforce_scope,
@@ -142,9 +143,19 @@ async def ensure_local(sid: str, kid: str) -> dict:
     row here until someone edits it. It gets a customer link at the same moment,
     for the same reason a newly created key does — otherwise adopted keys are a
     quiet second class with no page to send anyone to.
+
+    Adoption asks Outline whether the key is real first. It used to take the id
+    on faith, so a key id that never existed got a row, a customer link and —
+    once anything mirrored it onto a second server — an actual Outline key built
+    from the invented row. Only this branch pays the lookup: an id we have a row
+    for is one we have already seen.
     """
     meta = await db.get_key(sid, kid)
     if not meta:
+        try:
+            await api_or_404(sid).get_key(kid)
+        except OutlineError:
+            raise errors.unknown_key()
         await db.add_key(sid, kid, "", None, None)
         await db.set_sub_token(sid, kid, security.profile_token(kid))
         meta = await db.get_key(sid, kid)
@@ -599,6 +610,77 @@ async def reset_usage(sid: str, kid: str,
     return {"ok": True, "limit": new_limit}
 
 
+class KeyRef(BaseModel):
+    server_id: str
+    key_id: str
+
+
+class BulkServerBody(BaseModel):
+    keys: list[KeyRef] = Field(min_length=1, max_length=500)
+    # "add" puts every selected customer on this server; "remove" takes the
+    # server's config back out of their subscription.
+    action: str = Field(pattern="^(add|remove)$")
+
+
+@router.post("/servers/{sid}/bulk-servers")
+async def bulk_server_membership(sid: str, body: BulkServerBody,
+                                 admin: dict = Depends(require("keys.edit"))):
+    """Put a whole selection of customers on this server, or take them off it.
+
+    This existed only as one-customer-at-a-time in the subscription sheet, which
+    meant that moving a group onto a new server was a database script — the panel
+    could not do the single most ordinary thing an operator does after renting a
+    server. `{sid}` (not `{target}`) so enforce_scope checks the destination for
+    us; every key is then checked individually, because a selection is just a
+    list of ids the browser sent and none of it is trustworthy.
+
+    Partial success is the normal outcome, not an error: one unreachable server
+    or one key someone else owns must not sink the other fourteen. Every item
+    comes back with its own verdict and the caller reports them.
+    """
+    api_or_404(sid)
+    done: list[dict] = []
+    failed: list[dict] = []
+    for ref in body.keys:
+        label = f"{ref.server_id}/{ref.key_id}"
+        try:
+            # The same gate the single-key routes get from enforce_scope: scope
+            # on the key's *own* server, plus ownership of the key itself.
+            await assert_key_access(admin, ref.server_id, ref.key_id)
+            meta = await ensure_local(ref.server_id, ref.key_id)
+            token = meta.get("sub_token")
+            if not token:
+                # An older key with no subscription yet. Mint one rather than
+                # skipping it — otherwise the oldest customers are exactly the
+                # ones this feature cannot help.
+                token = security.profile_token(ref.key_id)
+                await db.set_sub_token(ref.server_id, ref.key_id, token)
+            await sub_or_404(token, admin)
+            if body.action == "add":
+                await mirror_onto(token, sid)
+            else:
+                await _unmirror(token, sid)
+            done.append({"serverId": ref.server_id, "keyId": ref.key_id,
+                         "name": meta.get("name") or ref.key_id, "token": token})
+        except HTTPException as e:
+            failed.append({"key": label, "error": str(e.detail)})
+        except Exception as e:  # noqa: BLE001 — one bad key must not sink the batch
+            log.exception("bulk %s failed for %s", body.action, label)
+            failed.append({"key": label, "error": str(e)})
+    metrics.inc("outline_panel_bulk_server_total", {"server": sid,
+                                                    "action": body.action})
+    return {"ok": True, "action": body.action, "server": sid,
+            "done": done, "failed": failed}
+
+
+async def _unmirror(token: str, target: str) -> None:
+    """Drop `target`'s config out of a subscription. Caller checks access."""
+    for m in await db.get_keys_by_sub_token(token):
+        if m["server_id"] == target:
+            await db.set_sub_token(target, m["key_id"], None)
+    sub_router.invalidate(token)   # the removed config must stop being served
+
+
 async def _sub_info(token: str, admin: dict) -> dict:
     """Members of a subscription + which configured servers are included.
 
@@ -826,11 +908,8 @@ async def sub_remove_server(token: str, target: str,
     key itself is kept — delete it from the key list if no longer needed)."""
     if not can_see(admin, target):  # `target`, so enforce_scope misses it too
         raise errors.unknown_server()
-    members = await sub_or_404(token, admin)
-    for m in members:
-        if m["server_id"] == target:
-            await db.set_sub_token(target, m["key_id"], None)
-    sub_router.invalidate(token)   # the removed config must stop being served
+    await sub_or_404(token, admin)
+    await _unmirror(token, target)
     return await _sub_info(token, admin)
 
 

@@ -482,6 +482,26 @@
       'New config issued': 'کانفیگ جدید صادر شد',
       'Working…': 'در حال انجام…',
       'Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.': 'برای «{name}» کانفیگ جدید صادر شود؟ لینکش عوض نمی‌شود و حجمی که مصرف کرده منتقل می‌شود.',
+      /* ---- bulk actions on a selection ---- */
+      'selected': 'انتخاب‌شده',
+      'Servers…': 'سرورها…',
+      'Copy links': 'کپی لینک‌ها',
+      'Servers for the selection': 'سرورهای انتخاب‌شده‌ها',
+      'One link per customer, a config on each server you add. The full allowance applies on every server.':
+        'برای هر مشتری یک لینک، و روی هر سروری که اضافه کنید یک کانفیگ. کل سهمیه روی هر سرور اعمال می‌شود.',
+      'of the selection': 'از انتخاب‌شده‌ها',
+      'Add all': 'افزودن همه',
+      'Remove all': 'حذف همه',
+      '{n} added': '{n} تا اضافه شد',
+      '{n} removed': '{n} تا حذف شد',
+      '{n} failed': '{n} تا ناموفق',
+      '{n} links copied': '{n} لینک کپی شد',
+      '{n} without a link': '{n} بدون لینک',
+      'None of these have a customer link yet': 'هیچ‌کدام هنوز لینک مشتری ندارند',
+      'Take {n} customers off “{name}”? Their other servers keep working.':
+        '{n} مشتری از «{name}» برداشته شوند؟ سرورهای دیگرشان کار می‌کند.',
+      'unreachable': 'در دسترس نیست',
+
       /* ---- destructive confirmations (see ask() in index.html) ---- */
       'Reset usage for “{name}”?': 'مصرف «{name}» صفر شود؟',
       'Delete “{name}”?': '«{name}» حذف شود؟',

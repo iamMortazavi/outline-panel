@@ -423,13 +423,17 @@ function renderBanner(){
 }
 function renderSelbar(){
   const el=$('#selbar');if(!el)return;
-  const ids=Object.keys(S.selected).filter(id=>S.keys.some(k=>k.id===id&&S.selected[id]));
-  if(!ids.length){el.innerHTML='';return;}
+  const picked=selectedKeys();
+  if(!picked.length){el.innerHTML='';return;}
+  const ids=picked;
+  const btn='width:auto;padding:7px 12px;font-size:12.5px';
   el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:linear-gradient(180deg,rgba(var(--acc-rgb),.1),rgba(var(--acc-rgb),.04));border:1px solid rgba(var(--acc-rgb),.3);border-radius:12px;padding:9px 10px 9px 15px;margin-bottom:12px">
-    <span style="font-size:12.5px;font-weight:700;color:var(--acc)">${ids.length} selected</span><div style="flex:1"></div>
-    <button class="btn-sec" data-act="bulk" data-op="extend" style="width:auto;padding:7px 12px;font-size:12.5px">${esc(t('Extend +30d'))}</button>
-    <button class="btn-sec" data-act="bulk" data-op="disable" style="width:auto;padding:7px 12px;font-size:12.5px">${esc(t('Disable'))}</button>
-    ${isOwner()?'<button class="btn-sec" data-act="bulk" data-op="transfer" style="width:auto;padding:7px 12px;font-size:12.5px">'+esc(t('Transfer to…'))+'</button>':''}
+    <span style="font-size:12.5px;font-weight:700;color:var(--acc)">${ids.length} ${esc(t('selected'))}<span class="bulkp mono" style="font-weight:600;opacity:.75"></span></span><div style="flex:1"></div>
+    ${S.servers.length>1?`<button class="btn-sec" data-act="bulk" data-op="servers" style="${btn}">${esc(t('Servers…'))}</button>`:''}
+    <button class="btn-sec" data-act="bulk" data-op="links" style="${btn}">${esc(t('Copy links'))}</button>
+    <button class="btn-sec" data-act="bulk" data-op="extend" style="${btn}">${esc(t('Extend +30d'))}</button>
+    <button class="btn-sec" data-act="bulk" data-op="disable" style="${btn}">${esc(t('Disable'))}</button>
+    ${isOwner()?`<button class="btn-sec" data-act="bulk" data-op="transfer" style="${btn}">`+esc(t('Transfer to…'))+'</button>':''}
     <button class="btn-danger" data-act="bulk" data-op="delete" style="width:auto;padding:7px 12px;font-size:12.5px">${esc(t('Delete'))}</button>
     <button data-act="bulk" data-op="clear" style="background:none;border:1px solid var(--line2);color:var(--faint);padding:7px 11px;border-radius:9px;font-size:12.5px;cursor:pointer">${esc(t('Clear'))}</button></div>`;
 }
@@ -451,9 +455,9 @@ function kBits(k){const st=statusMeta(k),p=pctOf(k),now=Date.now()/1000;
   return {st,p,w:barWidth(k),usage,expShort,expCol,last};
 }
 function tableView(list){
-  const rows=list.map(k=>{const b=kBits(k),sel=!!S.selected[k.id];
+  const rows=list.map(k=>{const b=kBits(k),sel=!!S.selected[selKey(k)];
     return `<div data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="display:grid;grid-template-columns:26px 2.1fr 1fr 1.8fr .8fr 1.05fr 1.5fr;gap:13px;padding:14px 18px;border-bottom:1px solid var(--panel2);cursor:pointer;align-items:center;background:${sel?'rgba(var(--acc-rgb),.06)':'transparent'}">
-      <div data-act="sel" data-id="${esc(k.id)}" data-stop="1" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div data-act="sel" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div style="min-width:0"><div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k.name)}</div>
         <div class="mono" style="font-size:11px;color:var(--dim);margin-top:3px;display:flex;align-items:center;gap:7px">#${esc(k.id)}${isOwner()&&k.ownerName?`<span style="padding:1px 6px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)">${esc(k.ownerName)}</span>`:''}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint)"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
       <div><span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${esc(t(b.st.t))}</span></div>
@@ -463,11 +467,11 @@ function tableView(list){
       <div class="mono" style="font-size:12.5px;color:${isOnline(k)?'var(--acc)':'var(--faint)'};white-space:nowrap">${esc(b.last)}</div>
       <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0">
         <span class="mono" style="font-size:12.5px;color:${b.expCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.expShort)}</span>
-        <button class="icon-btn" data-act="copylink" data-id="${esc(k.id)}" data-stop="1" aria-label="${esc(t('Copy customer link'))}" title="${esc(t('Copy customer link'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
-        <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-stop="1" aria-label="${esc(t('Copy'))}" title="${esc(t('Copy config'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
+        <button class="icon-btn" data-act="copylink" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('Copy customer link'))}" title="${esc(t('Copy customer link'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
+        <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('Copy'))}" title="${esc(t('Copy config'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
         <button class="icon-btn" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('QR'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M20 14v3M14 20h3" stroke-linecap="round"/></svg></button></div>
     </div>`;}).join('');
-  const allSel=list.length&&list.every(k=>S.selected[k.id]);
+  const allSel=list.length&&list.every(k=>S.selected[selKey(k)]);
   return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
     <div style="display:grid;grid-template-columns:26px 2.1fr 1fr 1.8fr .8fr 1.05fr 1.5fr;gap:13px;padding:11px 18px;border-bottom:1px solid var(--line2);background:var(--bg2);align-items:center">
       <div data-act="selall" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${allSel?'var(--acc)':'var(--line3)'};background:${allSel?'var(--acc)':'transparent'};color:${allSel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -477,9 +481,11 @@ function tableView(list){
 function cardView(list,narrow){
   const grid=narrow?'display:grid;grid-template-columns:1fr;gap:13px':'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;align-items:start';
   return `<div style="${grid}">`+list.map(k=>{const b=kBits(k);
-    return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px">
+    const sel=!!S.selected[selKey(k)];
+    return `<div style="background:var(--panel);border:1px solid ${sel?'rgba(var(--acc-rgb),.4)':'var(--line)'};border-radius:18px;padding:16px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-        <div style="min-width:0"><div style="font-weight:700;font-size:16px;letter-spacing:-.2px;word-break:break-word;line-height:1.2">${esc(k.name)}</div>
+        <div data-act="sel" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" style="width:17px;height:17px;flex:none;margin-top:2px;border-radius:5px;cursor:pointer;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div style="min-width:0;flex:1"><div style="font-weight:700;font-size:16px;letter-spacing:-.2px;word-break:break-word;line-height:1.2">${esc(k.name)}</div>
           <div class="mono" style="font-size:11px;color:var(--dim);margin-top:5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">#${esc(k.id)}${isOwner()&&k.ownerName?`<span style="padding:1px 6px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)">${esc(k.ownerName)}</span>`:''}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 6px"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
         <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap;flex:none"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${b.st.t}</span></div>
       <div style="height:7px;border-radius:99px;background:var(--panel2);overflow:hidden;margin:16px 0 7px"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
@@ -490,8 +496,8 @@ function cardView(list,narrow){
         <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg><span class="mono" style="color:${isOnline(k)?'var(--acc)':'var(--faint)'}">${esc(b.last)}</span></span>
         ${k.monthlyBytes?'<span style="display:flex;align-items:center;gap:6px">🔄 <b class="mono" style="color:var(--text);font-weight:600">'+fmtBytes(k.monthlyBytes)+'</b>/mo</span>':''}</div>
       <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg>${esc(t('Copy'))}</button>
-        <button class="btn-sec" data-act="copylink" data-id="${esc(k.id)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>${esc(t('Link'))}</button>
+        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg>${esc(t('Copy'))}</button>
+        <button class="btn-sec" data-act="copylink" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>${esc(t('Link'))}</button>
         <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>${esc(t('QR'))}</button>
         <button class="btn-sec" data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px">${esc(t('Details'))}</button></div>
     </div>`;}).join('')+`</div>`;
@@ -530,6 +536,23 @@ function openDrawer(inner){
   return modalRoot.firstElementChild;
 }
 function keyById(id){return S.keys.find(k=>String(k.id)===String(id));}
+// Resolve a clicked element's key. `data-sid` disambiguates: ids repeat
+// across servers, so id alone hands back whichever row sorted first —
+// which is how Copy-link on one server's #15 copied the other server's.
+const keyOf=d=>d.sid?S.keys.find(k=>k.serverId===d.sid&&String(k.id)===String(d.id))
+                   :keyOf(d);
+// Outline numbers keys per server, so "15" names a different customer on each
+// one. Selection used to be keyed by that number alone: on a two-server panel
+// ticking one row highlighted two and the bulk action then ran on whichever the
+// lookup happened to find first. Everything that identifies a *selected* key
+// goes through here.
+const selKey=k=>k.serverId+'/'+k.id;
+const selRef=s=>{const i=s.indexOf('/');return{serverId:s.slice(0,i),keyId:s.slice(i+1)};};
+function keyBySel(s){const r=selRef(s);
+  return S.keys.find(k=>k.serverId===r.serverId&&String(k.id)===String(r.keyId));}
+// Selected keys that still exist, as key objects.
+function selectedKeys(){return Object.keys(S.selected)
+  .filter(s=>S.selected[s]).map(keyBySel).filter(Boolean);}
 function renderQR(box,text){if(!box)return;if(typeof QRCode==='undefined'){box.parentElement.innerHTML='<div class="desc">'+esc(t('QR unavailable offline.'))+'</div>';return;}new QRCode(box,{text,width:188,height:188,colorDark:'#0a0d12',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});}
 
 /* Servers this customer will get a config on. All ticked by default, so a new
@@ -645,8 +668,8 @@ function modalDetail(k){const b=kBits(k),now=Date.now()/1000;
         ${stat('Validity',k.pending?((k.durationDays||0)+t('d')+' '+t('on use')):(k.expiry?fmtExpiry(k.expiry):'∞'))}
         ${stat('Tunnel time',fmtDur(k.tunnelSec||0))}</div>
       <div style="display:flex;gap:8px;margin-top:4px">
-        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Copy'))}</button>
-        <button class="btn-sec" data-act="copylink" data-id="${esc(k.id)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Link'))}</button>
+        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Copy'))}</button>
+        <button class="btn-sec" data-act="copylink" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Link'))}</button>
         <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('QR'))}</button>
         ${can('keys.edit')?`<button class="btn-sec" data-act="manage" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:11px;font-size:12.5px">${esc(t('Edit'))}</button>`:''}</div>
       ${!can('keys.edit')?'':`<div style="display:flex;gap:8px;margin-top:8px">
@@ -779,10 +802,14 @@ function exportCsv(){
   if(!rows.length)return toast(t('Nothing to export'),1);
   const gb=b=>b==null?'':(b/1073741824).toFixed(2);
   const iso=t=>t?new Date(t*1000).toISOString().slice(0,10):'';
-  // no accessUrl: this file lands in Downloads, and it would be every user's key
-  const head=['id','name','server','owner','used_gb','limit_gb','monthly_gb',
-              'status','created','expiry','last_seen'];
-  const body=rows.map(k=>[k.id,k.name,k.serverName,k.ownerName||'',
+  // customer_link, but still no accessUrl. The two are not the same risk: the
+  // link is the page a reseller already sends every customer by hand, and
+  // leaving it out meant rebuilding this list in a spreadsheet to hand a group
+  // their links. accessUrl is the key material itself and stays out.
+  const head=['id','name','server','owner','customer_link','used_gb','limit_gb',
+              'monthly_gb','status','created','expiry','last_seen'];
+  const abs=u=>u?new URL(u,location.origin).href:'';
+  const body=rows.map(k=>[k.id,k.name,k.serverName,k.ownerName||'',abs(k.profileUrl),
     gb(k.used),k.limit==null?'unlimited':gb(k.limit),k.monthlyBytes?gb(k.monthlyBytes):'',
     k.disabled?'disabled':(k.pending?'pending':'active'),
     iso(k.createdTs),iso(k.expiry),iso(k.lastSeen)]);
@@ -1221,20 +1248,20 @@ function modalBackup(){
    profile host is set and a bare path otherwise, so resolve it against this
    origin before putting it on the clipboard — a reseller pasting "/sub/x" into
    a chat has pasted nothing useful. */
-async function copyProfile(id){
-  const k=keyById(id);if(!k)return;
+async function copyProfile(k){
+  if(!k)return;
   if(!k.profileUrl){toast(t('This key has no customer link yet'),1);return;}
   const url=new URL(k.profileUrl,location.origin).href;
   try{await navigator.clipboard.writeText(url);toast(t('Customer link copied'));}
   catch(_){prompt(t('Copy customer link')+':',url);}
 }
-async function copyKey(id){const k=keyById(id);if(!k)return;try{await navigator.clipboard.writeText(tagUrl(k));toast(t('Copied to clipboard'));}catch(_){prompt('Copy:',tagUrl(k));}}
+async function copyKey(k){if(!k)return;try{await navigator.clipboard.writeText(tagUrl(k));toast(t('Copied to clipboard'));}catch(_){prompt('Copy:',tagUrl(k));}}
 async function bulkTransfer(){
-  const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));
-  if(!ids.length)return;
+  const picked=selectedKeys();const ids=picked;
+  if(!picked.length)return;
   // Only servers the selection actually touches matter, and only admins with
   // access to ALL of them can take the whole batch.
-  const sids=[...new Set(ids.map(id=>keyById(id).serverId))];
+  const sids=[...new Set(picked.map(k=>k.serverId))];
   let d;try{d=await api('/api/admins');}catch(e){return toast(e.message,1);}
   const targets=d.admins.filter(a=>!a.isOwner&&sids.every(sv=>a.servers.includes(sv)));
   const opts='<option value="">'+esc((S.me&&S.me.username)||'admin')+' (you)</option>'+
@@ -1248,7 +1275,7 @@ async function bulkTransfer(){
     const v=ov.querySelector('#bt').value;const b=ov.querySelector('#btgo');
     b.disabled=true;b.innerHTML='<span class="spin"></span>';
     let done=0,failed=0;
-    for(const id of ids){const k=keyById(id);if(!k)continue;
+    for(const k of picked){
       try{await api('/api/servers/'+k.serverId+'/keys/'+k.id+'/owner',
             {method:'PUT',body:JSON.stringify({admin_id:v===''?null:+v})});done++;}
       catch(e){failed++;}}
@@ -1258,13 +1285,95 @@ async function bulkTransfer(){
   };
 }
 async function bulk(op){if(op==='transfer')return bulkTransfer();
-  const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));if(op==='clear'){S.selected={};renderList();return;}if(!ids.length)return;
-  if(op==='delete'&&!ask('Delete {n} keys? This cannot be undone.',{n:ids.length}))return;
-  for(const id of ids){const k=keyById(id);if(!k)continue;const kb='/api/servers/'+k.serverId+'/keys/'+k.id;try{
-    if(op==='extend')await api(kb+'/extend',{method:'POST',idem:idemKey(),body:JSON.stringify({days:30})});
-    else if(op==='disable')await api(kb+'/disable',{method:'POST'});
-    else if(op==='delete')await api(kb,{method:'DELETE'});}catch(e){toast(e.message,1);}}
-  S.selected={};toast(t('Done'));await refreshKeys();renderList();}
+  if(op==='servers')return bulkServers();
+  if(op==='links')return copySelectedLinks();
+  if(op==='clear'){S.selected={};renderList();return;}
+  const picked=selectedKeys();if(!picked.length)return;
+  if(op==='delete'&&!ask('Delete {n} keys? This cannot be undone.',{n:picked.length}))return;
+  // A batch of fifteen used to run silently with the page frozen-looking and
+  // one toast per failure. Say where it is, and say what broke once at the end.
+  let n=0;const bad=[];
+  for(const k of picked){const kb='/api/servers/'+k.serverId+'/keys/'+k.id;
+    bulkProgress(++n,picked.length);
+    try{
+      if(op==='extend')await api(kb+'/extend',{method:'POST',idem:idemKey(),body:JSON.stringify({days:30})});
+      else if(op==='disable')await api(kb+'/disable',{method:'POST'});
+      else if(op==='delete')await api(kb,{method:'DELETE'});}
+    catch(e){bad.push(k.name+': '+e.message);}}
+  S.selected={};
+  toast(bad.length?(t('{n} failed').replace('{n}',bad.length)+' — '+bad[0]):t('Done'),bad.length?1:0);
+  await refreshKeys();renderList();}
+
+/* Progress for a batch that runs one request per user. Writes into the
+   selection bar rather than opening anything: the bar is already on screen and
+   already says how many are selected. */
+function bulkProgress(n,total){
+  const el=$('#selbar .bulkp');
+  if(el)el.textContent=' · '+n+'/'+total;
+}
+
+/* Every selected customer's link, ready to paste into a message or a sheet.
+   Building that list by hand — one key at a time out of the subscription
+   sheet — is how it was done before, and it does not scale past about three. */
+async function copySelectedLinks(){
+  const picked=selectedKeys();if(!picked.length)return;
+  const rows=picked.filter(k=>k.profileUrl)
+    .map(k=>k.name+'\t'+new URL(k.profileUrl,location.origin).href);
+  const missing=picked.length-rows.length;
+  if(!rows.length){toast(t('None of these have a customer link yet'),1);return;}
+  const text=rows.join('\n');
+  try{await navigator.clipboard.writeText(text);}
+  catch(_){prompt(t('Copy customer link')+':',text);}
+  toast(t('{n} links copied').replace('{n}',rows.length)+
+        (missing?' · '+t('{n} without a link').replace('{n}',missing):''),0);
+}
+
+/* Put the whole selection on a server, or take it back off.
+   The panel could only do this one customer at a time, through the subscription
+   sheet — so moving a group onto a newly rented server meant a script. */
+async function bulkServers(){
+  const picked=selectedKeys();if(!picked.length)return;
+  // Which of the selection each server already carries. A customer is one
+  // subscription, so count by token and fall back to the key for the older
+  // rows that never got one.
+  const toks=new Set(picked.map(k=>k.subToken).filter(Boolean));
+  const on=sv=>S.keys.filter(k=>k.serverId===sv&&k.subToken&&toks.has(k.subToken)).length;
+  const ov=openSheet(`<div class="h2">${esc(t('Servers for the selection'))}</div>
+    <p class="desc">${esc(t('One link per customer, a config on each server you add. The full allowance applies on every server.'))}</p>
+    ${S.servers.map(sv=>{const c=on(sv.id),all=c>=picked.length;
+      return `<div class="srow" style="cursor:default;align-items:flex-start">
+        <span style="width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px;background:${sv.reachable?'var(--acc)':'var(--danger)'}"></span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${esc(sv.name)}</div>
+          <div class="mono" style="font-size:11.5px;color:var(--dim);margin-top:3px">${c} / ${picked.length} ${esc(t('of the selection'))}${sv.reachable?'':' · '+esc(t('unreachable'))}</div>
+          <div style="display:flex;gap:7px;margin-top:9px">
+            <button class="btn-sec" data-bulksrv="add" data-sv="${esc(sv.id)}" ${(all||!sv.reachable)?'disabled':''}
+              style="width:auto;padding:7px 12px;font-size:12.5px;${(all||!sv.reachable)?'opacity:.45;cursor:default':''}">${esc(t('Add all'))}</button>
+            <button class="btn-sec" data-bulksrv="remove" data-sv="${esc(sv.id)}" ${c?'':'disabled'}
+              style="width:auto;padding:7px 12px;font-size:12.5px;${c?'':'opacity:.45;cursor:default'}">${esc(t('Remove all'))}</button>
+          </div></div></div>`;}).join('')}
+    <div id="bserr" class="err"></div>
+    <div style="height:8px"></div><button class="btn-sec" data-act="close">${esc(t('Done'))}</button>`,{wide:true});
+  ov.querySelectorAll('[data-bulksrv]').forEach(btn=>btn.onclick=async()=>{
+    if(btn.disabled)return;
+    const action=btn.dataset.bulksrv,sv=btn.dataset.sv;
+    if(action==='remove'&&!ask('Take {n} customers off “{name}”? Their other servers keep working.',
+                               {n:picked.length,name:srvName(sv)}))return;
+    ov.querySelectorAll('[data-bulksrv]').forEach(b=>b.disabled=true);
+    btn.innerHTML='<span class="spin"></span>';
+    try{
+      const r=await api('/api/servers/'+sv+'/bulk-servers',{method:'POST',
+        body:JSON.stringify({action,keys:picked.map(k=>({server_id:k.serverId,key_id:String(k.id)}))})});
+      const okN=r.done.length,badN=r.failed.length;
+      toast((action==='add'?t('{n} added').replace('{n}',okN):t('{n} removed').replace('{n}',okN))+
+            (badN?' · '+t('{n} failed').replace('{n}',badN):''),badN?1:0);
+      if(badN)console.warn('bulk-servers failures',r.failed);
+      closeModal();await loadAll();renderApp();
+    }catch(e){ov.querySelector('#bserr').textContent=e.message;
+      ov.querySelectorAll('[data-bulksrv]').forEach(b=>b.disabled=false);
+      btn.textContent=action==='add'?t('Add all'):t('Remove all');}
+  });
+}
 
 /* ---------- event delegation ---------- */
 document.addEventListener('click',e=>{
@@ -1290,19 +1399,19 @@ document.addEventListener('click',e=>{
     case 'statusf':S.statusFilter=d.id;renderList();break;
     case 'view':S.view=d.id;localStorage.setItem('oc_view',d.id);renderList();break;
     case 'dismissbanner':S.bannerDismissed=true;renderBanner();break;
-    case 'selall':{const list=filteredKeys();const all=list.length&&list.every(k=>S.selected[k.id]);list.forEach(k=>{if(all)delete S.selected[k.id];else S.selected[k.id]=true;});renderList();break;}
-    case 'sel':{if(S.selected[d.id])delete S.selected[d.id];else S.selected[d.id]=true;renderList();break;}
+    case 'selall':{const list=filteredKeys();const all=list.length&&list.every(k=>S.selected[selKey(k)]);list.forEach(k=>{const s=selKey(k);if(all)delete S.selected[s];else S.selected[s]=true;});renderList();break;}
+    case 'sel':{const s=d.sid+'/'+d.id;if(S.selected[s])delete S.selected[s];else S.selected[s]=true;renderList();break;}
     case 'bulk':bulk(d.op);break;
-    case 'copy':copyKey(d.id);break;
-    case 'copylink':copyProfile(d.id);break;
+    case 'copy':copyKey(keyOf(d));break;
+    case 'copylink':copyProfile(keyOf(d));break;
     case 'copytext':navigator.clipboard.writeText(d.text).then(()=>toast(t('Copied'))).catch(()=>prompt('Copy:',d.text));break;
-    case 'share':{const k=keyById(d.id);if(k)modalShare(k);break;}
-    case 'detail':{const k=keyById(d.id);if(k)modalDetail(k);break;}
-    case 'manage':{const k=keyById(d.id);if(k){closeModal();modalManage(k);}break;}
-    case 'config':{const k=keyById(d.id);if(k)modalConfig(k);break;}
-    case 'toggle':{const k=keyById(d.id);if(k){const kb='/api/servers/'+k.serverId+'/keys/'+k.id;api(kb+'/'+(k.disabled?'enable':'disable'),{method:'POST'}).then(async()=>{toast(k.disabled?'Key enabled':'Key disabled');closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
-    case 'resetkey':{const k=keyById(d.id);if(k&&ask('Reset usage for “{name}”?',{name:k.name})){api('/api/servers/'+k.serverId+'/keys/'+k.id+'/reset',{method:'POST'}).then(async()=>{toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
-    case 'delkey':{const k=keyById(d.id);if(k&&ask('Delete “{name}”?',{name:k.name})){api('/api/servers/'+k.serverId+'/keys/'+k.id,{method:'DELETE'}).then(async()=>{toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
+    case 'share':{const k=keyOf(d);if(k)modalShare(k);break;}
+    case 'detail':{const k=keyOf(d);if(k)modalDetail(k);break;}
+    case 'manage':{const k=keyOf(d);if(k){closeModal();modalManage(k);}break;}
+    case 'config':{const k=keyOf(d);if(k)modalConfig(k);break;}
+    case 'toggle':{const k=keyOf(d);if(k){const kb='/api/servers/'+k.serverId+'/keys/'+k.id;api(kb+'/'+(k.disabled?'enable':'disable'),{method:'POST'}).then(async()=>{toast(k.disabled?'Key enabled':'Key disabled');closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
+    case 'resetkey':{const k=keyOf(d);if(k&&ask('Reset usage for “{name}”?',{name:k.name})){api('/api/servers/'+k.serverId+'/keys/'+k.id+'/reset',{method:'POST'}).then(async()=>{toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
+    case 'delkey':{const k=keyOf(d);if(k&&ask('Delete “{name}”?',{name:k.name})){api('/api/servers/'+k.serverId+'/keys/'+k.id,{method:'DELETE'}).then(async()=>{toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
     case 'addserver':modalAddServer();break;
     case 'srvdetail':{const s=S.servers.find(x=>x.id===d.id);if(s)modalServerDetail(s);break;}
     case 'security':modalSecurity();break;
