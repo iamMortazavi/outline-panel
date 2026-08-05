@@ -50,7 +50,24 @@ python3 -m venv "$APP_DIR/.venv"
 ENV_FILE="$APP_DIR/.env"
 if [ ! -f "$ENV_FILE" ]; then
   echo "==> First-time setup"
-  read -rp "Admin password for the panel: " ADMIN_PW
+  # Read the password from the terminal, not from stdin. Piped into a shell, or
+  # run with a heredoc on stdin, a plain `read` swallows the NEXT LINE OF THE
+  # SCRIPT and writes it into .env as the password — a live panel was found with
+  # `ADMIN_PASSWORD=for i in 1 2 3; do curl …` and an owner who could not log in.
+  # -s so it is not echoed into the terminal scrollback or a CI log either.
+  ADMIN_PW="${ADMIN_PASSWORD:-}"
+  # `[ -r /dev/tty ]` passes on a machine where opening it still fails, so try
+  # the open itself and fall through to the env var.
+  if [ -z "$ADMIN_PW" ] && { exec 3</dev/tty; } 2>/dev/null; then
+    read -rsp "Admin password for the panel: " ADMIN_PW <&3
+    exec 3<&-
+    echo
+  fi
+  if [ -z "$ADMIN_PW" ]; then
+    echo "  ! No password given and no terminal to ask on." >&2
+    echo "    Re-run as: ADMIN_PASSWORD='…' $0" >&2
+    exit 1
+  fi
   SECRET="$(python3 -c 'import secrets;print(secrets.token_hex(32))')"
   cat > "$ENV_FILE" <<EOF
 ADMIN_PASSWORD=${ADMIN_PW}
