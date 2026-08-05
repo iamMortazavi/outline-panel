@@ -482,6 +482,15 @@
       'New config issued': 'کانفیگ جدید صادر شد',
       'Working…': 'در حال انجام…',
       'Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.': 'برای «{name}» کانفیگ جدید صادر شود؟ لینکش عوض نمی‌شود و حجمی که مصرف کرده منتقل می‌شود.',
+      /* ---- destructive confirmations (see ask() in index.html) ---- */
+      'Reset usage for “{name}”?': 'مصرف «{name}» صفر شود؟',
+      'Delete “{name}”?': '«{name}» حذف شود؟',
+      'Delete “{name}”? This cannot be undone.': '«{name}» حذف شود؟ این کار برگشت‌پذیر نیست.',
+      'Delete {n} keys? This cannot be undone.': '{n} کلید حذف شود؟ این کار برگشت‌پذیر نیست.',
+      'Delete “{name}”? Past sales keep their history.': '«{name}» حذف شود؟ فروش‌های گذشته تاریخچه‌شان را نگه می‌دارند.',
+      'Delete “{name}”? They are signed out immediately.': '«{name}» حذف شود؟ بلافاصله از پنل خارج می‌شود.',
+      'Remove “{name}” from this panel? (The Outline server itself is not deleted.)': '«{name}» از این پنل حذف شود؟ (خود سرور Outline حذف نمی‌شود.)',
+
       'Customer profile site': 'سایت پروفایل مشتری',
       'Customer links': 'لینک‌های مشتری',
       'The short link you give customers': 'لینک کوتاهی که به مشتری می‌دهید',

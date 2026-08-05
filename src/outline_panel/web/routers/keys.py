@@ -228,9 +228,13 @@ def deny_free(admin: dict) -> None:
 
     `extend_key` already enforces this through `_buy` — "any time or volume that
     reaches a user is paid for". Raising the data limit, granting a monthly
-    quota, resetting usage or mirroring a subscription onto a second server all
-    reach a user just as surely, and all four were free: a reseller bought the
-    cheapest package and then topped it up here for nothing.
+    quota and resetting usage all reach a user just as surely, and all three
+    were free: a reseller bought the cheapest package and then topped it up here
+    for nothing.
+
+    Mirroring onto a second server is the deliberate exception — see
+    `mirror_onto`. It is failover for a customer already paid for, not more
+    product, so it does not call this.
     """
     if on_credit(admin):
         raise errors.buy_a_package()
@@ -777,6 +781,28 @@ async def mirror_onto(token: str, target: str) -> None:
     sub_router.invalidate(token)
 
 
+async def sub_or_404(token: str, admin: dict) -> list[dict]:
+    """This subscription's keys — or 404, because it is not the caller's.
+
+    These two routes are keyed by `token`, not by `{sid}/{kid}`, so
+    `enforce_scope` never runs on them. Checking `target` alone only answered
+    "may you use that server": the *subscription* went unchecked, and the token
+    is the customer link — it is forwarded, pasted into groups, and every
+    reseller holds the ones they sold. Any admin with keys.edit could therefore
+    mint a config on a rival's customer, or unlink one and cut them off.
+
+    A subscription must be wholly the caller's: one member on a server they
+    cannot see is still someone else's customer.
+    """
+    members = await db.get_keys_by_sub_token(token)
+    if not members:
+        raise errors.unknown_subscription()
+    if not is_owner(admin) and not all(
+            can_see(admin, m["server_id"]) and owns(admin, m) for m in members):
+        raise errors.unknown_subscription()
+    return members
+
+
 @router.post("/sub/{token}/servers/{target}")
 async def sub_add_server(token: str, target: str,
                          admin: dict = Depends(require("keys.edit"))):
@@ -785,6 +811,10 @@ async def sub_add_server(token: str, target: str,
     # this route mints a key on any server in the panel.
     if not can_see(admin, target):
         raise errors.unknown_server()
+    # No deny_free here on purpose: mirroring is the one top-up the owner gives
+    # away — see mirror_onto, and test_a_credit_admin_may_put_a_customer_on_
+    # several_servers.
+    await sub_or_404(token, admin)
     await mirror_onto(token, target)
     return await _sub_info(token, admin)
 
@@ -796,9 +826,7 @@ async def sub_remove_server(token: str, target: str,
     key itself is kept — delete it from the key list if no longer needed)."""
     if not can_see(admin, target):  # `target`, so enforce_scope misses it too
         raise errors.unknown_server()
-    members = await db.get_keys_by_sub_token(token)
-    if not members:
-        raise errors.unknown_subscription()
+    members = await sub_or_404(token, admin)
     for m in members:
         if m["server_id"] == target:
             await db.set_sub_token(target, m["key_id"], None)

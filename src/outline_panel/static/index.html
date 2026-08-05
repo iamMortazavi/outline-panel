@@ -124,6 +124,10 @@ let toastT;function toast(m,bad){const t=$('#toast');t.innerHTML='<span style="w
   clearTimeout(toastT);toastT=setTimeout(()=>t.style.display='none',2300);t.style.display='flex';}
 
 /* ---------- helpers ---------- */
+// Every destructive step goes through here. It was a bare confirm() with an
+// English literal at each call site, so a Persian panel asked "Delete “x”? This
+// cannot be undone." — the one sentence in the whole UI that must be understood.
+const ask=(s,v)=>confirm(Object.keys(v||{}).reduce((a,k)=>a.split('{'+k+'}').join(v[k]),t(s)));
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function fmtBytes(n){if(n==null)return '—';let u=['B','KB','MB','GB','TB','PB'],i=0,x=Number(n);while(Math.abs(x)>=1024&&i<u.length-1){x/=1024;i++;}return (i>=2&&x<100?x.toFixed(1):Math.round(x))+' '+u[i];}
 function fmtExpiry(ts){if(!ts)return 'No expiry';const ms=ts*1000,n=Date.now();if(ms<=n)return 'Expired';const d=Math.floor((ms-n)/864e5),h=Math.floor(((ms-n)%864e5)/36e5);return d>0?d+'d '+h+'h':h+'h';}
@@ -678,17 +682,9 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
     if(Math.abs(d)>3650){er.textContent=t('At most 3650 days at a time.');return;}
     try{await api(kb+'/extend',{method:'POST',idem:daysIdem,body:JSON.stringify({days:d})});toast(d>0?('Extended +'+d+'d'):('Reduced '+d+'d'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mtog').onclick=async()=>{try{await api(kb+'/'+(disabled?'enable':'disable'),{method:'POST'});disabled=!disabled;ov.querySelector('#mtog').textContent=disabled?'Enable':'Disable';toast(disabled?'Key disabled':'Key enabled');await refreshKeys();}catch(e){toast(e.message,1);}};
-  ov.querySelector('#mreset').onclick=async()=>{if(!confirm('Reset usage for “'+k.name+'”?'))return;try{await api(kb+'/reset',{method:'POST'});toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
+  ov.querySelector('#mreset').onclick=async()=>{if(!ask('Reset usage for “{name}”?',{name:k.name}))return;try{await api(kb+'/reset',{method:'POST'});toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
   ov.querySelector('#mrot').onclick=async()=>{
-    if(!confirm(t('Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.').replace('{name}',k.name)))return;
-    const b=ov.querySelector('#mrot');b.disabled=true;b.textContent=t('Working…');
-    try{const r=await api(kb+'/rotate',{method:'POST'});
-      toast(t('New config issued'));closeModal();await loadAll();renderApp();
-      const nk=S.keys.find(x=>x.serverId===k.serverId&&String(x.id)===String(r.id));
-      if(nk)modalShare(nk,true);}
-    catch(e){toast(e.message,1);b.disabled=false;b.textContent='♻️ '+t('New config');}};
-  ov.querySelector('#mrot').onclick=async()=>{
-    if(!confirm(t('Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.').replace('{name}',k.name)))return;
+    if(!ask('Give “{name}” a new config? Their link stays the same, and the data they have already used is carried over.',{name:k.name}))return;
     const b=ov.querySelector('#mrot');b.disabled=true;b.textContent=t('Working…');
     try{const r=await api(kb+'/rotate',{method:'POST'});
       toast(t('New config issued'));closeModal();await loadAll();renderApp();
@@ -704,7 +700,7 @@ function modalManage(k){const lim=k.limit?(k.limit/1073741824):'';const mon=k.mo
       if(ow&&ow.value!==String(k.ownerAdminId==null?'':k.ownerAdminId))
         await api(kb+'/owner',{method:'PUT',body:JSON.stringify({admin_id:ow.value===''?null:+ow.value})});
       toast(t('Changes saved'));closeModal();await loadAll();renderApp();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Save changes');}};
-  ov.querySelector('#mdel').onclick=async()=>{if(!confirm('Delete “'+k.name+'”? This cannot be undone.'))return;try{await api(kb,{method:'DELETE'});toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
+  ov.querySelector('#mdel').onclick=async()=>{if(!ask('Delete “{name}”? This cannot be undone.',{name:k.name}))return;try{await api(kb,{method:'DELETE'});toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}catch(e){toast(e.message,1);}};
 }
 function openSubSheet(k,info){
   // profileUrl is the short customer link; fall back to this origin's /sub
@@ -886,7 +882,7 @@ async function modalPackageEdit(id){
     catch(e){er.textContent=e.message;btn.disabled=false;btn.textContent=t('Save changes');}
   };
   ov.querySelector('#pdel').onclick=async()=>{
-    if(!confirm('Delete “'+p.name+'”? Past sales keep their history.'))return;
+    if(!ask('Delete “{name}”? Past sales keep their history.',{name:p.name}))return;
     try{await api('/api/packages/'+p.id,{method:'DELETE'});toast(t('Package deleted'));modalPackages();}
     catch(e){toast(e.message,1);}
   };
@@ -991,7 +987,7 @@ async function modalAdminEdit(id){
   };
   ov.querySelector('#aledger').onclick=()=>modalLedger(a.id,a.username);
   ov.querySelector('#adel').onclick=async()=>{
-    if(!confirm('Delete “'+a.username+'”? They are signed out immediately.'))return;
+    if(!ask('Delete “{name}”? They are signed out immediately.',{name:a.username}))return;
     try{await api('/api/admins/'+a.id,{method:'DELETE'});toast(t('Admin deleted'));modalAdmins();}
     catch(e){toast(e.message,1);}
   };
@@ -1021,7 +1017,7 @@ async function modalServerDetail(s){
   tg.onclick=async()=>{metrics=!metrics;tg.classList.toggle('on',metrics);try{await api('/api/servers/'+s.id+'/settings/metrics',{method:'PUT',body:JSON.stringify({enabled:metrics})});toast('Metrics '+(metrics?'enabled':'disabled'));}catch(e){toast(e.message,1);metrics=!metrics;tg.classList.toggle('on',metrics);}};
   ov.querySelector('#dsave').onclick=async()=>{const label=ov.querySelector('#dl').value.trim();const oname=ov.querySelector('#dn').value.trim();const lg=parseFloat(ov.querySelector('#dg').value||'0')||0;const b=ov.querySelector('#dsave');b.disabled=true;b.innerHTML='<span class="spin"></span>';const er=ov.querySelector('#de');
     try{if(label&&label!==s.name)await api('/api/servers/'+s.id,{method:'PUT',body:JSON.stringify({name:label})});if(oname&&oname!==st.name)await api('/api/servers/'+s.id+'/settings/name',{method:'PUT',body:JSON.stringify({name:oname})});await api('/api/servers/'+s.id+'/settings/global-limit',{method:'PUT',body:JSON.stringify({limit_gb:lg})});toast(t('Saved'));await loadAll();renderApp();modalSettings();}catch(e){er.textContent=e.message;b.disabled=false;b.textContent=t('Save');}};
-  ov.querySelector('#drm').onclick=async()=>{if(!confirm('Remove “'+s.name+'” from this panel? (The Outline server itself is not deleted.)'))return;try{await api('/api/servers/'+s.id,{method:'DELETE'});toast(t('Server removed'));await loadAll();renderApp();modalSettings();}catch(e){toast(e.message,1);}};
+  ov.querySelector('#drm').onclick=async()=>{if(!ask('Remove “{name}” from this panel? (The Outline server itself is not deleted.)',{name:s.name}))return;try{await api('/api/servers/'+s.id,{method:'DELETE'});toast(t('Server removed'));await loadAll();renderApp();modalSettings();}catch(e){toast(e.message,1);}};
 }
 function modalBot(){
   const ov=openSheet(`<div class="h2">${esc(t('Telegram bot'))}</div><p class="desc">Paste your bot token from @BotFather and the numeric admin IDs. The bot runs inside the panel — no separate process.</p>
@@ -1216,7 +1212,7 @@ function modalBackup(){
     <input id="bkfile" class="inp" type="file" accept="application/json,.json" style="padding:11px" />
     <div id="bkerr" class="err"></div><div style="height:12px"></div><button class="btn-danger" id="bkres">${esc(t('Restore from file'))}</button>`);
   ov.querySelector('#bkdl').onclick=async()=>{try{const r=await fetch('/api/backup',{credentials:'same-origin'});if(!r.ok)throw new Error('Download failed');const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='outline-panel-backup.json';a.click();URL.revokeObjectURL(a.href);toast(t('Backup downloaded'));}catch(e){toast(e.message,1);}};
-  ov.querySelector('#bkres').onclick=async()=>{const f=ov.querySelector('#bkfile').files[0];const er=ov.querySelector('#bkerr');er.textContent='';if(!f){er.textContent=t('Choose a backup file first.');return;}if(!confirm(t('Restore will REPLACE all current data. Continue?')))return;const b=ov.querySelector('#bkres');b.disabled=true;b.innerHTML='<span class="spin"></span>';
+  ov.querySelector('#bkres').onclick=async()=>{const f=ov.querySelector('#bkfile').files[0];const er=ov.querySelector('#bkerr');er.textContent='';if(!f){er.textContent=t('Choose a backup file first.');return;}if(!ask('Restore will REPLACE all current data. Continue?'))return;const b=ov.querySelector('#bkres');b.disabled=true;b.innerHTML='<span class="spin"></span>';
     try{const data=JSON.parse(await f.text());const r=await api('/api/restore',{method:'POST',body:JSON.stringify(data)});toast(t('Restored')+' '+r.servers+' '+t('servers')+'، '+r.keys+' '+t('keys'));closeModal();await loadAll();renderApp();}catch(e){er.textContent=e.message||t('Invalid backup file');b.disabled=false;b.textContent=t('Restore from file');}};
 }
 
@@ -1263,7 +1259,7 @@ async function bulkTransfer(){
 }
 async function bulk(op){if(op==='transfer')return bulkTransfer();
   const ids=Object.keys(S.selected).filter(id=>S.selected[id]&&keyById(id));if(op==='clear'){S.selected={};renderList();return;}if(!ids.length)return;
-  if(op==='delete'&&!confirm('Delete '+ids.length+' key(s)? This cannot be undone.'))return;
+  if(op==='delete'&&!ask('Delete {n} keys? This cannot be undone.',{n:ids.length}))return;
   for(const id of ids){const k=keyById(id);if(!k)continue;const kb='/api/servers/'+k.serverId+'/keys/'+k.id;try{
     if(op==='extend')await api(kb+'/extend',{method:'POST',idem:idemKey(),body:JSON.stringify({days:30})});
     else if(op==='disable')await api(kb+'/disable',{method:'POST'});
@@ -1305,8 +1301,8 @@ document.addEventListener('click',e=>{
     case 'manage':{const k=keyById(d.id);if(k){closeModal();modalManage(k);}break;}
     case 'config':{const k=keyById(d.id);if(k)modalConfig(k);break;}
     case 'toggle':{const k=keyById(d.id);if(k){const kb='/api/servers/'+k.serverId+'/keys/'+k.id;api(kb+'/'+(k.disabled?'enable':'disable'),{method:'POST'}).then(async()=>{toast(k.disabled?'Key enabled':'Key disabled');closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
-    case 'resetkey':{const k=keyById(d.id);if(k&&confirm('Reset usage for “'+k.name+'”?')){api('/api/servers/'+k.serverId+'/keys/'+k.id+'/reset',{method:'POST'}).then(async()=>{toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
-    case 'delkey':{const k=keyById(d.id);if(k&&confirm('Delete “'+k.name+'”?')){api('/api/servers/'+k.serverId+'/keys/'+k.id,{method:'DELETE'}).then(async()=>{toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
+    case 'resetkey':{const k=keyById(d.id);if(k&&ask('Reset usage for “{name}”?',{name:k.name})){api('/api/servers/'+k.serverId+'/keys/'+k.id+'/reset',{method:'POST'}).then(async()=>{toast(t('Usage reset'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
+    case 'delkey':{const k=keyById(d.id);if(k&&ask('Delete “{name}”?',{name:k.name})){api('/api/servers/'+k.serverId+'/keys/'+k.id,{method:'DELETE'}).then(async()=>{toast(t('Key deleted'));closeModal();await refreshKeys();renderList();}).catch(e=>toast(e.message,1));}break;}
     case 'addserver':modalAddServer();break;
     case 'srvdetail':{const s=S.servers.find(x=>x.id===d.id);if(s)modalServerDetail(s);break;}
     case 'security':modalSecurity();break;
