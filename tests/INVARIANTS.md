@@ -91,6 +91,16 @@ L5 | test_an_unreachable_server_arrives_as_an_error_not_a_gap | tests/test_strea
 L6 | test_one_sample_serves_every_tab | tests/test_stream.py
 L7 | test_the_sampler_stops_when_the_last_tab_closes | tests/test_stream.py
 
+## Interface (browser-verified; skipped where there is no Chromium)
+
+U1 | test_the_layout_follows_the_container_not_a_javascript_measurement | tests/test_ui.py
+U2 | test_nothing_ever_scrolls_sideways | tests/test_ui.py
+U3 | test_the_desktop_only_controls_are_actually_hidden_on_a_phone | tests/test_ui.py
+U4 | test_reduced_motion_is_honoured | tests/test_ui.py
+U5 | test_both_colour_schemes_are_real | tests/test_ui.py
+U6 | test_type_scales_with_the_viewport | tests/test_ui.py
+U7 | test_the_frontend_decides_layout_in_css_not_javascript | tests/test_architecture.py
+
 ## Structure
 
 S1 | test_core_never_imports_the_web_or_the_bot | tests/test_architecture.py

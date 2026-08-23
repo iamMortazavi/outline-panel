@@ -111,20 +111,28 @@ def test_the_rules_have_exactly_one_definition():
 
 
 def test_the_frontend_decides_layout_in_css_not_javascript():
-    """UI-1 from the plan.
+    """UI-1 from the plan, now a rule rather than a ratchet.
 
-    The dashboard currently branches on `innerWidth` to pick between three
-    hand-written layout strings, with no resize listener — so rotating a phone
-    leaves the wrong layout until something else re-renders. Step 6 replaces
-    that with container queries. Until then this test records the debt with a
-    ratchet: the count may fall, never rise.
+    The dashboard used to branch on `innerWidth` in nine places to pick between
+    three hand-written layout strings, and keep them honest with a debounced
+    `resize` handler that re-rendered the whole app — so a rotation showed the
+    wrong layout for 200ms and destroyed any open dialog. Container queries do
+    it continuously, and measure the element rather than the window, which is
+    what makes one stylesheet correct in a 320px Telegram webview and on a
+    desktop.
     """
-    index = SRC / "static" / "index.html"
-    uses = index.read_text().count("innerWidth")
-    assert uses <= 9, (
-        f"{uses} uses of innerWidth in index.html — layout belongs in CSS "
-        f"(@container / clamp), see MODERNIZATION.md §3.1. Lower the ceiling in "
-        f"this test as they go; never raise it.")
+    import re
+    text = (SRC / "static" / "index.html").read_text()
+    # Comments talk *about* the debt; only code creates it. Without this the
+    # ratchet counts the note explaining why the rule exists.
+    code = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    code = "\n".join(ln for ln in code.splitlines() if not ln.lstrip().startswith("//"))
+    uses = code.count("innerWidth")
+    assert uses == 0, (
+        f"{uses} uses of innerWidth in index.html. Layout is CSS here now — "
+        f"@container and clamp() — and it stays that way: a JavaScript "
+        f"measurement is taken once and is wrong the moment the window moves. "
+        f"See MODERNIZATION.md §3.1.")
 
 
 def test_the_api_does_not_describe_itself_to_the_internet():

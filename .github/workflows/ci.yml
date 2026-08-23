@@ -33,6 +33,17 @@ jobs:
       - name: Tests
         run: pytest -q
 
+      # tests/test_ui.py drives the real dashboard in Chromium — container
+      # queries, clamp(), prefers-reduced-motion are things only a browser can
+      # answer. It skips itself when there is no browser, so this step is what
+      # makes it actually run somewhere.
+      - name: Browser tests
+        if: matrix.python-version == '3.12'
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+          pytest -q tests/test_ui.py
+
       # xfail(strict=True) already fails the run if an expected-failing test
       # starts passing, so a fixed A1 case cannot land silently marked broken.
       - name: Report expected failures

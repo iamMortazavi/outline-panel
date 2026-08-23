@@ -481,9 +481,12 @@ Measured against the current `index.html`:
 
 * **Layout is decided in JavaScript.** `const narrow = innerWidth < 720` and
   `wide = W >= 1100` pick between three hand-written `style.cssText` strings
-  (`renderApp`). There is **no resize listener**, so rotating a phone or
-  splitting a window leaves the wrong layout until something else re-renders.
-  One `@media` rule exists in the whole file (line 98).
+  (`renderApp`). One `@media` rule exists in the whole file (line 98).
+  *(Correction, made while fixing this: there **is** a resize listener — the
+  review said there was not. It re-renders the whole app, debounced by 200 ms,
+  when the window crosses 720px. That is worse than no listener in one respect:
+  a rotation shows the wrong layout for a fifth of a second and destroys any
+  open dialog. It is gone now.)*
 * **Every update is a full `innerHTML` swap.** `renderList()` rebuilds the entire
   table; focus, scroll position, text selection and any open `<details>` are
   destroyed. The poll already guards this with `keysSig()`, which is a clever
@@ -675,7 +678,7 @@ port), **Q2 targeted** (steps 0–7, not a clean-slate rebuild), **Q3 converged*
 | 4 | Outbox drained; reconciler + drift report | ✅ `d8e3b31` |
 | 8 | Node port + conformance suite | ✅ (adapter #2 pending — see below) |
 | 5 | Response models (12 of 91 operations, ratcheted) | 🟡 started |
-| 6 | Frontend: tokens, container queries, keyed patching, a11y | ⬜ not started |
+| 6 | Frontend: tokens, container queries, keyed patching, a11y | ✅ |
 | 7 | SSE; polling removed | ✅ |
 
 354 tests green, ruff clean, and **every golden-master snapshot is
@@ -760,6 +763,16 @@ above. Recommended order, and why:
   long-lived connection, so it re-reads the admin row every tick and closes with
   a `bye` frame when access is revoked; otherwise disabling someone would leave
   them watching for as long as their tab stayed open.
+* **6 is done.** Nine `innerWidth` layout branches and the debounced `resize`
+  handler that kept them honest are gone; `test_architecture.py` now asserts
+  zero rather than ratcheting down. The table and the cards were two templates
+  with two sets of fields — they are one row now, and the container decides how
+  it reads, so the "view" toggle is a preference rather than the only thing
+  between a phone and an unusable grid. `renderList` patches keyed rows instead
+  of rebuilding the table, which is what makes a live stream survivable:
+  measured in Chromium, focus, caret position and scroll position all survive a
+  snapshot arriving while you type.
+
 * **5 is under way and deliberately partial.** Twelve operations are typed —
   the ones the dashboard actually renders from, plus the subscription summary,
   which is a contract with VPN clients nobody here controls. A ratchet in

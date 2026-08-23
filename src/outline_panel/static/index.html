@@ -20,6 +20,43 @@
     --sans:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',Vazirmatn,sans-serif;
     --display:system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;
     --ring:0 0 0 3px rgba(var(--acc-rgb),.32);
+
+    /* Fluid scale. Every size used to be a px literal, several of them
+       interpolated from JS, so the panel had exactly three appearances and
+       nothing in between. clamp() gives it a continuous one: a floor small
+       enough for a 320px phone, a ceiling that stops a 4K monitor from
+       rendering a poster, and a slope in between that needs no breakpoint. */
+    --step--1:clamp(.72rem,.70rem + .10vw,.80rem);
+    --step-0: clamp(.82rem,.79rem + .16vw,.94rem);
+    --step-1: clamp(.95rem,.90rem + .24vw,1.12rem);
+    --step-2: clamp(1.15rem,1.05rem + .48vw,1.5rem);
+    --step-3: clamp(1.5rem,1.28rem + 1.05vw,2.25rem);
+    --sp-1:clamp(.35rem,.32rem + .12vw,.5rem);
+    --sp-2:clamp(.55rem,.50rem + .22vw,.8rem);
+    --sp-3:clamp(.8rem,.72rem + .35vw,1.2rem);
+    --sp-4:clamp(1.1rem,.95rem + .6vw,1.7rem);
+    --tap:44px;              /* the smallest thing a thumb can reliably hit */
+    --dur-fast:.12s;--dur:.2s;--dur-slow:.26s;
+  }
+
+  /* Someone who has asked their system to stop animating things has asked for
+     a reason — vestibular disorders, or a machine that cannot afford the
+     compositing. Seven keyframe animations ran here unconditionally. */
+  @media (prefers-reduced-motion: reduce){
+    :root{--dur-fast:0s;--dur:0s;--dur-slow:0s}
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+      transition-duration:.001ms!important;scroll-behavior:auto!important}
+  }
+
+  /* The panel was dark-only, and it is used in daylight, on a phone, outdoors.
+     Only the tokens change: every component reads them, so this is the whole
+     light theme. */
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f6f8fb;--bg2:#fff;--panel:#fff;--panel2:#eef2f7;--line:#dfe6ef;--line2:#cfd9e6;--line3:#adbccd;
+      --text:#101720;--muted:#4d5b6b;--faint:#6b7889;--dim:#8695a6;
+      --acc:#0f8fa3;--acc-rgb:15,143,163;--ink:#fff;--warn:#a56a00;--danger:#c3283c;--danger2:#a51f31;
+    }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
@@ -75,6 +112,17 @@
   .icon-btn:hover{border-color:var(--line3);color:var(--acc)}
   .overlay{position:fixed;inset:0;background:rgba(4,5,6,.7);backdrop-filter:blur(5px);z-index:50;display:flex;animation:ocFade .18s}
   .overlay.center{align-items:center;justify-content:center;padding:24px}
+  /* One overlay class that is a bottom sheet on a phone and a centred dialog
+     on anything larger, decided by the viewport rather than by a measurement
+     JavaScript took once. */
+  .overlay.adaptive{align-items:flex-end;justify-content:center}
+  @media (min-width:720px){.overlay.adaptive{align-items:center;padding:24px}}
+  .sortwrap{flex:1 1 100%}
+  /* The status pills overflow on a phone; scrolling them is right, and better
+     than the row wrapping into three lines above the list. */
+  .pillbar{overflow-x:auto;flex:1 1 100%;scrollbar-width:none}
+  .pillbar::-webkit-scrollbar{display:none}
+  @media (min-width:720px){.sortwrap{flex:0 0 auto}.pillbar{overflow:visible;flex:0 0 auto}}
   .overlay.bottom{align-items:flex-end;justify-content:center}
   .overlay.right{align-items:stretch;justify-content:flex-end;background:rgba(4,5,6,.62)}
   .sheet{background:var(--bg2);border:1px solid var(--line2);border-radius:22px;width:100%;max-width:480px;max-height:90dvh;overflow:auto;padding:6px 24px 26px;animation:ocSheet .22s both;box-shadow:0 30px 80px rgba(0,0,0,.6)}
@@ -96,12 +144,100 @@
   .cmd-item.on{background:rgba(var(--acc-rgb),.1);color:var(--text)}.cmd-item.on .ci{color:var(--acc)}.cmd-item.on .hint{border-color:rgba(var(--acc-rgb),.35);color:var(--acc)}
   kbd{font-family:var(--mono);font-size:11px;background:var(--panel2);border:1px solid var(--line2);border-bottom-width:2px;border-radius:6px;padding:2px 6px;color:var(--muted)}
   @media(max-width:719px){.sheet{border-radius:22px 22px 0 0;border-bottom:none;max-width:none;padding:4px 18px max(24px,env(safe-area-inset-bottom))}.drawer{max-width:none}}
+
+  /* ---------- layout, decided here and not in JavaScript ----------
+     `renderApp` used to branch on innerWidth to pick between three hand-written
+     layout strings, with no resize listener — so rotating a phone left the
+     wrong layout until something else happened to re-render. Container queries
+     do the same job continuously, and they measure the *container* rather than
+     the window, which is what makes the key list correct at 320px inside a
+     Telegram webview and at 1400px on a desktop with one stylesheet. */
+  .shellbox{container-type:inline-size;container-name:shell}
+  .shell{display:grid;gap:var(--sp-3) var(--sp-4);align-items:start;
+    grid-template-columns:minmax(0,1fr)}
+  .shell > .kpi{grid-column:1/-1;display:grid;gap:var(--sp-2);
+    grid-template-columns:repeat(auto-fit,minmax(clamp(8rem,26cqi,10rem),1fr))}
+  .shell > .main{min-width:0}
+  .shell > .rail{display:grid;gap:var(--sp-3);grid-template-columns:minmax(0,1fr)}
+  @container shell (min-width:700px){
+    .shell > .rail{grid-template-columns:1fr 1fr}
+  }
+  @container shell (min-width:1080px){
+    .shell{grid-template-columns:minmax(0,1fr) clamp(19rem,24cqi,22rem)}
+    .shell > .rail{grid-template-columns:minmax(0,1fr);position:sticky;top:84px}
+  }
+
+  /* The key list. One markup shape; the container decides whether it reads as
+     a table or as cards, so the "view" toggle is a preference rather than the
+     only thing standing between a phone and an unusable grid. */
+  .klist{container-type:inline-size;container-name:klist}
+  /* `.kwrap` is inside `.klist`, so the rules below can reach it. */
+  .kwrap{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  .khead{display:none}
+  .krow{display:grid;gap:var(--sp-2);padding:var(--sp-3) var(--sp-3);
+    border-bottom:1px solid var(--panel2);cursor:pointer;align-items:center;
+    grid-template-areas:"pick name status" "bar bar bar" "meta meta acts";
+    grid-template-columns:auto minmax(0,1fr) auto}
+  .krow:last-child{border-bottom:none}
+  .krow:hover{background:color-mix(in srgb,var(--panel2) 45%,transparent)}
+  .krow:focus-visible{box-shadow:var(--ring);border-radius:10px}
+  .krow.sel{background:rgba(var(--acc-rgb),.06)}
+  .k-pick{grid-area:pick}.k-name{grid-area:name;min-width:0}.k-status{grid-area:status}
+  .k-bar{grid-area:bar;min-width:0}.k-dev{grid-area:meta}.k-seen{display:none}
+  .k-acts{grid-area:acts;display:flex;align-items:center;gap:var(--sp-1);justify-content:flex-end}
+  .k-exp{grid-area:meta;justify-self:end}
+  @container klist (min-width:760px){
+    .khead,.krow{display:grid;align-items:center;gap:var(--sp-3);
+      grid-template-areas:"pick name status bar dev seen acts";
+      grid-template-columns:26px 2.1fr 1fr 1.8fr .8fr 1.05fr 1.5fr}
+    .khead{padding:11px var(--sp-3);border-bottom:1px solid var(--line2);background:var(--bg2);
+      font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);font-weight:700}
+    .k-dev{grid-area:dev}.k-seen{grid-area:seen;display:block}
+    /* No room for it beside the device count; the card shows it instead. */
+    .k-monthly{display:none}
+    .k-exp{grid-area:acts;justify-self:auto}
+    .k-acts{grid-area:acts}
+  }
+  /* The card presentation, when the reader asked for it and there is room. */
+  .klist.as-cards .kwrap{background:none;border:none;border-radius:0;overflow:visible;
+    display:grid;gap:var(--sp-3);grid-template-columns:repeat(auto-fill,minmax(min(100%,19rem),1fr))}
+  .klist.as-cards .khead{display:none}
+  .klist.as-cards .krow{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    grid-template-areas:"pick name status" "bar bar bar" "meta meta meta" "acts acts acts";
+    grid-template-columns:auto minmax(0,1fr) auto}
+  .klist.as-cards .k-seen,.klist.as-cards .k-dev{display:block;grid-area:meta}
+  .klist.as-cards .k-exp{grid-area:meta;justify-self:start}
+  .klist.as-cards .k-acts{grid-area:acts;justify-content:stretch}
+
+  /* Touch ergonomics: several of these were 27px, which is a coin toss with a
+     thumb. The visual size is unchanged; the hit area is not. */
+  .tag-shared{font-size:9px;font-weight:700;color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,transparent);
+    border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);padding:1px 5px;border-radius:5px;
+    font-family:var(--sans);white-space:nowrap}
+  .icon-btn{min-width:var(--tap);min-height:var(--tap);display:inline-flex;
+    align-items:center;justify-content:center}
+  @media (pointer:fine){.icon-btn{min-width:34px;min-height:34px}}
+
+  /* The floating "New key" button sat on top of the last card's own buttons. */
+  .has-fab .kwrap{padding-bottom:calc(var(--tap) + var(--sp-4))}
+
+  /* Shown only when the shell is too narrow for the header's own search box.
+     Same query as the header rule below, so exactly one of them is ever up. */
+  /* `!important` because this file sets `display` inline on most elements, and
+     an inline style beats a class. Losing that fight silently is how a control
+     meant for desktop ends up on a phone. */
+  .only-wide{display:none!important}
+  @media (min-width:720px){
+    .only-narrow{display:none!important}
+    .only-wide{display:revert!important}
+    .only-wide.flex,.btn.only-wide{display:flex!important}
+  }
 </style>
 </head>
 <body>
 <div id="root"></div>
 <div id="modalRoot"></div>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 <script>
 const $=s=>document.querySelector(s);
 const root=$('#root'), modalRoot=$('#modalRoot');
@@ -346,46 +482,43 @@ function barColor(k){if(k.disabled)return 'var(--line3)';if(!k.limit)return 'var
 
 /* ---------- app shell ---------- */
 function renderApp(){
-  const W=innerWidth, narrow=W<720;
   root.innerHTML=`
   <header style="position:sticky;top:0;z-index:30;background:rgba(10,13,18,.82);backdrop-filter:blur(16px) saturate(1.4);border-bottom:1px solid var(--line)">
-    <div style="max-width:1400px;margin:0 auto;padding:${narrow?'12px 16px':'13px 22px'};display:flex;align-items:center;gap:${narrow?'11px':'16px'}">
+    <div style="max-width:1400px;margin:0 auto;padding:var(--sp-2) var(--sp-3);display:flex;align-items:center;gap:var(--sp-2)">
       <div style="display:flex;align-items:center;gap:9px;flex:none">
         <span style="width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 11px var(--acc)"></span>
-        <span style="font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:-.2px;white-space:nowrap">Outline<span style="${narrow?'display:none':'color:var(--faint);font-weight:600'}"> Control</span></span></div>
+        <span style="font-family:var(--display);font-weight:700;font-size:var(--step-1);letter-spacing:-.2px;white-space:nowrap">Outline<span class="only-wide" style="color:var(--faint);font-weight:600"> Control</span></span></div>
       <div id="srvwrap" style="position:relative;flex:none"></div>
       <div style="flex:1"></div>
-      <div style="position:relative;${narrow?'display:none':'width:230px'}">
+      <div class="only-wide" style="position:relative;width:clamp(11rem,20vw,15rem)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;left:12px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg>
         <input id="search" data-inp="search" value="${esc(S.search)}" placeholder="${esc(t('Search keys…'))}" class="inp" style="padding:9px 64px 9px 36px;font-size:13.5px" />
         <kbd data-act="palette" title="Command palette" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer">⌘K</kbd></div>
-      ${!can('keys.create')?'':`<button class="btn" data-act="create" style="${narrow?'display:none':'width:auto;flex:none;white-space:nowrap;padding:9px 15px;display:flex;align-items:center;gap:7px;font-size:13.5px'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>${esc(t('New key'))}</button>`}
+      ${!can('keys.create')?'':`<button class="btn only-wide" data-act="create" style="width:auto;flex:none;white-space:nowrap;padding:9px 15px;align-items:center;gap:7px;font-size:var(--step-0)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>${esc(t('New key'))}</button>`}
       <button class="icon-btn" data-act="settings" aria-label="${esc(t('Settings'))}" style="padding:10px;color:var(--muted)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
-      <button data-act="signout" style="${narrow?'display:none':'background:none;border:1px solid var(--line2);color:var(--faint);padding:9px 13px;border-radius:11px;cursor:pointer;font-size:13px'}">${esc(t('Sign out'))}</button>
+      <button data-act="signout" class="only-wide" style="background:none;border:1px solid var(--line2);color:var(--faint);padding:9px 13px;border-radius:11px;cursor:pointer;font-size:var(--step-0)">${esc(t('Sign out'))}</button>
     </div>
   </header>
-  <div style="max-width:1400px;margin:0 auto;padding:${narrow?'16px 16px 96px':'22px 22px 80px'}">
+  <div class="shellbox" style="max-width:1400px;margin:0 auto;padding:var(--sp-3) var(--sp-3) 96px">
     <div id="shell"></div>
   </div>
-  ${narrow&&can('keys.create')?`<button class="btn" data-act="create" style="position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:35;width:auto;display:flex;align-items:center;gap:8px;padding:14px 20px;border-radius:99px;box-shadow:0 12px 30px rgba(var(--acc-rgb),.28)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>${esc(t('New key'))}</button>`:''}
+  ${can('keys.create')?`<button class="btn only-narrow fab" data-act="create" style="position:fixed;inset-inline-end:20px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:35;width:auto;align-items:center;gap:8px;padding:14px 20px;border-radius:99px;box-shadow:0 12px 30px rgba(var(--acc-rgb),.28)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>${esc(t('New key'))}</button>`:''}
   `;
-  // shell layout
-  const wide=W>=1100, mid=W>=720&&W<1100;
-  const kpiGrid='display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:11px';
-  let shellStyle,kpiOuter,contentStyle,railStyle;
-  if(wide){shellStyle='display:grid;grid-template-columns:1fr 336px;gap:18px 24px;align-items:start';kpiOuter='grid-column:1 / -1;'+kpiGrid;contentStyle='min-width:0';railStyle='position:sticky;top:84px;display:flex;flex-direction:column;gap:14px';}
-  else if(mid){shellStyle='display:flex;flex-direction:column;gap:18px';kpiOuter=kpiGrid;contentStyle='min-width:0';railStyle='display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start';}
-  else {shellStyle='display:flex;flex-direction:column;gap:18px';kpiOuter=kpiGrid;contentStyle='min-width:0';railStyle='display:flex;flex-direction:column;gap:14px';}
-  $('#shell').style.cssText=shellStyle;
-  $('#shell').innerHTML=`<div id="kpi" style="${kpiOuter}"></div>
-    <div style="${contentStyle}">
-      ${narrow?'<div style="margin-bottom:14px"><div style="position:relative"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;left:13px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg><input id="msearch" data-inp="search" value="'+esc(S.search)+'" placeholder="'+esc(t('Search keys…'))+'" class="inp" style="padding:12px 12px 12px 38px"/></div></div>':''}
-      ${isOwner()?`<div style="display:flex;gap:7px;margin-bottom:14px">${[['users','Users'],['admins','Admins']].map(([tb,l])=>`<button class="chip ${S.tab===tb?'sel':''}" data-act="tab" data-id="${tb}" style="padding:8px 15px">${esc(t(l))}</button>`).join('')}</div>`:''}
+  // The shell is one grid whose shape comes from @container rules, not from a
+  // measurement taken once at render time. A phone that rotates, a window that
+  // is split, a Telegram webview that resizes — all handled without JS.
+  $('#shell').className='shell';
+  $('#shell').innerHTML=`<div id="kpi" class="kpi"></div>
+    <div class="main">
+      <div class="only-narrow" style="margin-bottom:14px"><div style="position:relative">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2" style="position:absolute;inset-inline-start:13px;top:50%;transform:translateY(-50%)"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3" stroke-linecap="round"/></svg>
+        <input id="msearch" data-inp="search" value="${esc(S.search)}" placeholder="${esc(t('Search keys…'))}" class="inp" style="padding-inline-start:38px" aria-label="${esc(t('Search keys…'))}" /></div></div>
+      ${isOwner()?`<div role="tablist" style="display:flex;gap:7px;margin-bottom:14px">${[['users','Users'],['admins','Admins']].map(([tb,l])=>`<button role="tab" aria-selected="${S.tab===tb}" class="chip ${S.tab===tb?'sel':''}" data-act="tab" data-id="${tb}" style="padding:8px 15px">${esc(t(l))}</button>`).join('')}</div>`:''}
       <div id="toolbar"></div><div id="banner"></div><div id="selbar"></div>
-      <div id="count" style="font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin:0 2px 10px;font-weight:600"></div>
+      <div id="count" style="font-size:var(--step--1);color:var(--dim);text-transform:uppercase;letter-spacing:.8px;margin:0 2px 10px;font-weight:600" aria-live="polite"></div>
       <div id="list"></div>
     </div>
-    <aside id="rail" style="${railStyle}"></aside>`;
+    <aside id="rail" class="rail" aria-label="${esc(t('Advanced stats are off.'))}"></aside>`;
   if(S.tab==='admins'&&isOwner()){
     $('#kpi').style.display='none';$('#rail').style.display='none';
     $('#count').style.display='none';
@@ -412,7 +545,7 @@ function renderSrv(){
         <span class="mono" style="font-size:11px;color:var(--dim)">${S.keys.filter(k=>k.serverId===s.id).length}</span></div>`).join('')}
     </div>`;
   }
-  wrap.innerHTML=`<button data-act="srvmenu" style="display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--line2);color:var(--text);padding:9px 12px;border-radius:11px;font-size:13px;cursor:pointer;max-width:${innerWidth<720?'150px':'230px'}">
+  wrap.innerHTML=`<button data-act="srvmenu" style="display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--line2);color:var(--text);padding:9px 12px;border-radius:11px;font-size:13px;cursor:pointer;max-width:clamp(9rem,28vw,14rem)">
     <span style="width:7px;height:7px;border-radius:50%;flex:none;background:${dot};box-shadow:0 0 7px ${dot}"></span>
     <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600">${esc(label)}</span>
     <svg width="11" height="11" viewBox="0 0 12 8" fill="none" style="flex:none;opacity:.6"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>${menu}`;
@@ -437,14 +570,14 @@ function renderKpi(){
 }
 
 function renderToolbar(){
-  const tb=$('#toolbar');if(!tb)return;const narrow=innerWidth<720;const sc=scoped();
+  const tb=$('#toolbar');if(!tb)return;const sc=scoped();
   const counts={all:sc.length,online:sc.filter(isOnline).length,active:sc.filter(k=>!k.disabled&&!k.pending).length,pending:sc.filter(k=>k.pending).length,disabled:sc.filter(k=>k.disabled).length};
   const defs=[['all','All'],['online','Online'],['active','Active'],['pending','Pending'],['disabled','Disabled']];
   const pills=defs.map(([id,lbl])=>{const on=S.statusFilter===id;return `<button data-act="statusf" data-id="${id}" style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:8px;border:none;font-size:12.5px;font-weight:600;cursor:pointer;flex:none;white-space:nowrap;background:${on?'var(--acc)':'transparent'};color:${on?'var(--ink)':'var(--muted)'}">${esc(t(lbl))}<span class="mono" style="font-size:11px;opacity:.7">${counts[id]}</span></button>`;}).join('');
-  const sortSel=`<div style="position:relative;${narrow?'flex:1 1 100%':''}"><select id="sort" data-inp="sort" style="appearance:none;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:${narrow?'12px 32px 12px 14px':'9px 32px 9px 13px'};border-radius:11px;font-size:13px;cursor:pointer;outline:none;${narrow?'width:100%':''}">
+  const sortSel=`<div class="sortwrap" style="position:relative"><select id="sort" data-inp="sort" aria-label="${esc(t('Newest'))}" style="appearance:none;background:var(--panel);border:1px solid var(--line);color:var(--text);padding:var(--sp-2) 32px var(--sp-2) 14px;border-radius:11px;font-size:var(--step-0);cursor:pointer;outline:none;width:100%">
     ${[['recent','Newest'],['name','Name A–Z'],['usage','Most usage'],['expiry','Expiring soon'],['devices','Most devices'],['online','Online first'],['lastseen','Last seen']].map(([v,l])=>`<option value="${v}" ${S.sort===v?'selected':''}>${esc(t(l))}</option>`).join('')}
     </select><svg width="11" height="11" viewBox="0 0 12 8" fill="none" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;opacity:.55"><path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div>`;
-  const viewToggle=narrow?'':`<div style="display:flex;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px">
+  const viewToggle=`<div class="only-wide flex" style="display:flex;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px">
     <button data-act="view" data-id="table" aria-label="${esc(t('Table'))}" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='table'?'var(--acc)':'transparent'};color:${S.view==='table'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg></button>
     <button data-act="view" data-id="cards" aria-label="${esc(t('Cards'))}" style="padding:7px 9px;border-radius:8px;border:none;cursor:pointer;line-height:0;background:${S.view==='cards'?'var(--acc)':'transparent'};color:${S.view==='cards'?'var(--ink)':'var(--faint)'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></button></div>`;
   // An active admin filter must be visible and undoable, or the list just looks
@@ -454,8 +587,8 @@ function renderToolbar(){
   const csv=`<button data-act="csv" class="btn-sec" style="width:auto;padding:8px 13px;font-size:12.5px;display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round"/></svg>${esc(t('CSV'))}</button>`;
   tb.innerHTML=`<div style="display:flex;align-items:center;gap:9px;margin-bottom:14px;flex-wrap:wrap">
     ${afChip}
-    <div style="display:flex;gap:5px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px;${narrow?'overflow-x:auto;flex:1 1 100%':''}">${pills}</div>
-    ${narrow?'':'<div style="flex:1"></div>'}${csv}${sortSel}${viewToggle}</div>`;
+    <div class="pillbar" style="display:flex;gap:5px;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px">${pills}</div>
+    <div class="only-wide" style="flex:1"></div>${csv}${sortSel}${viewToggle}</div>`;
 }
 
 function renderBanner(){
@@ -486,12 +619,48 @@ function renderSelbar(){
 
 function renderList(){
   renderKpi();renderToolbar();renderBanner();renderSelbar();
-  const list=filteredKeys(),el=$('#list'),narrow=innerWidth<720,sc=scoped();
+  const list=filteredKeys(),el=$('#list'),sc=scoped();
   const cntLabel=(S.search||S.statusFilter!=='all')?(list.length+' '+t('of')+' '+sc.length+' '+t('keys')):(sc.length+' '+t('keys total'));
   $('#count').textContent=cntLabel;
   if(!S.servers.length){el.innerHTML=`<div style="text-align:center;color:var(--faint);padding:70px 20px;background:var(--panel);border:1px solid var(--line);border-radius:16px"><div style="font-size:38px;margin-bottom:12px;color:var(--acc)">⌁</div>${esc(t('No servers yet.'))}<br><button class="btn-sec" data-act="settings" style="width:auto;margin-top:14px;padding:10px 18px">${esc(t('Add your first server'))}</button></div>`;return;}
   if(!list.length){el.innerHTML=`<div style="text-align:center;color:var(--faint);padding:70px 20px;background:var(--panel);border:1px solid var(--line);border-radius:16px"><div style="font-size:38px;margin-bottom:12px;color:var(--acc)">⌁</div>${S.search?'No keys match “'+esc(S.search)+'”':'No keys here yet.'}</div>`;return;}
-  if(S.view==='table'&&!narrow)el.innerHTML=tableView(list);else el.innerHTML=cardView(list,narrow);
+  el.className='klist'+(S.view==='cards'?' as-cards':'')+(can('keys.create')?' has-fab':'');
+  patchList(el,list);
+}
+
+/* Replace only the rows that actually changed.
+   `renderList` used to rebuild the whole table with innerHTML on every tick,
+   which destroys focus, text selection and scroll position — and with a live
+   stream arriving every few seconds that is the difference between a panel you
+   can type in and one you cannot. Keyed by `serverId/keyId`, so a row that has
+   not moved is left alone entirely. */
+function patchList(el,list){
+  let wrap=el.querySelector('.kwrap');
+  if(!wrap){el.innerHTML=listMarkup(list);return;}
+  const want=new Map(list.map(k=>[selKey(k),k]));
+  const have=new Map();
+  wrap.querySelectorAll(':scope > .krow').forEach(n=>have.set(n.dataset.sid+'/'+n.dataset.id,n));
+  for(const [id,node] of have)if(!want.has(id))node.remove();
+  let prev=wrap.querySelector('.khead');
+  const tmp=document.createElement('div');
+  for(const [id,k] of want){
+    const fresh=keyRow(k);
+    let node=have.get(id);
+    if(node){
+      // Compare the rendered row, not the data: it is the only thing that
+      // decides whether the DOM would differ, and it costs one string compare.
+      if(node.outerHTML!==fresh){tmp.innerHTML=fresh;const n2=tmp.firstElementChild;node.replaceWith(n2);node=n2;}
+    }else{
+      tmp.innerHTML=fresh;node=tmp.firstElementChild;
+    }
+    if(prev.nextElementSibling!==node)prev.after(node);
+    prev=node;
+  }
+  const allSel=list.length&&list.every(k=>S.selected[selKey(k)]);
+  const head=wrap.querySelector('[data-act="selall"]');
+  if(head){head.style.borderColor=allSel?'var(--acc)':'var(--line3)';
+    head.style.background=allSel?'var(--acc)':'transparent';
+    head.style.color=allSel?'var(--ink)':'transparent';}
 }
 function kBits(k){const st=statusMeta(k),p=pctOf(k),now=Date.now()/1000;
   const usage=k.limit?(fmtBytes(k.used)+' / '+fmtBytes(k.limit)+(p?'  ·  '+p+'%':'')):fmtBytes(k.used)+'  ·  unlimited';
@@ -500,53 +669,50 @@ function kBits(k){const st=statusMeta(k),p=pctOf(k),now=Date.now()/1000;
   const last=k.pending?'—':(isOnline(k)?'now':fmtAgo(agoSec(k)));
   return {st,p,w:barWidth(k),usage,expShort,expCol,last};
 }
-function tableView(list){
-  const rows=list.map(k=>{const b=kBits(k),sel=!!S.selected[selKey(k)];
-    return `<div data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="display:grid;grid-template-columns:26px 2.1fr 1fr 1.8fr .8fr 1.05fr 1.5fr;gap:13px;padding:14px 18px;border-bottom:1px solid var(--panel2);cursor:pointer;align-items:center;background:${sel?'rgba(var(--acc-rgb),.06)':'transparent'}">
-      <div data-act="sel" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-      <div style="min-width:0"><div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k.name)}</div>
-        <div class="mono" style="font-size:11px;color:var(--dim);margin-top:3px;display:flex;align-items:center;gap:7px">#${esc(k.id)}${isOwner()&&k.ownerName?`<span style="padding:1px 6px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)">${esc(k.ownerName)}</span>`:''}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint)"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
-      <div><span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${esc(t(b.st.t))}</span></div>
-      <div style="min-width:0"><div style="height:6px;border-radius:99px;background:var(--panel2);overflow:hidden"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
-        <div class="mono" style="font-size:11px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.usage)}</div></div>
-      <div class="mono" style="display:flex;align-items:center;gap:6px;font-size:13px">${k.peakDevices!=null?k.peakDevices:'—'}${(k.peakDevices||0)>=5?'<span title="Possible shared account" style="font-size:9px;font-weight:700;color:var(--warn);background:rgba(245,196,81,.13);border:1px solid rgba(245,196,81,.3);padding:1px 5px;border-radius:5px;font-family:var(--sans)">SHARED?</span>':''}</div>
-      <div class="mono" style="font-size:12.5px;color:${isOnline(k)?'var(--acc)':'var(--faint)'};white-space:nowrap">${esc(b.last)}</div>
-      <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0">
-        <span class="mono" style="font-size:12.5px;color:${b.expCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.expShort)}</span>
-        <button class="icon-btn" data-act="copylink" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('Copy customer link'))}" title="${esc(t('Copy customer link'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
-        <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('Copy'))}" title="${esc(t('Copy config'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
-        <button class="icon-btn" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('QR'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M20 14v3M14 20h3" stroke-linecap="round"/></svg></button></div>
-    </div>`;}).join('');
-  const allSel=list.length&&list.every(k=>S.selected[selKey(k)]);
-  return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden">
-    <div style="display:grid;grid-template-columns:26px 2.1fr 1fr 1.8fr .8fr 1.05fr 1.5fr;gap:13px;padding:11px 18px;border-bottom:1px solid var(--line2);background:var(--bg2);align-items:center">
-      <div data-act="selall" style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${allSel?'var(--acc)':'var(--line3)'};background:${allSel?'var(--acc)':'transparent'};color:${allSel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-      ${['Key','Status','Data usage','Devices','Last seen','Expiry / actions'].map((h,i)=>`<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);font-weight:700;${i===5?'text-align:end':''}">${esc(t(h))}</div>`).join('')}
-    </div>${rows}</div>`;
+function keyRow(k){
+  const b=kBits(k), sel=!!S.selected[selKey(k)];
+  const shared=(k.peakDevices||0)>=5
+    ? '<span title="'+esc(t('Possible shared account'))+'" class="tag-shared">SHARED?</span>' : '';
+  const owner=isOwner()&&k.ownerName
+    ? `<span class="k-owner">${esc(k.ownerName)}</span>` : '';
+  // One markup for both presentations. The table and the cards used to be two
+  // templates with two sets of fields, so a change to either drifted from the
+  // other and neither worked at a width its author had not pictured. Now the
+  // container decides which cells show and how they sit; the row is the row.
+  return `<div class="krow${sel?' sel':''}" role="row" tabindex="0"
+      data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}"
+      aria-label="${esc(k.name)} — ${esc(t(b.st.t))}, ${esc(b.usage)}">
+    <div class="k-pick" role="checkbox" tabindex="0" aria-checked="${sel}"
+         aria-label="${esc(t('Select'))} ${esc(k.name)}"
+         data-act="sel" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1"
+         style="width:17px;height:17px;border-radius:5px;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center;cursor:pointer">
+      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="k-name">
+      <div style="font-weight:700;font-size:var(--step-0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k.name)}</div>
+      <div class="mono" style="font-size:var(--step--1);color:var(--dim);margin-top:3px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">#${esc(k.id)}${owner}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint)"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
+    <div class="k-status"><span style="display:inline-flex;align-items:center;gap:6px;font-size:var(--step--1);font-weight:600;padding:4px 9px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${esc(t(b.st.t))}</span></div>
+    <div class="k-bar">
+      <div style="height:6px;border-radius:99px;background:var(--panel2);overflow:hidden"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
+      <div class="mono" style="font-size:var(--step--1);color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.usage)}</div></div>
+    <div class="k-dev mono" style="display:flex;align-items:center;gap:6px;font-size:var(--step-0)"><span title="${esc(t('Devices'))}">${k.peakDevices!=null?k.peakDevices:'—'}</span>${shared}${k.monthlyBytes?'<span class="k-monthly" style="color:var(--faint)">· '+esc(fmtBytes(k.monthlyBytes))+'/mo</span>':''}</div>
+    <div class="k-seen mono" style="font-size:var(--step-0);color:${isOnline(k)?'var(--acc)':'var(--faint)'};white-space:nowrap">${esc(b.last)}</div>
+    <div class="k-acts">
+      <span class="mono k-exp" style="font-size:var(--step-0);color:${b.expCol};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(b.expShort)}</span>
+      <button class="icon-btn" data-act="copylink" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('Copy customer link'))}" title="${esc(t('Copy customer link'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></button>
+      <button class="icon-btn" data-act="copy" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('Copy config'))}" title="${esc(t('Copy config'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg></button>
+      <button class="icon-btn" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" aria-label="${esc(t('QR'))}" title="${esc(t('QR'))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3M20 14v3M14 20h3" stroke-linecap="round"/></svg></button></div>
+  </div>`;
 }
-function cardView(list,narrow){
-  const grid=narrow?'display:grid;grid-template-columns:1fr;gap:13px':'display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;align-items:start';
-  return `<div style="${grid}">`+list.map(k=>{const b=kBits(k);
-    const sel=!!S.selected[selKey(k)];
-    return `<div style="background:var(--panel);border:1px solid ${sel?'rgba(var(--acc-rgb),.4)':'var(--line)'};border-radius:18px;padding:16px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-        <div data-act="sel" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" data-stop="1" style="width:17px;height:17px;flex:none;margin-top:2px;border-radius:5px;cursor:pointer;border:1.5px solid ${sel?'var(--acc)':'var(--line3)'};background:${sel?'var(--acc)':'transparent'};color:${sel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center"><svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
-        <div style="min-width:0;flex:1"><div style="font-weight:700;font-size:16px;letter-spacing:-.2px;word-break:break-word;line-height:1.2">${esc(k.name)}</div>
-          <div class="mono" style="font-size:11px;color:var(--dim);margin-top:5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">#${esc(k.id)}${isOwner()&&k.ownerName?`<span style="padding:1px 6px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);color:var(--muted)">${esc(k.ownerName)}</span>`:''}<span style="display:inline-flex;align-items:center;gap:5px;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:1px 6px"><span style="width:5px;height:5px;border-radius:50%;background:${srvDot(k.serverId)}"></span>${esc(srvShort(k.serverId))}</span></div></div>
-        <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:99px;background:${b.st.bg};color:${b.st.c};border:1px solid ${b.st.ln};white-space:nowrap;flex:none"><span style="width:6px;height:6px;border-radius:50%;background:currentColor;${b.st.anim}"></span>${b.st.t}</span></div>
-      <div style="height:7px;border-radius:99px;background:var(--panel2);overflow:hidden;margin:16px 0 7px"><span style="display:block;height:100%;border-radius:99px;width:${b.w}%;background:${barColor(k)}"></span></div>
-      <div class="mono" style="font-size:12px;color:var(--muted)">${esc(b.usage)}</div>
-      <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:var(--muted)">
-        <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4" stroke-linecap="round"/></svg><span class="mono" style="color:${b.expCol}">${k.pending?t('on use')+' · '+(k.durationDays||0)+t('d'):fmtExpiry(k.expiry)}</span></span>
-        <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/></svg><b class="mono" style="color:var(--text);font-weight:600">${k.peakDevices!=null?k.peakDevices:'—'}</b></span>
-        <span style="display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4e5868" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg><span class="mono" style="color:${isOnline(k)?'var(--acc)':'var(--faint)'}">${esc(b.last)}</span></span>
-        ${k.monthlyBytes?'<span style="display:flex;align-items:center;gap:6px">🔄 <b class="mono" style="color:var(--text);font-weight:600">'+fmtBytes(k.monthlyBytes)+'</b>/mo</span>':''}</div>
-      <div style="display:flex;gap:8px;margin-top:16px">
-        <button class="btn-sec" data-act="copy" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10" stroke-linecap="round"/></svg>${esc(t('Copy'))}</button>
-        <button class="btn-sec" data-act="copylink" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>${esc(t('Link'))}</button>
-        <button class="btn-sec" data-act="share" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>${esc(t('QR'))}</button>
-        <button class="btn-sec" data-act="detail" data-id="${esc(k.id)}" data-sid="${esc(k.serverId)}" style="flex:1;padding:10px;font-size:12.5px">${esc(t('Details'))}</button></div>
-    </div>`;}).join('')+`</div>`;
+
+function listMarkup(list){
+  const allSel=list.length&&list.every(k=>S.selected[selKey(k)]);
+  const heads=['Key','Status','Data usage','Devices','Last seen','Expiry / actions'];
+  return `<div class="kwrap" role="table" aria-label="${esc(t('Users'))}">
+    <div class="khead" role="row">
+      <div role="columnheader" data-act="selall" tabindex="0" aria-label="${esc(t('Select'))}"
+           style="width:15px;height:15px;border-radius:5px;border:1.5px solid ${allSel?'var(--acc)':'var(--line3)'};background:${allSel?'var(--acc)':'transparent'};color:${allSel?'var(--ink)':'transparent'};display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M2 6.5l2.5 2.5L10 3" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      ${heads.map((h,i)=>`<div role="columnheader" style="${i===5?'text-align:end':''}">${esc(t(h))}</div>`).join('')}
+    </div>${list.map(keyRow).join('')}</div>`;
 }
 
 function renderRail(){
@@ -573,13 +739,36 @@ function renderRail(){
 
 /* ---------- modals ---------- */
 function closeModal(){modalRoot.innerHTML='';}
-function openSheet(inner,opts={}){const narrow=innerWidth<720;
-  modalRoot.innerHTML=`<div class="overlay ${narrow?'bottom':'center'}"><div class="sheet ${opts.wide?'wide':''}">${narrow?'<div class="grip"></div>':''}${inner}</div></div>`;
+function openSheet(inner,opts={}){
+  // Centred dialog on a big screen, bottom sheet on a phone — a CSS decision,
+  // so it is still right after the window is resized or the phone rotated.
+  modalRoot.innerHTML=`<div class="overlay adaptive" role="dialog" aria-modal="true"><div class="sheet ${opts.wide?'wide':''}"><div class="grip only-narrow"></div>${inner}</div></div>`;
+  trapFocus(modalRoot.firstElementChild);
   return modalRoot.firstElementChild;
 }
 function openDrawer(inner){
-  modalRoot.innerHTML=`<div class="overlay right"><div class="drawer">${inner}</div></div>`;
+  modalRoot.innerHTML=`<div class="overlay right" role="dialog" aria-modal="true"><div class="drawer">${inner}</div></div>`;
+  trapFocus(modalRoot.firstElementChild);
   return modalRoot.firstElementChild;
+}
+
+/* Keep the keyboard inside an open dialog, and give it back afterwards.
+   Without this, Tab walks out of a modal into the page behind it — which for a
+   screen-reader user means the dialog silently stops existing. */
+let _returnFocus=null;
+function trapFocus(overlay){
+  _returnFocus=document.activeElement;
+  const sel='button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
+  const first=overlay.querySelector(sel);
+  if(first)setTimeout(()=>first.focus(),0);
+  overlay.addEventListener('keydown',e=>{
+    if(e.key!=='Tab')return;
+    const items=[...overlay.querySelectorAll(sel)].filter(n=>n.offsetParent!==null);
+    if(!items.length)return;
+    const i=items.indexOf(document.activeElement);
+    if(e.shiftKey&&(i<=0)){e.preventDefault();items[items.length-1].focus();}
+    else if(!e.shiftKey&&i===items.length-1){e.preventDefault();items[0].focus();}
+  });
 }
 function keyById(id){return S.keys.find(k=>String(k.id)===String(id));}
 // Resolve a clicked element's key. `data-sid` disambiguates: ids repeat
@@ -1079,7 +1268,7 @@ async function modalServerDetail(s){
   const ov=openSheet(`<div class="h2">${esc(s.name)}</div><p class="desc">${esc(t('Loading…'))}</p>`);
   let st;try{st=await api('/api/servers/'+s.id+'/settings');}catch(e){ov.querySelector('.desc').textContent=e.message;return;}
   const gl=st.globalLimit?(st.globalLimit/1073741824):'';
-  ov.querySelector('.sheet').innerHTML=`${innerWidth<720?'<div class="grip"></div>':''}<div class="h2">${esc(s.name)}</div><p class="mono desc" style="font-size:13px">${esc(st.host||'')}${st.version?' · Outline v'+esc(st.version):''}</p>
+  ov.querySelector('.sheet').innerHTML=`<div class="grip only-narrow"></div><div class="h2">${esc(s.name)}</div><p class="mono desc" style="font-size:13px">${esc(st.host||'')}${st.version?' · Outline v'+esc(st.version):''}</p>
     <div class="field"><label class="lab">${esc(t('Label (shown in this panel)'))}</label><input id="dl" class="inp" value="${esc(s.name)}" /></div>
     <div class="field"><label class="lab">${esc(t('Outline server name'))}</label><input id="dn" class="inp" value="${esc(st.name||'')}" /></div>
     <div class="field"><label class="lab">${esc(t('Default data limit · all keys · GB'))}</label><input id="dg" class="inp" type="number" min="0" value="${gl}" placeholder="${esc(t('No global limit'))}" /></div>
@@ -1559,7 +1748,7 @@ function openPalette(){
 }
 function openShortcuts(){
   const row=(k,d)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid var(--line)"><span style="color:var(--muted);font-size:14px">${d}</span><span>${k.split('+').map(x=>'<kbd>'+x+'</kbd>').join(' ')}</span></div>`;
-  modalRoot.innerHTML=`<div class="overlay center"><div class="sheet" style="max-width:420px"><div class="grip" style="display:${innerWidth<720?'block':'none'}"></div>
+  modalRoot.innerHTML=`<div class="overlay center"><div class="sheet" style="max-width:420px"><div class="grip only-narrow"></div>
     <div class="h2">${esc(t('Keyboard shortcuts'))}</div><p class="desc" style="margin-bottom:14px">${esc(t('Move faster across the panel.'))}</p>
     ${row('⌘+K','Command palette')}${row('/','Focus search')}${row('N','New key')}${row('?','This help')}${row('Esc','Close / clear selection')}
     <div style="height:16px"></div><button class="btn-sec" data-act="close">${esc(t('Close'))}</button></div></div>`;
@@ -1575,7 +1764,23 @@ document.addEventListener('keydown',e=>{
 });
 // Rebuild only when crossing the layout breakpoint — not on every minor resize
 // (e.g. the mobile URL bar showing/hiding fires resize constantly).
-let rsT,_lastNarrow=innerWidth<720;addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{const nrw=innerWidth<720;if(S.screen==='app'&&nrw!==_lastNarrow){_lastNarrow=nrw;renderApp();}},200);});
+// Enter and Space do what a click does, wherever a click does something.
+// The rows are divs with data-act, which a mouse can use and a keyboard could
+// not: not focusable, not announced, not activatable. They are focusable now,
+// and this is what makes that mean something.
+addEventListener('keydown',e=>{
+  if(e.key!=='Enter'&&e.key!==' ')return;
+  const el=document.activeElement;
+  if(!el||!el.dataset||!el.dataset.act)return;
+  if(el.tagName==='BUTTON'||el.tagName==='A'||el.tagName==='INPUT')return;
+  e.preventDefault();
+  el.click();
+});
+
+// No resize listener. There used to be one, re-rendering the whole app when the
+// window crossed 720px — debounced by 200ms, so a rotation showed the wrong
+// layout for a fifth of a second and any open dialog was destroyed. The layout
+// is CSS now, so the browser does this itself, continuously and for free.
 
 checkAuth();
 </script>
