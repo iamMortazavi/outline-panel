@@ -10,6 +10,12 @@ A self-hosted **web dashboard + Telegram bot** for managing users on one or many
 
 ## Features
 
+- **Two backends** — Outline (Shadowsocks) and **Xray (VLESS + Reality)**, side
+  by side in one panel. A customer's subscription can span both; the panel does
+  not care which protocol a server speaks. Xray needs one extra package:
+  `pip install 'outline-panel[xray]'`. Add the node with its gRPC API address
+  (`host:port`, usually reached over a tunnel), the inbound tag, and the Reality
+  parameters a client's link is built from.
 - **Multiple servers** — manage any number of Outline servers from one panel; paste an API URL or the full Outline Manager access config (`{"apiUrl":…,"certSha256":…}`).
 - **Per-user keys** — name, data limit, validity period; copy-ready `ss://` link + QR.
 - **Time limit from first connection** — the countdown starts on first use; expired keys are auto-disabled (not deleted) and can be re-enabled by extending.

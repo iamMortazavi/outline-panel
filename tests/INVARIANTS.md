@@ -111,6 +111,18 @@ U5 | test_both_colour_schemes_are_real | tests/test_ui.py
 U6 | test_type_scales_with_the_viewport | tests/test_ui.py
 U7 | test_the_frontend_decides_layout_in_css_not_javascript | tests/test_architecture.py
 
+## Second backend (Xray)
+
+X1 | test_the_required_surface_is_complete | tests/test_node_port.py
+X2 | test_a_backend_says_whether_it_can_cap_a_key_itself | tests/test_node_port.py
+X3 | test_a_limit_of_zero_actually_stops_the_traffic | tests/test_xray_api.py
+X4 | test_the_scheduler_cuts_off_a_customer_the_node_cannot_cap | tests/test_xray_api.py
+X5 | test_an_xray_restart_does_not_hand_back_the_month | tests/test_xray_api.py
+X6 | test_a_vless_config_keeps_its_query_string_in_a_subscription | tests/test_xray_api.py
+X7 | test_a_backend_without_metrics_does_not_500_the_key_list | tests/test_xray_api.py
+X8 | test_the_customer_keeps_their_name_across_a_panel_restart | tests/test_xray_api.py
+X9 | test_an_unknown_backend_is_refused_rather_than_guessed | tests/test_node_port.py
+
 ## Structure
 
 S1 | test_core_never_imports_the_web_or_the_bot | tests/test_architecture.py

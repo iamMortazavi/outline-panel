@@ -206,11 +206,41 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
                 log.warning("monthly reset for %s/%s failed: %s", sid, kid, e)
             key = await db.get_key(sid, kid) or key  # refreshed values
 
+        # Enforce the ceiling when the backend cannot do it itself.
+        #
+        # Outline caps a key server-side; Xray has no equivalent, so without
+        # this a customer on an Xray node runs past their allowance forever.
+        # Deliberately per member, and deliberately *not* marked `disabled`:
+        # that flag means "an admin suspended this", and setting it here would
+        # make the monthly reset below skip the very keys it exists to refresh.
+        lim = key.get("limit_bytes")
+        if lim and not key.get("disabled") and not getattr(
+                api, "enforces_data_limit", True):
+            used = int((await usage(sid)).get(str(kid), 0))
+            tag_cap = (sid, kid, "capped")
+            if used >= int(lim):
+                try:
+                    await api.set_data_limit(kid, 0)
+                except OutlineError as e:
+                    log.warning("could not cap %s/%s: %s", sid, kid, e)
+                else:
+                    if tag_cap not in notified:
+                        notified.add(tag_cap)
+                        metrics.inc("outline_panel_keys_capped_total", {"server": sid})
+                        log.info("key %s/%s reached its allowance and was cut off "
+                                 "(%s of %s).", sid, kid, fmt_bytes(used),
+                                 fmt_bytes(lim))
+                        await _safe_notify(
+                            notifier,
+                            f"🚫 <b>{name}</b> has used their whole allowance "
+                            f"({fmt_bytes(used)}) and has been cut off.", key)
+            else:
+                notified.discard(tag_cap)
+
         if not notifier or key.get("disabled"):
             continue
 
         # data-limit warning
-        lim = key.get("limit_bytes")
         tag_lim = (sid, kid, "limit")
         if lim:
             used = int((await usage(sid)).get(str(kid), 0))

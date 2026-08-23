@@ -6,6 +6,10 @@ port at all. These tests are what a new adapter is developed against — it shou
 be possible to write one, point this file at it, and know what is still missing
 from a list rather than from an AttributeError in production.
 
+The Xray adapter is here because this suite is what it was developed against —
+the port was written first and the adapter had to satisfy it, rather than the
+port being widened afterwards to fit whatever the adapter happened to do.
+
 The test double is included deliberately. `FakeOutline` drifting from the real
 client is not hypothetical: it was missing `get_metrics_enabled` entirely, so
 `/api/servers/{sid}/settings` 500'd under test on an error the real client
@@ -33,14 +37,20 @@ def _outline():
     return importlib.import_module("outline_panel.core.outline_api")
 
 
+def _xray():
+    return importlib.import_module("outline_panel.core.xray.api")
+
+
 def _adapters():
-    return [_outline().OutlineAPI("https://1.2.3.4:1/x"), FakeOutline()]
+    return [_outline().OutlineAPI("https://1.2.3.4:1/x"),
+            _xray().XrayAPI("127.0.0.1", 10085, "vless-in"),
+            FakeOutline()]
 
 
-ADAPTER_IDS = ["outline", "fake"]
+ADAPTER_IDS = ["outline", "xray", "fake"]
 
 
-@pytest.fixture(params=[0, 1], ids=ADAPTER_IDS)
+@pytest.fixture(params=[0, 1, 2], ids=ADAPTER_IDS)
 def adapter(request):
     return _adapters()[request.param]
 
@@ -97,16 +107,62 @@ def test_a_missing_key_is_a_404_not_a_crash():
     assert caught.value.status == 404
 
 
-def test_the_registry_only_ever_hands_out_nodes():
+def test_the_registry_builds_every_adapter_in_one_place():
     """Whatever `reg.get()` returns is used as a backend without checking, so
-    the type it constructs is the one place this can go wrong."""
+    the factory is the one place this can go wrong.
+
+    It used to construct `OutlineAPI` inline in two methods. A second backend
+    turned that into a branch — and the rule is that the branch stays single:
+    a third literal somewhere else is a backend that misses whatever the
+    factory learns next.
+    """
     import inspect as _inspect
 
     from outline_panel.web import registry
     source = _inspect.getsource(registry)
-    assert "OutlineAPI(" in source, "the registry stopped building a known adapter"
-    # A second backend arrives here: the registry picks an adapter per server
-    # row. Until then there is one, and this records that it is deliberate.
-    assert source.count("OutlineAPI(") == 2, (
-        "the registry builds adapters in more than the two known places — a "
-        "second backend belongs behind one factory, not a third literal")
+    assert "def build(" in source, "the adapter factory is gone"
+    # every construction lives inside build(); the methods call it
+    factory = source[source.index("def build("):source.index("class Registry")]
+    assert "OutlineAPI(" in factory and "XrayAPI(" in factory
+    outside = source.replace(factory, "")
+    for adapter in ("OutlineAPI(", "XrayAPI("):
+        assert adapter not in outside, (
+            f"{adapter} is constructed outside build() — put it in the factory")
+
+
+def test_an_unknown_backend_is_refused_rather_than_guessed():
+    """A row with a kind nobody implements must not quietly become an Outline
+    client pointed at an Xray port."""
+    from outline_panel.web import registry
+    with pytest.raises(ValueError):
+        registry.build({"id": "x", "api_url": "https://h:1/p", "kind": "wireguard"})
+
+
+def test_a_row_from_before_the_column_existed_is_an_outline_server():
+    """Migration 010 backfills `kind`, but a hand-edited row or an old backup
+    may have none. Outline is the only thing this panel could talk to before,
+    so that is what a missing kind means."""
+    from outline_panel.web import registry
+    client = registry.build({"id": "x", "api_url": "https://1.2.3.4:1/p"})
+    assert type(client).__name__ == "OutlineAPI"
+
+
+def test_a_backend_says_whether_it_can_cap_a_key_itself():
+    """The one place the two backends genuinely differ in capability, and the
+    panel has to know: Outline enforces a data limit server-side, Xray cannot.
+    An adapter that stays quiet is read as "yes" — the optimistic answer, and
+    the one where customers never stop at their allowance.
+    """
+    outline = _outline().OutlineAPI("https://1.2.3.4:1/x")
+    xray = _xray().XrayAPI("127.0.0.1", 10085, "vless-in")
+    assert getattr(outline, "enforces_data_limit", True) is True
+    assert xray.enforces_data_limit is False
+
+
+def test_the_adapters_do_not_share_an_implementation():
+    """A second adapter that inherits from the first is not a second adapter —
+    it is the first one with the parts nobody exercised yet."""
+    outline_cls = type(_outline().OutlineAPI("https://1.2.3.4:1/x"))
+    xray_cls = type(_xray().XrayAPI("h", 1, "t"))
+    assert not issubclass(xray_cls, outline_cls)
+    assert not issubclass(outline_cls, xray_cls)

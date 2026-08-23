@@ -14,6 +14,7 @@ from ...application.executor import Executor
 from ...core import errors, metrics, security
 from ...core.outline_api import OutlineAPI, OutlineError
 from ...core.utils import gb_to_bytes
+from ...ports.node import MetricsCapable
 from .. import idempotency
 from ..deps import (
     api_or_404,
@@ -58,7 +59,17 @@ router = APIRouter(prefix="/api", tags=["keys"],
 
 
 # --------------------------------------------------------------- read helpers
-async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
+async def _conn_info(api) -> dict[str, dict]:
+    """Last-seen and peak devices, when the backend can answer that.
+
+    `MetricsCapable` is a capability, not part of `NodePort`: it is Outline's
+    experimental endpoint, off by default even there, and an Xray node has no
+    equivalent at all. The dashboard already degrades to "advanced stats are
+    off" — asking anyway turned that into a 500 for every panel with an Xray
+    server on it.
+    """
+    if not isinstance(api, MetricsCapable):
+        return {}
     try:
         m = await api.get_server_metrics_cached("30d", await settings.num("metrics_ttl"))
     except OutlineError:
@@ -112,7 +123,9 @@ async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
         activated = meta.get("activated_ts") is not None
         out.append({
             "id": kid, "serverId": sid, "serverName": m["name"],
-            "name": k.get("name") or f"Key {kid}",
+            # Outline stores a name; Xray has no such field. The panel always
+            # knows it, so fall back to the row before inventing "Key <uuid>".
+            "name": k.get("name") or meta.get("name") or f"Key {kid}",
             "accessUrl": k.get("accessUrl"),
             "used": int(usage.get(str(kid), 0)),
             "limit": limit_b,

@@ -7,6 +7,7 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from ...core.outline_api import OutlineError
+from ...ports.node import MetricsCapable
 from ..deps import current_admin, reg, require, settings, sids_or_404
 from ..schemas import Stats
 
@@ -21,11 +22,17 @@ async def _stats_for(sid: str, ttl: int) -> dict:
                 "dataBytes": 0, "bwCurrent": 0, "bwPeak": 0, "bwTs": None,
                 "locations": []}
     api = m["api"]
-    try:
-        sm = await api.get_server_metrics_cached("30d", ttl)
-        avail = True
-    except OutlineError:
+    if not isinstance(api, MetricsCapable):
+        # A backend with no advanced-metrics surface at all. Reported as
+        # unavailable, which is the same thing the dashboard already renders
+        # for an Outline server with metrics sharing switched off.
         sm, avail = {}, False
+    else:
+        try:
+            sm = await api.get_server_metrics_cached("30d", ttl)
+            avail = True
+        except OutlineError:
+            sm, avail = {}, False
     srv = sm.get("server", {}) or {}
     bw = srv.get("bandwidth", {}) or {}
     return {

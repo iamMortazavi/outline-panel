@@ -178,7 +178,13 @@ def sids_or_404(server: str | None, admin: dict) -> list[str]:
 
 
 def host(url: str) -> str:
+    """The host:port an operator recognises.
+
+    An Outline server is a full URL; an Xray node is a bare `host:port`, which
+    urlparse reads as a path with no netloc at all. Falling back to the string
+    itself is right for both — and beats showing an empty column.
+    """
     try:
-        return urlparse(url).netloc
+        return urlparse(url).netloc or (url or "").split("/")[0]
     except Exception:
         return ""

@@ -691,7 +691,7 @@ port), **Q2 targeted** (steps 0–7, not a clean-slate rebuild), **Q3 converged*
 | 2 | `domain/` + `application/` extracted; routers thin | ✅ `a3277f4` |
 | 3 | **A1 fixed** — subscription aggregate | ✅ `a3277f4` |
 | 4 | Outbox drained; reconciler + drift report | ✅ `d8e3b31` |
-| 8 | Node port + conformance suite | ✅ (adapter #2 pending — see below) |
+| 8 | Node port, conformance suite, **and the Xray adapter** | ✅ |
 | 5 | Response models — 83 of 92 operations; the other 9 are not JSON | ✅ |
 | 6 | Frontend: tokens, container queries, keyed patching, a11y | ✅ |
 | 7 | SSE; polling removed | ✅ |
@@ -740,14 +740,59 @@ hand edit in Outline Manager, and a key upstream with no panel row is never
 touched, because adoption is `ensure_local`'s job and a reconciler that deleted
 those would be a data-loss bug on a timer.
 
-**Step 8 is deliberately three-quarters done.** `ports/node.py` names the
+**Step 8 is finished, including the adapter.** `ports/node.py` names the
 surface, `OutlineAPI` satisfies it structurally without having changed, and
-`tests/test_node_port.py` is the conformance suite a second adapter is developed
-against. What is *not* here is the Xray/sing-box adapter itself: VLESS+Reality
-needs a real node to develop against, and an adapter written blind would be
-worse than no adapter — it would look finished. Writing the port did its job
-immediately, though: it caught two ways `FakeOutline` had drifted from the real
-client, both of which were making tests lie.
+`core/xray/` is a second backend: VLESS over Xray-core's gRPC API.
+
+No `grpcio` and no `protobuf`. Those bring a large binary wheel, generated stubs
+in the tree and a version coupling to Xray's `.proto` files — for five messages
+whose fields are strings, a uint32 and an int64. What is there instead is ~130
+lines of protobuf encoding written against the spec, with the field numbers and
+type names taken verbatim from XTLS/Xray-core, and byte-level tests. The
+transport is gRPC framing over HTTP/2 driven by `h2` directly, because httpx
+cannot do cleartext HTTP/2 — that was checked, not assumed — and because gRPC
+puts its status in HTTP/2 trailers, which httpx does not expose. `h2` is three
+pure-Python wheels and an optional extra: a panel with only Outline servers
+never imports any of it.
+
+Two things about Xray do not line up with the port, and both are handled rather
+than papered over:
+
+* **Xray cannot cap a key.** A user is in the inbound or not. So a limit of zero
+  removes the user — which really does stop traffic, as the port requires — and
+  the adapter reports `enforces_data_limit = False`. The scheduler grew a pass
+  that cuts off a customer over their allowance when their node cannot. Without
+  it a customer on Xray would run past their quota forever.
+* **Xray's counters restart with the process.** The whole time-and-quota model
+  rests on usage being cumulative: activation is "usage above zero", a reset is
+  "current usage plus the allowance". The adapter carries a baseline forward
+  when it sees the number go backwards. *Known limitation, stated in the module
+  itself:* the baseline lives in the object, so if Xray and the panel restart
+  together the delta since the last read is not billed. Persisting it needs
+  storage that layer does not have, and it should be done before anyone runs
+  Xray at scale.
+
+**What is still unverified:** no real Xray node. The adapter is exercised
+end-to-end against a fake that speaks real h2c and real protobuf on a real
+socket, and the wire format comes from Xray's own definitions — but only a live
+node proves the two agree. Assume the first contact with a real server needs a
+short debugging session, most likely over a field number or a type string.
+
+**A second backend paid for itself before it ran anywhere.** Three bugs it
+found, all of which would have shipped:
+
+1. `_ss_with_label` stripped everything after `?` for any scheme it did not
+   recognise. A VLESS URL carries its whole configuration there — the Reality
+   public key, the SNI, the flow — so every multi-protocol subscription would
+   have served a config that cannot connect.
+2. `MetricsCapable` was declared in the port and honoured by no call site.
+   `/api/keys` and `/api/stats` asked every backend for Outline's experimental
+   metrics, so a single Xray server made both endpoints 500.
+3. The key list read a customer's name from the *upstream* key. Outline stores
+   one; Xray does not, so every customer on an Xray node was displayed as their
+   UUID even though the panel's own row had the name.
+
+Each was found by running the thing, not by reading it.
 
 ## Two corrections to this document
 

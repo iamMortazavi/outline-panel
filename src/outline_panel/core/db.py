@@ -370,6 +370,27 @@ class DB:
                 (security.profile_token(r["key_id"]), r["server_id"], r["key_id"]),
             )
 
+    async def _m010_server_kind(self) -> None:
+        """Which backend a server speaks, and how to reach it.
+
+        Every existing row is Outline — that is the only thing the panel could
+        talk to until now — so the default backfills correctly with no data
+        migration. `config` is JSON rather than columns because what an adapter
+        needs is the adapter's business: Outline needs a URL and a certificate
+        fingerprint (which keep their own columns, so nothing about that path
+        changes), while Xray needs an inbound tag and the Reality parameters a
+        customer's link is built from.
+        """
+        cur = await self.conn.execute("PRAGMA table_info(servers)")
+        cols = [r[1] for r in await cur.fetchall()]
+        if "kind" not in cols:
+            await self.conn.execute(
+                "ALTER TABLE servers ADD COLUMN kind TEXT DEFAULT 'outline'")
+            await self.conn.execute(
+                "UPDATE servers SET kind = 'outline' WHERE kind IS NULL")
+        if "config" not in cols:
+            await self.conn.execute("ALTER TABLE servers ADD COLUMN config TEXT")
+
     async def _m009_outbox(self) -> None:
         """Effects that have not reached their server yet (see web/../executor)."""
         await self.conn.execute(_OUTBOX_SCHEMA)
@@ -453,13 +474,15 @@ class DB:
 
     # servers ---------------------------------------------------------------
     async def add_server(self, sid: str, name: str, api_url: str,
-                         cert_sha256: str | None = None) -> None:
+                         cert_sha256: str | None = None,
+                         kind: str = "outline", config: str | None = None) -> None:
         async with self._lock:
             await self.conn.execute(
                 "INSERT OR REPLACE INTO servers "
-                "(id, name, api_url, cert_sha256, created_ts) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (sid, name, api_url, cert_sha256, int(time.time())),
+                "(id, name, api_url, cert_sha256, kind, config, created_ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (sid, name, api_url, cert_sha256, kind or "outline", config,
+                 int(time.time())),
             )
             await self.conn.commit()
 
@@ -1121,7 +1144,10 @@ class DB:
             return cur.rowcount
 
     # backup / restore ------------------------------------------------------
-    _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts")
+    _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts",
+                    # a backup taken before these existed simply has neither,
+                    # and the column filter in import_all drops what is absent
+                    "kind", "config")
     _KEY_COLS = ("server_id", "key_id", "name", "limit_bytes", "duration_days",
                  "activated_ts", "expiry_ts", "disabled", "monthly_bytes",
                  "reset_ts", "sub_token", "created_ts", "owner_admin_id")
@@ -1235,4 +1261,5 @@ _MIGRATIONS = (
     DB._m007_per_admin_totp,
     DB._m008_key_lookup_indexes,
     DB._m009_outbox,
+    DB._m010_server_kind,
 )

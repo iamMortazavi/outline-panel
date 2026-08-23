@@ -86,6 +86,9 @@ declare("outline_panel_http_requests_total", "HTTP requests served.")
 declare("outline_panel_http_request_seconds", "Duration of the last request.", "gauge")
 declare("outline_panel_keys_created_total", "Access keys created.")
 declare("outline_panel_keys_deleted_total", "Access keys deleted.")
+declare("outline_panel_keys_capped_total",
+        "Keys cut off for reaching their allowance on a backend that cannot "
+        "enforce a limit itself.")
 declare("outline_panel_keys_rotated_total", "Access keys replaced for a customer.")
 declare("outline_panel_credit_charged_total", "Credit taken for purchases.")
 declare("outline_panel_credit_added_total", "Credit granted (top-ups and reversals).")

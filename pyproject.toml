@@ -35,7 +35,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "h2>=4.1"]
+# Talking to an Xray node. Three pure-Python wheels (h2 pulls hpack and
+# hyperframe) rather than grpcio's binary wheel and generated stubs — see
+# core/xray/__init__.py. A panel with only Outline servers never imports it.
+xray = ["h2>=4.1"]
 
 [project.urls]
 Homepage = "https://github.com/iamMortazavi/outline-panel"
