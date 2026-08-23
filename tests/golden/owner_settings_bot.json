@@ -1,0 +1,11 @@
+{
+  "body": {
+    "adminIds": [],
+    "configured": false,
+    "enabled": false,
+    "running": false,
+    "username": null,
+    "webappUrl": ""
+  },
+  "status": 200
+}

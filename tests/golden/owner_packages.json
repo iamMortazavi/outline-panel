@@ -1,0 +1,55 @@
+{
+  "body": {
+    "credit": 0,
+    "creditEnabled": false,
+    "discountPct": 0,
+    "packages": [
+      {
+        "basePrice": 90000,
+        "days": 30,
+        "gb": 10.0,
+        "id": 1,
+        "monthlyGb": null,
+        "name": "Starter",
+        "price": 90000
+      },
+      {
+        "basePrice": 250000,
+        "days": 30,
+        "gb": 50.0,
+        "id": 2,
+        "monthlyGb": null,
+        "name": "Standard",
+        "price": 250000
+      },
+      {
+        "basePrice": 300000,
+        "days": 30,
+        "gb": null,
+        "id": 3,
+        "monthlyGb": 30.0,
+        "name": "Monthly 30",
+        "price": 300000
+      },
+      {
+        "basePrice": 400000,
+        "days": null,
+        "gb": 100.0,
+        "id": 5,
+        "monthlyGb": null,
+        "name": "No expiry 100",
+        "price": 400000
+      },
+      {
+        "basePrice": 900000,
+        "days": 90,
+        "gb": null,
+        "id": 4,
+        "monthlyGb": null,
+        "name": "Unlimited 90",
+        "price": 900000
+      }
+    ]
+  },
+  "status": 200
+}

@@ -20,5 +20,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-      - name: Run tests
+
+      # Deterministic gates, cheapest first: a lint error should not wait two
+      # minutes behind the test suite to be reported.
+      - name: Lint
+        run: ruff check .
+
+      # The structural rules (tests/test_architecture.py) and the invariant
+      # register (tests/INVARIANTS.md) are ordinary tests, so they run below
+      # with everything else. Called out here because they are the ones that
+      # fail for reasons a reviewer would otherwise have to notice by eye.
+      - name: Tests
         run: pytest -q
+
+      # xfail(strict=True) already fails the run if an expected-failing test
+      # starts passing, so a fixed A1 case cannot land silently marked broken.
+      - name: Report expected failures
+        if: always()
+        run: pytest -q -rx --no-header || true

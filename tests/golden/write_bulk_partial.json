@@ -1,0 +1,22 @@
+{
+  "body": {
+    "action": "add",
+    "done": [
+      {
+        "keyId": "2",
+        "name": "active-now",
+        "serverId": "s1",
+        "token": "<RAND>"
+      }
+    ],
+    "failed": [
+      {
+        "error": "Unknown key",
+        "key": "s1/does-not-exist"
+      }
+    ],
+    "ok": true,
+    "server": "s1"
+  },
+  "status": 200
+}

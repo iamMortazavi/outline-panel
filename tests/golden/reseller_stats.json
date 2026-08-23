@@ -1,0 +1,26 @@
+{
+  "body": {
+    "available": false,
+    "bwCurrent": 0,
+    "bwPeak": 0,
+    "bwTs": null,
+    "dataBytes": 0,
+    "locations": [],
+    "perServer": [
+      {
+        "available": false,
+        "bwCurrent": 0,
+        "bwPeak": 0,
+        "bwTs": null,
+        "dataBytes": 0,
+        "id": "s1",
+        "locations": [],
+        "name": "Tokyo",
+        "tunnelSec": 0
+      }
+    ],
+    "serverCount": 1,
+    "tunnelSec": 0
+  },
+  "status": 200
+}

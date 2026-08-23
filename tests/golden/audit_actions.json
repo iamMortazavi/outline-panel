@@ -1,0 +1,30 @@
+{
+  "body": [
+    {
+      "action": "PUT /api/settings/panel",
+      "actor": "admin",
+      "status": 200
+    },
+    {
+      "action": "POST /api/servers/{sid}/keys",
+      "actor": "sara",
+      "status": 200
+    },
+    {
+      "action": "POST /api/login",
+      "actor": "sara",
+      "status": 200
+    },
+    {
+      "action": "POST /api/servers/{sid}/keys/{kid}/disable",
+      "actor": "admin",
+      "status": 200
+    },
+    {
+      "action": "POST /api/servers/{sid}/keys",
+      "actor": "admin",
+      "status": 200
+    }
+  ],
+  "status": 200
+}

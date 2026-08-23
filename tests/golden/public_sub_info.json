@@ -1,0 +1,28 @@
+{
+  "body": {
+    "expire": "<TS>",
+    "name": "two-servers",
+    "pendingDays": 0,
+    "servers": [
+      {
+        "disabled": false,
+        "limit": 42949672960,
+        "server": "Tokyo",
+        "url": "ss://YWVzOnB3@1.2.3.4:8388#two-servers%20%C2%B7%20Tokyo",
+        "used": 7516192768
+      },
+      {
+        "disabled": false,
+        "limit": 42949672960,
+        "server": "Berlin",
+        "url": "ss://YWVzOnB3@1.2.3.4:8388#two-servers%20%C2%B7%20Berlin",
+        "used": 0
+      }
+    ],
+    "total": 85899345920,
+    "unlimited": false,
+    "updateInterval": 12,
+    "used": 7516192768
+  },
+  "status": 200
+}

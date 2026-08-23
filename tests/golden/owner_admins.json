@@ -1,0 +1,76 @@
+{
+  "body": {
+    "admins": [
+      {
+        "caps": [],
+        "createdTs": "<TS>",
+        "credit": 0,
+        "creditEnabled": false,
+        "disabled": false,
+        "discountPct": 0,
+        "id": 1,
+        "isOwner": true,
+        "servers": [],
+        "telegramId": null,
+        "username": "admin"
+      },
+      {
+        "caps": [
+          "keys.view",
+          "keys.create",
+          "keys.edit",
+          "keys.delete"
+        ],
+        "createdTs": "<TS>",
+        "credit": 4919000,
+        "creditEnabled": true,
+        "disabled": false,
+        "discountPct": 10,
+        "id": 2,
+        "isOwner": false,
+        "servers": [
+          "s1"
+        ],
+        "telegramId": 111,
+        "username": "sara"
+      },
+      {
+        "caps": [
+          "keys.view"
+        ],
+        "createdTs": "<TS>",
+        "credit": 0,
+        "creditEnabled": false,
+        "disabled": false,
+        "discountPct": 0,
+        "id": 3,
+        "isOwner": false,
+        "servers": [
+          "s1",
+          "s2"
+        ],
+        "telegramId": null,
+        "username": "reza"
+      }
+    ],
+    "caps": [
+      "keys.view",
+      "keys.create",
+      "keys.edit",
+      "keys.delete",
+      "servers.manage",
+      "bot.manage"
+    ],
+    "servers": [
+      {
+        "id": "s1",
+        "name": "Tokyo"
+      },
+      {
+        "id": "s2",
+        "name": "Berlin"
+      }
+    ]
+  },
+  "status": 200
+}

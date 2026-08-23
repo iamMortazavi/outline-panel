@@ -1,0 +1,15 @@
+{
+  "body": {
+    "history": [
+      {
+        "error": null,
+        "id": 1,
+        "latency_ms": 42,
+        "reachable": 1,
+        "server_id": "s1",
+        "ts": "<TS>"
+      }
+    ]
+  },
+  "status": 200
+}

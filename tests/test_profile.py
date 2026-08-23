@@ -105,7 +105,7 @@ async def test_rotation_carries_the_used_bytes(app):
 async def test_rotation_keeps_the_profile_link(app):
     """The whole point: the customer re-opens the link they already have."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
@@ -123,7 +123,7 @@ async def test_rotation_does_not_restart_the_clock(app):
     """A rotation is not a renewal — the validity the customer has been running
     down has to survive it."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c, days=30)
     await deps.db.activate("s1", kid, 1_700_000_000, 1_700_500_000)
@@ -217,7 +217,7 @@ async def test_a_failure_leaves_the_customer_connected(app):
 
 async def test_rotation_needs_keys_edit_and_ownership(app):
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     from outline_panel.core import security
     h, s = security.hash_password("sara-pw")
     await deps.db.add_admin("sara", h, s, caps="keys.view", servers="s1")
@@ -233,7 +233,7 @@ async def test_rotation_needs_keys_edit_and_ownership(app):
 
 async def test_rotation_is_audited(app):
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     await c.post(f"/api/servers/s1/keys/{kid}/rotate")
@@ -248,7 +248,7 @@ async def test_the_profile_host_serves_only_the_profile(app):
     """This URL goes to every customer and gets forwarded. Whoever ends up with
     it must not also be holding the address of the admin panel."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     token = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()["token"]
@@ -279,7 +279,7 @@ async def test_a_route_name_is_never_mistaken_for_a_token(app, path):
     """A token is recognised by shape, and several real route names share it —
     "metrics" is seven alphanumerics. Those must not slip past the guard."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
     await c.aclose()
@@ -292,7 +292,7 @@ async def test_a_route_name_is_never_mistaken_for_a_token(app, path):
 
 async def test_the_panel_host_is_untouched(app):
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
     assert (await c.get("/api/me")).status_code == 200
@@ -302,7 +302,7 @@ async def test_the_panel_host_is_untouched(app):
 
 async def test_the_profile_url_is_handed_to_the_reseller(app):
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
@@ -315,7 +315,7 @@ async def test_the_profile_url_is_handed_to_the_reseller(app):
 async def test_without_a_profile_host_nothing_changes(app):
     """Unset is the default, and must leave the panel exactly as it was."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     kid = await _key(c)
     body = (await c.post(f"/api/servers/s1/keys/{kid}/sub")).json()
@@ -331,7 +331,7 @@ async def test_the_profile_url_must_be_a_real_origin(app, bad):
     """A bare hostname parses with no hostname at all, which would silently gate
     nothing — the setting would look applied and do nothing."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     assert (await c.put("/api/settings/profile", json={"baseUrl": bad})).status_code == 400
     await c.aclose()
@@ -339,7 +339,7 @@ async def test_the_profile_url_must_be_a_real_origin(app, bad):
 
 async def test_clearing_it_restores_one_host_mode(app):
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
     assert (await c.put("/api/settings/profile", json={"baseUrl": ""})).json()["host"] == ""
@@ -357,7 +357,7 @@ async def test_a_new_key_gets_its_link_immediately(app):
     """A link the reseller has to remember to generate is a link most customers
     never receive."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     r = await c.post("/api/servers/s1/keys", json={"name": "Ali", "limit_gb": 5})
     body = r.json()
@@ -370,10 +370,10 @@ async def test_a_new_key_gets_its_link_immediately(app):
 
 async def test_the_key_list_carries_the_link(app):
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
     await c.put("/api/settings/profile", json={"baseUrl": "https://star.example.com"})
-    kid = await _key(c)
+    _kid = await _key(c)
     k = (await c.get("/api/keys")).json()["keys"][0]
     assert k["profileUrl"] == f"https://star.example.com/{k['subToken']}"
     await c.aclose()
@@ -382,9 +382,9 @@ async def test_the_key_list_carries_the_link(app):
 async def test_without_a_profile_host_the_link_is_a_path(app):
     """Still usable — the browser resolves it against the panel's own origin."""
     application, deps, fakes = app
-    fake = fakes["s1"]
+    _fake = fakes["s1"]
     c = await _c(application)
-    kid = await _key(c)
+    _kid = await _key(c)
     k = (await c.get("/api/keys")).json()["keys"][0]
     assert k["profileUrl"] == f"/sub/{k['subToken']}"
     await c.aclose()

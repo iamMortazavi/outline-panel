@@ -72,3 +72,10 @@ ignore = [
     "B008",   # FastAPI relies on calls (Depends/Header/Cookie) in arg defaults
     "B904",   # web handlers re-raise as HTTPException without chaining on purpose
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Sharing a fixture between test modules means importing it, and the test that
+# uses it takes a parameter of the same name. Ruff reads that as a redefinition;
+# it is the pattern pytest documents, and the alternative is a noqa on every
+# test in the file.
+"tests/*" = ["F811"]

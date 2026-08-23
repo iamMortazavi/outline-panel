@@ -1,0 +1,69 @@
+# Invariant register → the tests that hold it
+
+Every row of §1.2 in `MODERNIZATION.md`, mapped to the test that would fail if
+the guarantee were removed. `test_invariant_map.py` reads this file and asserts
+each named test still exists, so deleting a guarantee is visible as a broken
+map rather than as one fewer green dot.
+
+Format: `ID | test_function_name | file`. Comment lines and blanks are ignored.
+
+## Money
+
+M1 | test_charge_refuses_what_cannot_be_afforded | tests/test_credit.py
+M2 | test_ledger_never_drifts_from_the_balance | tests/test_credit.py
+M3 | test_credit_cannot_be_set_directly_through_the_editor | tests/test_subadmins.py
+M4 | test_a_repeated_purchase_charges_once_and_creates_one_key | tests/test_idempotency.py
+M5 | test_a_failed_sale_gives_the_credit_back | tests/test_subadmins.py
+M6 | test_history_survives_deleting_the_package | tests/test_credit.py
+M7 | test_credit_admin_cannot_top_up_a_key_for_free | tests/test_hardening.py
+M8 | test_a_credit_admin_may_put_a_customer_on_several_servers | tests/test_hardening.py
+
+## Access
+
+A-1 | test_an_empty_server_list_grants_nothing | tests/test_hardening.py
+A-2 | test_a_sub_admin_sees_only_their_own_users | tests/test_subadmins.py
+A-3 | test_a_mirrored_sub_belongs_to_whoever_owns_the_primary | tests/test_subadmins.py
+A-4 | test_bot_refuses_a_key_on_an_out_of_scope_server | tests/test_hardening.py
+A-5 | test_owner_only_surfaces_are_closed_to_sub_admins | tests/test_subadmins.py
+A-6 | test_a_stranger_cannot_add_a_server_to_someone_elses_subscription | tests/test_sub_ownership.py
+A-7 | test_editing_an_admin_takes_effect_immediately | tests/test_subadmins.py
+A-8 | test_a_rejected_admin_leaves_no_row_behind | tests/test_hardening.py
+
+## Time & quota
+
+T1 | test_duration_starts_on_first_connection_by_default | tests/test_features.py
+T3 | test_reset_usage | tests/test_features.py
+T4 | test_monthly_quota_reaches_outline | tests/test_features.py
+T6 | test_a_plan_that_has_not_started_does_not_read_as_never_expiring | tests/test_hardening.py
+T7 | test_rotation_carries_the_used_bytes | tests/test_profile.py
+
+## Integrity
+
+I3 | test_a_half_applied_step_replays_cleanly | tests/test_migrations.py
+I4 | test_two_schedulers_do_not_both_do_the_work | tests/test_multiworker.py
+I2 | test_restore_rejects_garbage | tests/test_features.py
+I5 | test_an_adopted_key_also_gets_a_link | tests/test_profile.py
+
+## Public surface
+
+P1 | test_the_profile_host_serves_only_the_profile | tests/test_profile.py
+P2 | test_the_subscription_route_is_rate_limited_and_cached | tests/test_multiworker.py
+P3 | test_rate_limit_not_bypassed_by_rotating_xff | tests/test_webapp.py
+P4 | test_api_responses_are_not_cacheable | tests/test_webapp.py
+O1 | test_rotation_is_audited | tests/test_profile.py
+
+## Wire contract (the golden master itself)
+
+W1 | test_golden_owner_reads | tests/test_golden.py
+W2 | test_golden_reseller_reads | tests/test_golden.py
+W3 | test_golden_public_subscription | tests/test_golden.py
+W4 | test_golden_errors | tests/test_golden.py
+W5 | test_golden_writes | tests/test_golden.py
+
+## Not yet held — the A1 defect (xfail until step 3)
+
+A1-1 | test_A1_1_suspending_a_customer_suspends_every_server | tests/test_invariant_a1_subscription.py
+A1-2 | test_A1_2_resuming_a_customer_resumes_every_server | tests/test_invariant_a1_subscription.py
+A1-3 | test_A1_3_renewing_moves_every_members_clock | tests/test_invariant_a1_subscription.py
+A1-4 | test_A1_4_deleting_a_customer_removes_every_key | tests/test_invariant_a1_subscription.py
+A1-5 | test_A1_5_allowance_changes_reach_every_server | tests/test_invariant_a1_subscription.py

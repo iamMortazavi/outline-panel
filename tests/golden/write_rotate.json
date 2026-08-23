@@ -1,0 +1,12 @@
+{
+  "body": {
+    "accessUrl": "ss://YWVzOnB3@1.2.3.4:8388/?o=1",
+    "carriedUsed": 0,
+    "id": "11",
+    "limit": 5368709120,
+    "ok": true,
+    "previousId": "10",
+    "subToken": "<RAND>"
+  },
+  "status": 200
+}

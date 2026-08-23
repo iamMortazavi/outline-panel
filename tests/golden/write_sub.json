@@ -1,0 +1,28 @@
+{
+  "body": {
+    "members": [
+      {
+        "keyId": "10",
+        "name": "renamed",
+        "serverId": "s1",
+        "serverName": "Tokyo"
+      }
+    ],
+    "path": "/sub/<RAND>",
+    "profileUrl": null,
+    "servers": [
+      {
+        "id": "s1",
+        "included": true,
+        "name": "Tokyo"
+      },
+      {
+        "id": "s2",
+        "included": false,
+        "name": "Berlin"
+      }
+    ],
+    "token": "<RAND>"
+  },
+  "status": 200
+}

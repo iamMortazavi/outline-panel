@@ -1,0 +1,34 @@
+{
+  "body": {
+    "members": [
+      {
+        "keyId": "6",
+        "name": "two-servers",
+        "serverId": "s1",
+        "serverName": "Tokyo"
+      },
+      {
+        "keyId": "2",
+        "name": "two-servers",
+        "serverId": "s2",
+        "serverName": "Berlin"
+      }
+    ],
+    "path": "/sub/<RAND>",
+    "profileUrl": null,
+    "servers": [
+      {
+        "id": "s1",
+        "included": true,
+        "name": "Tokyo"
+      },
+      {
+        "id": "s2",
+        "included": true,
+        "name": "Berlin"
+      }
+    ],
+    "token": "<RAND>"
+  },
+  "status": 200
+}

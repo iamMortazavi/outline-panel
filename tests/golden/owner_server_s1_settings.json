@@ -1,0 +1,12 @@
+{
+  "body": {
+    "globalLimit": null,
+    "host": "10.0.0.1:1",
+    "id": "s1",
+    "label": "Tokyo",
+    "metricsEnabled": false,
+    "name": "fake",
+    "version": "1.0"
+  },
+  "status": 200
+}
