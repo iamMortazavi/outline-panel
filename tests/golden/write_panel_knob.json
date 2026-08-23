@@ -5,6 +5,7 @@
       "audit_retention_days": 90,
       "backup_interval_hours": 24,
       "backup_keep": 14,
+      "bulk_concurrency": 8,
       "currency": "Toman",
       "cycle_days": 30,
       "expiry_check_interval": 60,

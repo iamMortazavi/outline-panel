@@ -126,6 +126,13 @@ KNOBS: dict[str, dict] = {
         "label": "Backups to keep",
         "help": "Older snapshots are deleted once this many newer ones exist.",
     },
+    "bulk_concurrency": {
+        "default": 8, "min": 1, "max": 64,
+        "label": "Bulk operations at once",
+        "help": "How many customers a bulk server change works on in parallel. "
+                "Higher finishes sooner and asks more of the destination server "
+                "at once; 1 is the old one-after-another behaviour.",
+    },
     "sub_cache_seconds": {
         "default": 20, "min": 0, "max": 3600,
         "label": "Subscription page cache (seconds)",

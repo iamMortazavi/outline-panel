@@ -590,10 +590,32 @@ async def bulk_server_membership(sid: str, body: BulkServerBody,
     Partial success is the normal outcome, not an error: one unreachable server
     or one key someone else owns must not sink the other fourteen. Every item
     comes back with its own verdict and the caller reports them.
+
+    Three phases, and the order of them is the point:
+
+    1. **Authorise every row, one at a time.** This is the security boundary and
+       it stays sequential and cheap — the DB alone for a key the panel already
+       knows. `ensure_local` pays an upstream lookup only for a key it has never
+       seen, which is the adoption path.
+    2. **Do the upstream work once per *subscription*, several at a time.** Once
+       per subscription rather than once per row because a selection can name
+       two members of the same customer, and mirroring them separately would put
+       two keys on the destination for one person — the second unbilled and
+       invisible. Several at a time because this ran strictly in series: a few
+       hundred customers against a server across the sea took minutes, which is
+       long enough for a reverse proxy to close the connection and leave the
+       operator not knowing what landed.
+    3. **Report in the order asked.** Concurrency is an implementation detail;
+       a list that comes back shuffled is not.
+
+    Safe to retry as a whole: `mirror_onto` returns early for a server the
+    customer is already on, and `_unmirror` for one they are not.
     """
     api_or_404(sid)
-    done: list[dict] = []
-    failed: list[dict] = []
+
+    # phase 1 — authorise, and group the rows by the customer they name
+    plan: dict[str, list[dict]] = {}
+    resolved: list[dict] = []
     for ref in body.keys:
         label = f"{ref.server_id}/{ref.key_id}"
         try:
@@ -609,17 +631,49 @@ async def bulk_server_membership(sid: str, body: BulkServerBody,
                 token = security.profile_token(ref.key_id)
                 await db.set_sub_token(ref.server_id, ref.key_id, token)
             await sub_or_404(token, admin)
-            if body.action == "add":
-                await mirror_onto(token, sid)
-            else:
-                await _unmirror(token, sid)
-            done.append({"serverId": ref.server_id, "keyId": ref.key_id,
-                         "name": meta.get("name") or ref.key_id, "token": token})
         except HTTPException as e:
-            failed.append({"key": label, "error": str(e.detail)})
+            resolved.append({"label": label, "error": str(e.detail)})
+            continue
         except Exception as e:  # noqa: BLE001 — one bad key must not sink the batch
-            log.exception("bulk %s failed for %s", body.action, label)
-            failed.append({"key": label, "error": str(e)})
+            log.exception("bulk %s could not resolve %s", body.action, label)
+            resolved.append({"label": label, "error": str(e)})
+            continue
+        row = {"serverId": ref.server_id, "keyId": ref.key_id,
+               "name": meta.get("name") or ref.key_id, "token": token}
+        plan.setdefault(token, []).append(row)
+        resolved.append({"label": label, "row": row, "token": token})
+
+    # phase 2 — one operation per subscription, a few at a time
+    gate = asyncio.Semaphore(max(1, await settings.num("bulk_concurrency")))
+
+    async def apply(token: str) -> str | None:
+        async with gate:
+            try:
+                if body.action == "add":
+                    await mirror_onto(token, sid)
+                else:
+                    await _unmirror(token, sid)
+            except HTTPException as e:
+                return str(e.detail)
+            except Exception as e:  # noqa: BLE001
+                log.exception("bulk %s failed for subscription %s", body.action, token)
+                return str(e)
+            return None
+
+    tokens = list(plan)
+    outcomes = dict(zip(tokens, await asyncio.gather(*[apply(t) for t in tokens]),
+                        strict=True))
+
+    # phase 3 — a verdict per row, in the order the caller asked
+    done: list[dict] = []
+    failed: list[dict] = []
+    for item in resolved:
+        error = item.get("error") or outcomes.get(item.get("token"))
+        if error:
+            failed.append({"key": item["label"], "error": error})
+        else:
+            done.append(item["row"])
+
     metrics.inc("outline_panel_bulk_server_total", {"server": sid,
                                                     "action": body.action})
     return {"ok": True, "action": body.action, "server": sid,

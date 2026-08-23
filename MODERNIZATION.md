@@ -234,13 +234,28 @@ that is the **public, unauthenticated** subscription path. `owner_admin_id` is
 also unindexed, so a reseller's key list is filtered in Python after loading
 every row of each server. Two indexes fix both.
 
-### A4 🟠 `bulk_server_membership` is sequential and unbounded
+### A4 🟠 `bulk_server_membership` is sequential and unbounded — **fixed**
 
 Up to 500 keys, each doing `ensure_local` → `sub_or_404` → `mirror_onto` →
-one Outline `create_key` — serially, inside one HTTP request, with no
-`Idempotency-Key` guard and no progress. 500 × ~300 ms is ~2.5 minutes behind a
-proxy that will time out first. Partial success is already the design; it needs
-to be an async job, not a long request.
+one Outline `create_key` — serially, inside one HTTP request, with no progress.
+500 × ~300 ms is ~2.5 minutes behind a proxy that will time out first.
+
+*Fixed without making it a job.* Three phases: authorise every row sequentially
+(the security boundary, and DB-only for a key the panel already knows), then do
+the upstream work **once per subscription** a few at a time, then report in the
+order asked. Measured over 120 customers at a 50 ms round trip: 6.46 s → 0.89 s
+at the default concurrency of 8, 0.37 s at 24, and `bulk_concurrency: 1`
+reproduces the old timing exactly.
+
+Once per *subscription* rather than once per row is not an optimisation — a
+selection can name two members of the same customer, and mirroring them
+separately puts two keys on the destination for one person, the second unbilled
+and invisible. Sequential code got away with it because `mirror_onto` checks
+membership first; concurrent code would not. There is a test for it.
+
+An async job was the original proposal and would have been the wrong trade here:
+it changes the response shape the panel already renders, and sub-second is not a
+problem that needs a job queue.
 
 ### A5 🟠 `_collect_fresh` is N+1 against upstream on a public route
 
@@ -789,6 +804,8 @@ above. Recommended order, and why:
   afterwards, which is the evidence that 71 newly typed routes dropped no field.
   `response_model_exclude_unset=True` is on every one of them: without it FastAPI
   materialises absent optional fields as `null`, which is itself a wire change.
+
+* **A4 is done** — see the finding above, which now records the fix.
 
 * **The second node adapter** is gated on having a VLESS node to develop
   against, not on any of this.

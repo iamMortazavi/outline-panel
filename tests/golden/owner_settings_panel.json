@@ -146,6 +146,15 @@
         "type": "int"
       },
       {
+        "default": 8,
+        "help": "How many customers a bulk server change works on in parallel. Higher finishes sooner and asks more of the destination server at once; 1 is the old one-after-another behaviour.",
+        "key": "bulk_concurrency",
+        "label": "Bulk operations at once",
+        "max": 64,
+        "min": 1,
+        "type": "int"
+      },
+      {
         "default": 20,
         "help": "The subscription link is public and each fetch reaches every server, so a client on a tight refresh loop multiplies load. 0 disables caching.",
         "key": "sub_cache_seconds",
@@ -186,6 +195,7 @@
       "audit_retention_days": 90,
       "backup_interval_hours": 24,
       "backup_keep": 14,
+      "bulk_concurrency": 8,
       "currency": "Toman",
       "cycle_days": 30,
       "expiry_check_interval": 60,

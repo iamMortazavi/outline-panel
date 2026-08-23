@@ -85,6 +85,12 @@ C7 | test_a_key_made_in_outline_manager_is_never_touched | tests/test_convergenc
 C8 | test_drift_reports_a_key_deleted_upstream_without_recreating_it | tests/test_convergence.py
 C9 | test_the_report_is_owner_only | tests/test_convergence.py
 
+## Bulk
+
+B1 | test_two_selected_rows_of_one_subscription_mirror_once | tests/test_bulk_servers.py
+B2 | test_a_big_batch_does_not_take_the_sum_of_its_parts | tests/test_bulk_servers.py
+B3 | test_the_batch_is_still_checked_one_key_at_a_time | tests/test_bulk_servers.py
+
 ## Live stream
 
 L1 | test_a_reseller_only_sees_their_own_customers | tests/test_stream.py
