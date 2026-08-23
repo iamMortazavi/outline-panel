@@ -213,3 +213,18 @@ def test_customer_state_changes_go_through_the_aggregate():
     assert not offenders, (
         "these change one member of a customer directly instead of going "
         "through application.customer: " + "; ".join(offenders))
+
+
+def test_the_node_port_has_no_outline_in_it():
+    """A port named after one implementation is not a port.
+
+    `ports/node.py` describes what the panel needs from *a* VPN server. The
+    moment it mentions Outline's endpoints, its config format or its
+    experimental metrics shape, writing the Xray adapter means satisfying
+    Outline rather than satisfying the panel.
+    """
+    text = (SRC / "ports" / "node.py").read_text()
+    body = "\n".join(ln for ln in text.splitlines()
+                     if not ln.lstrip().startswith("#"))
+    for banned in ("shadowbox", "/access-keys", "certSha256", "apiUrl"):
+        assert banned not in body, f"the port leaks an Outline detail: {banned}"

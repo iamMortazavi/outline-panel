@@ -1,4 +1,10 @@
-"""Holds one OutlineAPI client per configured server."""
+"""One backend client per configured server.
+
+The clients satisfy `ports.node.NodePort`, so everything downstream — the
+executor, the scheduler, the reconciler — talks to a server through that surface
+and not to Outline specifically. A second backend (VLESS+Reality) arrives by
+choosing a different adapter here, per server row, and changing nothing else.
+"""
 
 from __future__ import annotations
 

@@ -660,31 +660,105 @@ what makes a gate people actually wait for.
 
 ---
 
-# STAGE 5 — EXECUTION PLAN (blocked on approval)
+# STAGE 5 — EXECUTION (approved 2026-08-23)
 
-Not started. Proposed sequence, each step green before the next:
+Decisions taken at the gate: **Q1 yes** (second protocol is coming, build the
+port), **Q2 targeted** (steps 0–7, not a clean-slate rebuild), **Q3 converged**
+(outbox + reconciler), **Q4 by seam** (file sizes follow the seams that exist).
 
-| # | Step | Size | Gate |
-|---|---|---|---|
-| 0 | Harness first: golden master + invariant suite + CI gates (§4.2 a,b,d) | S | 306 tests + goldens green |
-| 1 | A3 indexes, A6 executor, A2 request-scoped settings, A12 docs off | S | No behaviour change; goldens byte-identical |
-| 2 | `domain/` + `application/` extracted from `keys.py`; routers become thin | M | Goldens byte-identical; import-graph gate on |
-| 3 | **A1 fixed** — subscription aggregate; A1-1…A1-5 go green | M | The five failing tests pass |
-| 4 | F1 outbox + reconciler; A4 bulk becomes a job | M | F1-1…F1-3 green |
-| 5 | §4.1 response models + generated TS types | S | `tsc` gate on |
-| 6 | Stage 3 frontend: tokens, container queries, keyed patching, a11y | M | UI-1…UI-3 green |
-| 7 | F3 SSE; polling removed | M | Idle network = 0 requests |
-| 8 | F2 node port + second backend | L | **Only if Q1 = yes** |
-| 9 | F4 optimistic queue | S/M | After F1 |
+| # | Step | Status |
+|---|---|---|
+| 0 | Harness: golden master, A1 targets, structural gates, CI | ✅ `6148e44` |
+| 1 | A3 indexes · A6 executor · A2 request-scoped settings · A12 docs off | ✅ `e2daf29` |
+| 2 | `domain/` + `application/` extracted; routers thin | ✅ `a3277f4` |
+| 3 | **A1 fixed** — subscription aggregate | ✅ `a3277f4` |
+| 4 | Outbox drained; reconciler + drift report | ✅ `d8e3b31` |
+| 8 | Node port + conformance suite | ✅ (adapter #2 pending — see below) |
+| 5 | Response models + generated TS types | ⬜ not started |
+| 6 | Frontend: tokens, container queries, keyed patching, a11y | ⬜ not started |
+| 7 | SSE; polling removed | ⬜ not started |
 
-**On the 150-line cap:** I will hold files to ~150 lines in `domain/`,
-`application/` and `ports/`, where small files match small concepts. I will not
-shard `core/db.py`, `static/index.html` or the migration list to hit a number —
-`db.py` splits by *table group* into 4–5 files of 200–300 lines, which is the
-seam that actually exists. If you want the cap applied literally everywhere,
-say so and I will, but I think it makes this codebase harder to read.
+354 tests green, ruff clean, and **every golden-master snapshot is
+byte-identical** from step 0 to here — the domain moved, the wire did not.
 
----
+## What landed, against what was planned
+
+**A1 is closed**, and it was worse than the review described. Three separate
+propagation failures (suspend, renew, delete) plus a fourth found while fixing
+them: `mirror_onto` never carried `monthly_bytes`, so a mirrored member was
+invisible to the scheduler's monthly reset and kept the ceiling it was born with
+for good, while the customer's own page showed a quota that refreshed.
+
+**The bot was the third implementation**, as §1.3 A7 said. `cb_extend` was an
+inline +30 days that skipped the aggregate, the ledger and the mirrors
+entirely; `cb_disable`, `cb_enable`, `cb_del` and `step_set_limit` each had
+their own copy. All five now call the same use cases, so Telegram cannot
+reintroduce the bug the panel just stopped having. A structural test enforces
+it: no router or bot handler may call the per-member writes.
+
+**The converged design needed one rule the review did not anticipate.** Writing
+desired state and queuing the upstream half turned out to conflict with an
+existing guarantee — `test_extend_does_not_commit_before_outline` asserts that a
+502 must leave the expiry alone, or an admin's retry stacks the days twice. Both
+are right, and the resolution is better than either extreme:
+
+* *some* members reached their server → partial success, stragglers queued,
+  `pending` in the response;
+* *no* member reached any server → nothing written, nothing queued, 502.
+
+So a single-server panel behaves exactly as it always did, and a multi-server
+one stops being held hostage by its worst node. Commands with no upstream half
+(`SetExpiry`, `SetDuration`, a plain `SetMonthly`) are excluded from that count,
+or clearing a quota while a server is down would look like total failure.
+
+**Grill §6's migration risk is handled, not deferred.** `GET
+/api/convergence/drift` is a read-only report of what each server actually
+enforces versus what the panel believes; applying it is a separate call and is
+off by default (`reconcile_enabled`). The first real pass on a panel that has
+been running with A1 will cut off customers who have been connected for months,
+and that should be something an operator reads first and then decides.
+Reconciliation only ever queues *suspensions* — a mismatched ceiling can be a
+hand edit in Outline Manager, and a key upstream with no panel row is never
+touched, because adoption is `ensure_local`'s job and a reconciler that deleted
+those would be a data-loss bug on a timer.
+
+**Step 8 is deliberately three-quarters done.** `ports/node.py` names the
+surface, `OutlineAPI` satisfies it structurally without having changed, and
+`tests/test_node_port.py` is the conformance suite a second adapter is developed
+against. What is *not* here is the Xray/sing-box adapter itself: VLESS+Reality
+needs a real node to develop against, and an adapter written blind would be
+worse than no adapter — it would look finished. Writing the port did its job
+immediately, though: it caught two ways `FakeOutline` had drifted from the real
+client, both of which were making tests lie.
+
+## Two corrections to this document
+
+1. **§4.2(d) claimed lowering the scrypt cost in tests would take the suite from
+   118 s to seconds.** It would save roughly 35 s of the 120, and the only way
+   to do it is an env var that weakens password hashing — read by production
+   code, one misconfiguration away from being real. Not worth it; dropped. The
+   suite is ~140 s and the time is spread across ~350 fixture setups that each
+   re-import the package, not concentrated anywhere a knob could reach.
+2. **§4.2(b) proposed moving every invariant test into `tests/invariants/`.**
+   Moving 300 passing tests is churn with real risk and no behavioural payoff.
+   `tests/INVARIANTS.md` maps each guarantee to the test that holds it and
+   `test_invariant_map.py` asserts the mapping resolves, which buys the property
+   that mattered — a deleted guarantee shows up as a broken map rather than as
+   one fewer green dot — for none of the risk.
+
+## What remains
+
+Steps 5, 6 and 7 are each a session's work and are independent of everything
+above. Recommended order, and why:
+
+* **7 before 6.** SSE removes the poll loop, and the poll loop is what forces
+  the current full-`innerHTML` re-render strategy. Rebuilding the rendering
+  first means rebuilding it against a data flow that is about to change.
+* **5 whenever.** Response models are mechanical and the golden master makes
+  them verifiable — FastAPI silently *drops* fields not on the model, which is
+  exactly the failure the snapshots catch.
+* **The second node adapter** is gated on having a VLESS node to develop
+  against, not on any of this.
 
 # "GRILL ME" — where this plan is weak
 
@@ -737,13 +811,13 @@ deliberate, announced switch with a dry-run mode, not a silent upgrade.
 
 ---
 
-# Approval gate — what I need from you
+# Approval gate — answered 2026-08-23
 
-| # | Question | Why it blocks |
+| # | Question | Answer |
 |---|---|---|
-| **Q1** | **Second protocol (VLESS/Reality) — yes or no?** | Decides F2, and whether it must precede `ROADMAP` 2.1. Roadmap says decide before customer identity; that is still true |
-| **Q2** | **Scope: targeted re-architecture (steps 0–7) or literal clean-slate rebuild?** | I recommend targeted. Clean-slate reverses four documented decisions |
-| **Q3** | **A1: converged/async (F1) or synchronous all-members loop?** | Trade-off in Grill §1. Async is better; sync is smaller |
-| **Q4** | **150-line cap: literal everywhere, or by-seam as proposed?** | Affects `core/db.py` and `static/index.html` only |
+| Q1 | Second protocol (VLESS/Reality)? | **Yes** — port built, adapter pending a node to develop against |
+| Q2 | Targeted re-architecture or clean-slate rebuild? | **Targeted**, steps 0–7 |
+| Q3 | A1 converged/async or synchronous? | **Converged** — outbox + reconciler |
+| Q4 | 150-line cap literal or by seam? | **By seam** |
 
-Answer those four and I will start at step 0.
+Steps 0–4 and 8 are done. Steps 5, 6 and 7 remain, in the order argued above.
