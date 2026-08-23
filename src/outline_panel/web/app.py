@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..core import config
+from ..core import settings as core_settings
 from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_ENABLED, BOT_TOKEN
 from .audit import audit_middleware
@@ -96,7 +97,22 @@ async def lifespan(app: FastAPI):
     await db.close()
 
 
-app = FastAPI(title="Outline Panel", lifespan=lifespan)
+# `/docs`, `/redoc` and `/openapi.json` are off unless PANEL_DOCS=1.
+#
+# They describe every route of an internet-facing admin panel to anyone who
+# asks, and nothing in the panel needs them at runtime: the schema used to
+# generate the frontend's types is produced offline from `app.openapi()`, with
+# no HTTP involved (see scripts/dump_openapi.py). The profile host already
+# 404s these names; this closes them on the panel host too.
+_DOCS = os.getenv("PANEL_DOCS", "").strip().lower() in ("1", "true", "yes", "on")
+
+app = FastAPI(
+    title="Outline Panel",
+    lifespan=lifespan,
+    docs_url="/docs" if _DOCS else None,
+    redoc_url="/redoc" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+)
 
 # Registered first so it wraps outermost and sees the final status of every
 # mutating request, including ones rejected by a dependency.
@@ -107,6 +123,20 @@ app.middleware("http")(observability_middleware)
 # Outermost: the profile host must be gated before anything else looks at the
 # request, so a 404 there costs nothing and leaks nothing.
 app.middleware("http")(profile_host_guard)
+
+
+@app.middleware("http")
+async def settings_scope(request: Request, call_next):
+    """Read each setting at most once per request.
+
+    The store deliberately has no long-lived cache — a stale one is what made
+    the bot poll with a replaced token. But `metrics_ttl` and `profile_base` are
+    read inside per-server loops, so a ten-server panel paid ~25 redundant
+    SELECTs on every dashboard poll. This memo is discarded before the response
+    is sent, so it can hold a value for milliseconds and never across a write.
+    """
+    with core_settings.read_scope():
+        return await call_next(request)
 
 
 @app.middleware("http")

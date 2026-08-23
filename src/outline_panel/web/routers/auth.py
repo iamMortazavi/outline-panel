@@ -149,7 +149,7 @@ async def change_my_password(body: MyPasswordBody,
     if admin["is_owner"]:
         await settings.set_admin_password(body.new)
     else:
-        h, s = security.hash_password(body.new)
+        h, s = await security.hash_password_async(body.new)
         await db.update_admin(admin["id"], pw_hash=h, pw_salt=s)
     return {"ok": True}
 

@@ -110,7 +110,7 @@ async def create_admin(body: AdminBody):
     # Validate BEFORE the insert: a duplicate Telegram id used to 400 *after*
     # add_admin, leaving a half-configured admin row behind on every attempt.
     await _check_telegram(body.telegram_id, None)
-    h, s = security.hash_password(body.password)
+    h, s = await security.hash_password_async(body.password)
     aid = await db.add_admin(body.username, h, s, caps=caps, servers=servers)
     await db.update_admin(aid, credit_enabled=1 if body.credit_enabled else 0,
                           discount_pct=body.discount_pct,
@@ -135,7 +135,7 @@ async def edit_admin(admin_id: int, body: AdminEdit):
                             detail="The owner's access cannot be restricted")
     fields: dict = {}
     if body.password:
-        h, s = security.hash_password(body.password)
+        h, s = await security.hash_password_async(body.password)
         fields.update(pw_hash=h, pw_salt=s)
     if body.caps is not None:
         fields["caps"] = _clean_caps(body.caps)

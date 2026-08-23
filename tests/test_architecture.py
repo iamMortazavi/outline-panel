@@ -125,3 +125,32 @@ def test_the_frontend_decides_layout_in_css_not_javascript():
         f"{uses} uses of innerWidth in index.html — layout belongs in CSS "
         f"(@container / clamp), see MODERNIZATION.md §3.1. Lower the ceiling in "
         f"this test as they go; never raise it.")
+
+
+def test_the_api_does_not_describe_itself_to_the_internet():
+    """A12: `/docs` and `/openapi.json` are off unless PANEL_DOCS is set.
+
+    They are a map of every route of an admin panel, handed to anyone who asks.
+    Nothing needs them at runtime — the schema the frontend's types come from is
+    dumped offline by scripts/dump_openapi.py.
+    """
+    import importlib
+    import os
+    import sys
+    for m in [m for m in list(sys.modules) if m.startswith("outline_panel")]:
+        del sys.modules[m]
+    os.environ.pop("PANEL_DOCS", None)
+    os.environ.setdefault("ADMIN_PASSWORD", "pw")
+    appmod = importlib.import_module("outline_panel.web.app")
+    assert appmod.app.docs_url is None
+    assert appmod.app.redoc_url is None
+    assert appmod.app.openapi_url is None
+
+    os.environ["PANEL_DOCS"] = "1"
+    for m in [m for m in list(sys.modules) if m.startswith("outline_panel")]:
+        del sys.modules[m]
+    appmod = importlib.import_module("outline_panel.web.app")
+    assert appmod.app.openapi_url == "/openapi.json", "the dev escape hatch broke"
+    os.environ.pop("PANEL_DOCS", None)
+    for m in [m for m in list(sys.modules) if m.startswith("outline_panel")]:
+        del sys.modules[m]

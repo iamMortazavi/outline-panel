@@ -345,6 +345,24 @@ class DB:
                 (security.profile_token(r["key_id"]), r["server_id"], r["key_id"]),
             )
 
+    async def _m008_key_lookup_indexes(self) -> None:
+        """Index the two lookups that had none.
+
+        `keys` only ever had its composite primary key, so both
+        `get_keys_by_sub_token` and `get_key_by_sub_token` scanned the whole
+        table — on the **public**, unauthenticated subscription route, which
+        every VPN client re-fetches on its own refresh interval. Filtering a
+        reseller's page by `owner_admin_id` scanned it too, in Python, after
+        loading every row.
+
+        Nothing about behaviour changes here; this is the same answer, found
+        without reading the table.
+        """
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keys_sub_token ON keys(sub_token)")
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keys_owner ON keys(owner_admin_id)")
+
     async def _m007_per_admin_totp(self) -> None:
         """A second factor for every admin, not only the owner.
 
@@ -1135,4 +1153,5 @@ _MIGRATIONS = (
     DB._m005_server_health,
     DB._m006_backfill_profile_tokens,
     DB._m007_per_admin_totp,
+    DB._m008_key_lookup_indexes,
 )

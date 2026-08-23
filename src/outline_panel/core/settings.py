@@ -7,6 +7,10 @@ fully self-configuring from its own UI.
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from . import config, security
 from .db import DB
 
@@ -140,25 +144,85 @@ KNOBS: dict[str, dict] = {
 OWNER_USERNAME = "admin"
 
 
-class SettingsStore:
-    """Reads straight through to SQLite — deliberately uncached.
+# Per-operation memo of settings already read. `None` means "no operation is in
+# scope" — the scheduler, the bot and the CLI run that way and read straight
+# through, exactly as before.
+#
+# A dict that lives for one HTTP request cannot go stale the way the old
+# process-wide cache did: the bot polling with a token the panel had already
+# replaced needed the cache to outlive the write, and this one is discarded
+# before the response is sent. What it removes is the fan-out — `metrics_ttl`
+# was read once per configured server inside `_conn_info`, and `profile_base`
+# once per server inside `keys_for_server`, so a ten-server panel paid ~25
+# redundant SELECTs on every poll of /api/keys.
+_scope: ContextVar[dict[str, asyncio.Future[str | None]] | None] = ContextVar(
+    "settings_scope", default=None)
 
-    There used to be an in-process dict here. It was never invalidated, so the
+
+@contextmanager
+def read_scope():
+    """Memoise settings reads for the duration of one operation.
+
+    Lazy, not eager: a key is read from SQLite the first time it is asked for
+    and remembered only until this block exits. Nesting is safe — an inner
+    scope gets its own memo and the outer one is restored on the way out.
+    """
+    token = _scope.set({})
+    try:
+        yield
+    finally:
+        _scope.reset(token)
+
+
+class SettingsStore:
+    """Reads through to SQLite, memoised for the current operation only.
+
+    There used to be a process-wide dict here. It was never invalidated, so the
     standalone bot kept polling with a token the panel had already replaced, and
-    a restore had to reach in and clear it by hand. A local SQLite row read costs
-    microseconds; a settings value that disagrees with the database costs an
-    afternoon.
+    a restore had to reach in and clear it by hand. That cache is not coming
+    back: `read_scope()` lives for one request and is thrown away, so no value
+    can outlive the write that changed it.
+
+    Outside a scope this behaves exactly as the uncached version did.
     """
 
     def __init__(self, db: DB):
         self.db = db
 
     async def get(self, key: str, default: str | None = None) -> str | None:
-        val = await self.db.get_setting(key)
+        memo = _scope.get()
+        if memo is None:
+            val = await self.db.get_setting(key)
+            return val if val is not None else default
+        # Futures, not values, so the memo is single-flight. `/api/keys` fans
+        # out over the servers with `asyncio.gather`, and each branch reads
+        # `metrics_ttl`; a plain dict would have every branch miss before any of
+        # them had written, which is a cache that costs a lookup and saves
+        # nothing. Claiming the slot happens before the first await, so exactly
+        # one reader reaches SQLite.
+        slot = memo.get(key)
+        if slot is None:
+            slot = asyncio.get_running_loop().create_future()
+            memo[key] = slot
+            try:
+                slot.set_result(await self.db.get_setting(key))
+            except BaseException as exc:
+                slot.set_exception(exc)
+                memo.pop(key, None)      # a failed read must not be remembered
+                raise
+        val = await slot
         return val if val is not None else default
 
     async def set(self, key: str, value: str | None) -> None:
         await self.db.set_setting(key, value)
+        # A write inside a scope must be visible to the rest of it:
+        # /api/settings/panel writes every knob and then re-reads them all to
+        # build its response.
+        memo = _scope.get()
+        if memo is not None:
+            done = asyncio.get_running_loop().create_future()
+            done.set_result(value)
+            memo[key] = done
 
     # panel knobs -----------------------------------------------------------
     async def num(self, key: str) -> int:
@@ -241,7 +305,7 @@ class SettingsStore:
     async def bootstrap(self) -> None:
         """Seed settings from env on first run; never overwrites existing values."""
         if await self.get(ADMIN_PW_HASH) is None and config.ADMIN_PASSWORD:
-            h, s = security.hash_password(config.ADMIN_PASSWORD)
+            h, s = await security.hash_password_async(config.ADMIN_PASSWORD)
             await self.set(ADMIN_PW_HASH, h)
             await self.set(ADMIN_PW_SALT, s)
         if await self.get(BOT_TOKEN) is None and config.BOT_TOKEN:
@@ -269,15 +333,15 @@ class SettingsStore:
         if row["is_owner"]:
             ok = await self.verify_admin_password(password)
         else:
-            ok = security.verify_password(password, row["pw_hash"] or "",
-                                          row["pw_salt"] or "")
+            ok = await security.verify_password_async(
+                password, row["pw_hash"] or "", row["pw_salt"] or "")
         return row if ok else None
 
     async def verify_admin_password(self, password: str) -> bool:
         h = await self.get(ADMIN_PW_HASH)
         s = await self.get(ADMIN_PW_SALT)
         if h and s:
-            return security.verify_password(password, h, s)
+            return await security.verify_password_async(password, h, s)
         # fallback: no DB password yet but env one is set
         import secrets as _secrets
         return bool(config.ADMIN_PASSWORD) and _secrets.compare_digest(
@@ -285,6 +349,6 @@ class SettingsStore:
         )
 
     async def set_admin_password(self, password: str) -> None:
-        h, s = security.hash_password(password)
+        h, s = await security.hash_password_async(password)
         await self.set(ADMIN_PW_HASH, h)
         await self.set(ADMIN_PW_SALT, s)
