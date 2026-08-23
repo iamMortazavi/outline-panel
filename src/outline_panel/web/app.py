@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from ..core import config
 from ..core import settings as core_settings
+from ..core.outline_api import OutlineError
 from ..core.scheduler import expiry_loop
 from ..core.settings import BOT_ENABLED, BOT_TOKEN
 from .audit import audit_middleware
@@ -211,6 +212,19 @@ async def metrics_route(request: Request):
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.exception_handler(OutlineError)
+async def outline_exc_handler(request, exc: OutlineError):
+    """An Outline server said no, and no member of the subscription got through.
+
+    The use cases raise this rather than importing the HTTP error helpers, so
+    the application layer stays free of FastAPI. The body is the same envelope
+    `errors.upstream()` produces, because to a client this is the same event.
+    """
+    return JSONResponse(status_code=502, content={
+        "detail": str(exc), "code": "outline.unavailable",
+        "params": {"message": str(exc)}})
 
 
 @app.exception_handler(HTTPException)

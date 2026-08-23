@@ -60,10 +60,24 @@ W3 | test_golden_public_subscription | tests/test_golden.py
 W4 | test_golden_errors | tests/test_golden.py
 W5 | test_golden_writes | tests/test_golden.py
 
-## Not yet held — the A1 defect (xfail until step 3)
+## The subscription aggregate (A1 — fixed in step 3)
 
 A1-1 | test_A1_1_suspending_a_customer_suspends_every_server | tests/test_invariant_a1_subscription.py
 A1-2 | test_A1_2_resuming_a_customer_resumes_every_server | tests/test_invariant_a1_subscription.py
 A1-3 | test_A1_3_renewing_moves_every_members_clock | tests/test_invariant_a1_subscription.py
 A1-4 | test_A1_4_deleting_a_customer_removes_every_key | tests/test_invariant_a1_subscription.py
 A1-5 | test_A1_5_allowance_changes_reach_every_server | tests/test_invariant_a1_subscription.py
+A1-6 | test_the_monthly_quota_reaches_the_mirror | tests/test_invariant_a1_subscription.py
+
+## Convergence (the outbox)
+
+C1 | test_one_unreachable_server_does_not_block_the_others | tests/test_invariant_a1_subscription.py
+C2 | test_nothing_is_written_when_nothing_reaches_a_server | tests/test_invariant_a1_subscription.py
+C3 | test_bookkeeping_alone_is_not_a_total_failure | tests/test_invariant_a1_subscription.py
+
+## Structure
+
+S1 | test_core_never_imports_the_web_or_the_bot | tests/test_architecture.py
+S2 | test_the_rules_have_exactly_one_definition | tests/test_architecture.py
+S3 | test_only_the_composition_root_opens_the_database | tests/test_architecture.py
+S4 | test_the_api_does_not_describe_itself_to_the_internet | tests/test_architecture.py

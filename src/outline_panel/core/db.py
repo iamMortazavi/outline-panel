@@ -183,6 +183,31 @@ CREATE TABLE IF NOT EXISTS server_health (
 """
 
 
+# One row per effect that has not reached its server yet.
+#
+# A subscription spans several Outline servers and any of them can be down when
+# a customer is suspended or renewed. Failing the whole operation would mean an
+# unreachable server can stop you cutting off a customer on the servers that are
+# reachable — the case you most need to work. So the panel records the intent
+# here and a worker keeps trying.
+#
+# `next_try_ts` rather than a plain queue: retries back off, and a row that
+# cannot be applied must not spin against a dead server every pass.
+_OUTBOX_SCHEMA = """
+CREATE TABLE IF NOT EXISTS outbox (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    token       TEXT,
+    server_id   TEXT NOT NULL,
+    key_id      TEXT NOT NULL,
+    command     TEXT NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    last_error  TEXT,
+    next_try_ts INTEGER NOT NULL,
+    created_ts  INTEGER NOT NULL
+);
+"""
+
+
 class DB:
     def __init__(self, path: str):
         self.path = path
@@ -344,6 +369,14 @@ class DB:
                 "UPDATE keys SET sub_token = ? WHERE server_id = ? AND key_id = ?",
                 (security.profile_token(r["key_id"]), r["server_id"], r["key_id"]),
             )
+
+    async def _m009_outbox(self) -> None:
+        """Effects that have not reached their server yet (see web/../executor)."""
+        await self.conn.execute(_OUTBOX_SCHEMA)
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox(next_try_ts)")
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_outbox_token ON outbox(token)")
 
     async def _m008_key_lookup_indexes(self) -> None:
         """Index the two lookups that had none.
@@ -950,6 +983,53 @@ class DB:
             await self.conn.commit()
             return cur.rowcount
 
+    # outbox ----------------------------------------------------------------
+    async def enqueue_command(self, token: str | None, server_id: str,
+                              key_id: str, command: str,
+                              error: str | None = None) -> int:
+        """Record an effect that could not be applied now. Returns the row id."""
+        now = int(time.time())
+        async with self._lock:
+            cur = await self.conn.execute(
+                "INSERT INTO outbox (token, server_id, key_id, command, attempts,"
+                " last_error, next_try_ts, created_ts)"
+                " VALUES (?, ?, ?, ?, 1, ?, ?, ?)",
+                (token, server_id, key_id, command, (error or "")[:300] or None,
+                 now + 30, now),
+            )
+            await self.conn.commit()
+            return cur.lastrowid
+
+    async def due_commands(self, now_ts: int, limit: int = 100) -> list[dict]:
+        cur = await self.conn.execute(
+            "SELECT * FROM outbox WHERE next_try_ts <= ? ORDER BY id LIMIT ?",
+            (now_ts, limit))
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def reschedule_command(self, row_id: int, delay: int,
+                                 error: str | None) -> None:
+        """Back this row off after a failed attempt."""
+        async with self._lock:
+            await self.conn.execute(
+                "UPDATE outbox SET attempts = attempts + 1, last_error = ?,"
+                " next_try_ts = ? WHERE id = ?",
+                ((error or "")[:300] or None, int(time.time()) + delay, row_id))
+            await self.conn.commit()
+
+    async def drop_command(self, row_id: int) -> None:
+        async with self._lock:
+            await self.conn.execute("DELETE FROM outbox WHERE id = ?", (row_id,))
+            await self.conn.commit()
+
+    async def pending_commands(self, token: str) -> list[dict]:
+        cur = await self.conn.execute(
+            "SELECT * FROM outbox WHERE token = ? ORDER BY id", (token,))
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def outbox_depth(self) -> int:
+        cur = await self.conn.execute("SELECT COUNT(*) AS n FROM outbox")
+        return int((await cur.fetchone())["n"])
+
     # audit -----------------------------------------------------------------
     async def add_audit(self, actor_admin_id: int | None, actor_name: str | None,
                         action: str, target: str | None, status: int | None,
@@ -1154,4 +1234,5 @@ _MIGRATIONS = (
     DB._m006_backfill_profile_tokens,
     DB._m007_per_admin_totp,
     DB._m008_key_lookup_indexes,
+    DB._m009_outbox,
 )

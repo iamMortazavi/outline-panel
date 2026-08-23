@@ -154,3 +154,62 @@ def test_the_api_does_not_describe_itself_to_the_internet():
     os.environ.pop("PANEL_DOCS", None)
     for m in [m for m in list(sys.modules) if m.startswith("outline_panel")]:
         del sys.modules[m]
+
+
+def test_the_domain_layer_has_no_io():
+    """`domain/` decides; something else acts.
+
+    A transition returns commands and nothing more. The moment this package can
+    reach a database or an HTTP client, the rules become untestable without one
+    and the second caller — the scheduler, the bot — grows its own copy.
+    """
+    banned = ("aiosqlite", "httpx", "fastapi", "aiogram", "web", "bot",
+              "core.db", "core.outline_api")
+    offenders = []
+    for path in _files("domain"):
+        for name in _imports(path):
+            if any(name == b or name.startswith(b + ".") for b in banned):
+                offenders.append(f"{path.relative_to(SRC)} -> {name}")
+    assert not offenders, "the domain reached for I/O: " + "; ".join(offenders)
+
+
+def test_the_application_layer_does_not_know_about_http():
+    """A use case is entered from the dashboard, the bot, the Mini App and the
+    scheduler. If it raises `HTTPException` it only really works from one of
+    them — which is how `web/deps.py` ended up lazily importing a router so the
+    bot could create a key."""
+    offenders = []
+    for path in _files("application"):
+        for name in _imports(path):
+            if name.startswith(("fastapi", "web", "bot", "aiogram")):
+                offenders.append(f"{path.relative_to(SRC)} -> {name}")
+    assert not offenders, "the application layer imported a delivery mechanism: " + \
+        "; ".join(offenders)
+
+
+def test_customer_state_changes_go_through_the_aggregate():
+    """A1 stays fixed.
+
+    The per-member writes (`set_disabled`, `set_expiry`, `set_limit`, …) belong
+    to the executor now. A router calling one directly is acting on one member
+    of a customer again, which is the exact shape of the bug: suspend that only
+    suspends the primary, renew that only renews it, delete that leaves the
+    mirrors live.
+
+    `add_key`, `set_sub_token`, `set_key_owner` and `activate` are *not* listed:
+    creating, adopting, mirroring and re-attributing a key really are per-member
+    operations.
+    """
+    per_member = ("db.set_disabled(", "db.set_expiry(", "db.set_duration(",
+                  "db.set_monthly(", "db.set_limit(")
+    allowed = {"web/routers/keys.py"}          # mirror_onto seeds a new member
+    offenders = []
+    for path in [*_files("web"), *_files("bot")]:
+        rel = path.relative_to(SRC).as_posix()
+        text = path.read_text()
+        for call in per_member:
+            if call in text and rel not in allowed:
+                offenders.append(f"{rel} calls {call}")
+    assert not offenders, (
+        "these change one member of a customer directly instead of going "
+        "through application.customer: " + "; ".join(offenders))

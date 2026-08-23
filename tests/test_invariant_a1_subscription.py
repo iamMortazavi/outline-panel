@@ -11,10 +11,10 @@ sold. Nothing keeps those members in step afterwards, so today:
   * deleting one leaves working keys upstream that the public subscription link
     keeps handing out, with no panel row left to find them by.
 
-These tests describe the behaviour the panel is supposed to have. They are
-`xfail(strict=True)`, so they keep CI honest in both directions: red is expected
-until step 3 of MODERNIZATION.md lands, and the day one of them starts passing
-by accident, pytest says so instead of quietly agreeing.
+These tests describe the behaviour the panel is supposed to have. They were
+written first, as `xfail(strict=True)`, and all five failed against the
+key-at-a-time code; step 3 of MODERNIZATION.md moved the transitions onto the
+Subscription aggregate and they went green together.
 
 `mirror_onto`'s undivided-allowance rule (invariant M8) is deliberate and is
 preserved here: propagating means every member gets the *same* new value, not a
@@ -32,7 +32,6 @@ import pytest
 from test_features import FakeOutline
 
 GB = 1024 ** 3
-xfail_a1 = pytest.mark.xfail(strict=True, reason="A1 — fixed in step 3 of MODERNIZATION.md")
 
 
 @pytest.fixture
@@ -84,7 +83,6 @@ async def _members(deps, token):
     return {m["server_id"]: m for m in await deps.db.get_keys_by_sub_token(token)}
 
 
-@xfail_a1
 async def test_A1_1_suspending_a_customer_suspends_every_server(two_servers):
     """Suspension has to mean suspension. A customer who has stopped paying, or
     who is being cut off for abuse, must not keep a working config on the
@@ -102,7 +100,6 @@ async def test_A1_1_suspending_a_customer_suspends_every_server(two_servers):
     await c.aclose()
 
 
-@xfail_a1
 async def test_A1_2_resuming_a_customer_resumes_every_server(two_servers):
     """The mirror image, and the one that bites the honest customer: if suspend
     ever propagates but enable does not, paying again brings back one server."""
@@ -121,7 +118,6 @@ async def test_A1_2_resuming_a_customer_resumes_every_server(two_servers):
     await c.aclose()
 
 
-@xfail_a1
 async def test_A1_3_renewing_moves_every_members_clock(two_servers):
     """The customer paid for another 30 days. The scheduler expires each member
     on its own `expiry_ts`, so a renewal that moves one row cuts the customer
@@ -140,7 +136,6 @@ async def test_A1_3_renewing_moves_every_members_clock(two_servers):
     await c.aclose()
 
 
-@xfail_a1
 async def test_A1_4_deleting_a_customer_removes_every_key(two_servers):
     """Deleting the primary currently leaves live keys on every mirror *and*
     leaves the public subscription serving them — with no panel row left to
@@ -159,7 +154,6 @@ async def test_A1_4_deleting_a_customer_removes_every_key(two_servers):
     await c.aclose()
 
 
-@xfail_a1
 async def test_A1_5_allowance_changes_reach_every_server(two_servers):
     """`limit_bytes` is the cumulative ceiling Outline counts against (invariant
     T2) and mirroring deliberately gives every member the *same* undivided
@@ -182,4 +176,84 @@ async def test_A1_5_allowance_changes_reach_every_server(two_servers):
     # used + allowance, per member — not one number copied across
     assert fresh["s1"]["limit_bytes"] == 30 * GB + 40 * GB
     assert fresh["s2"]["limit_bytes"] == 5 * GB + 40 * GB
+    await c.aclose()
+
+
+# ----------------------------------------------- partial failure and the outbox
+async def test_one_unreachable_server_does_not_block_the_others(two_servers):
+    """The rule the converged design exists for.
+
+    A customer has stopped paying and one of the two servers they are on is
+    down. Suspending must still cut them off on the server that is up — an
+    Outline box being unreachable cannot be allowed to keep someone connected.
+    The straggler is recorded, not forgotten.
+    """
+    application, deps, fakes = two_servers
+    c, kid, token, members = await _sold_on_both(two_servers)
+    fakes["s2"].fail_limit_writes = True
+
+    r = await c.post(f"/api/servers/s1/keys/{kid}/disable")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    # the response says so rather than claiming an effect that has not happened
+    assert [p["serverId"] for p in body["pending"]] == ["s2"]
+    assert body["pending"][0]["op"] == "Suspend"
+
+    assert fakes["s1"].limits[members["s1"]["key_id"]] == 0, "the reachable server kept serving"
+    queued = await deps.db.pending_commands(token)
+    assert len(queued) == 1 and queued[0]["server_id"] == "s2"
+    assert queued[0]["next_try_ts"] > 0, "a deferred effect must be scheduled, not parked"
+    await c.aclose()
+
+
+async def test_nothing_is_written_when_nothing_reaches_a_server(two_servers):
+    """The other half of the rule: if no member converged, the operation failed.
+
+    This is what keeps a single-server panel behaving as it always did — a
+    failed extend must leave the expiry alone, or the admin's retry stacks the
+    days twice.
+    """
+    application, deps, fakes = two_servers
+    c, kid, token, members = await _sold_on_both(two_servers)
+    before = {sid: m["limit_bytes"] for sid, m in members.items()}
+    for f in fakes.values():
+        f.fail_limit_writes = True
+
+    r = await c.put(f"/api/servers/s1/keys/{kid}/limit", json={"limit_gb": 99})
+    assert r.status_code == 502
+    assert r.json()["code"] == "outline.unavailable"
+
+    for sid, m in (await _members(deps, token)).items():
+        assert m["limit_bytes"] == before[sid], f"{sid} was written despite the failure"
+    assert await deps.db.pending_commands(token) == [], \
+        "a total failure must queue nothing — there is no partial state to converge"
+    await c.aclose()
+
+
+async def test_bookkeeping_alone_is_not_a_total_failure(two_servers):
+    """Clearing a monthly quota tells Outline nothing — there is no upstream
+    half to fail. It must not be mistaken for "no member reached its server"
+    and turned into a 502."""
+    application, deps, fakes = two_servers
+    c, kid, token, _ = await _sold_on_both(two_servers, monthly_gb=10)
+    for f in fakes.values():
+        f.fail_limit_writes = True
+
+    r = await c.put(f"/api/servers/s1/keys/{kid}/monthly", json={"monthly_gb": 0})
+    assert r.status_code == 200, r.text
+    for sid, m in (await _members(deps, token)).items():
+        assert m["monthly_bytes"] is None, f"{sid} kept its quota"
+    await c.aclose()
+
+
+async def test_the_monthly_quota_reaches_the_mirror(two_servers):
+    """A mirror without the quota is invisible to the scheduler's reset pass, so
+    it keeps the ceiling it was born with for good — while the customer's page
+    shows a quota that refreshes."""
+    application, deps, fakes = two_servers
+    c, kid, token, _ = await _sold_on_both(two_servers, monthly_gb=25)
+    for sid, m in (await _members(deps, token)).items():
+        assert m["monthly_bytes"] == 25 * GB, f"{sid} has no quota"
+        assert m["reset_ts"], f"{sid} has a quota that never resets"
     await c.aclose()
