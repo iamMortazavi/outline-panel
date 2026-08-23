@@ -95,6 +95,9 @@ declare("outline_panel_scheduler_passes_total", "Completed scheduler passes.")
 declare("outline_panel_scheduler_leader", "1 when this process holds the lease.", "gauge")
 declare("outline_panel_keys", "Access keys known to the panel.", "gauge")
 declare("outline_panel_servers", "Configured Outline servers.", "gauge")
+declare("outline_panel_outbox_depth",
+        "Effects the panel has decided but a server has not been told yet.",
+        "gauge")
 declare("outline_panel_credit_drift", "Admins whose balance disagrees with their ledger.",
         "gauge")
 declare("outline_panel_uptime_seconds", "Seconds since this process started.", "gauge")

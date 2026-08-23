@@ -49,6 +49,7 @@ from .routers import (
     audit,
     auth,
     backup,
+    convergence,
     keys,
     miniapp,
     packages,
@@ -172,6 +173,7 @@ async def security_headers(request: Request, call_next):
 app.include_router(auth.router)
 app.include_router(admins.router)
 app.include_router(audit.router)
+app.include_router(convergence.router)
 app.include_router(packages.router)
 app.include_router(servers.router)
 app.include_router(keys.router)

@@ -269,6 +269,25 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
         except Exception as e:  # noqa: BLE001 — a full disk must not stop expiry
             log.warning("backup failed: %s", e)
 
+    # 4a) convergence: retry the effects that never reached their server, and
+    # (only when switched on) close the gap the A1 defect left behind. Both are
+    # the lease holder's job, so N workers do not race the same retries.
+    if settings is not None:
+        try:
+            from ..application import convergence
+            summary = await convergence.drain(db, registry, now)
+            if summary["applied"] or summary["failed"]:
+                log.info("outbox: %(applied)d applied, %(failed)d still failing, "
+                         "%(dropped)d dropped", summary)
+            metrics.observe("outline_panel_outbox_depth", await db.outbox_depth())
+            if await settings.get_bool("reconcile_enabled", False):
+                result = await convergence.reconcile(db, registry, apply=True)
+                if result["queued"]:
+                    log.warning("reconciliation queued %d suspensions that had "
+                                "not reached their server", result["queued"])
+        except Exception as e:  # noqa: BLE001 — convergence must not stop expiry
+            log.warning("convergence pass failed: %s", e)
+
     # 4b) reconciliation: admins.credit is what a purchase is checked against,
     # the ledger is how it got there. They must agree, and nothing was watching.
     try:

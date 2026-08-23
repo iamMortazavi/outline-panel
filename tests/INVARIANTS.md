@@ -74,6 +74,12 @@ A1-6 | test_the_monthly_quota_reaches_the_mirror | tests/test_invariant_a1_subsc
 C1 | test_one_unreachable_server_does_not_block_the_others | tests/test_invariant_a1_subscription.py
 C2 | test_nothing_is_written_when_nothing_reaches_a_server | tests/test_invariant_a1_subscription.py
 C3 | test_bookkeeping_alone_is_not_a_total_failure | tests/test_invariant_a1_subscription.py
+C4 | test_a_deferred_suspension_lands_when_the_server_comes_back | tests/test_convergence.py
+C5 | test_a_still_failing_effect_backs_off_rather_than_spinning | tests/test_convergence.py
+C6 | test_an_effect_for_a_removed_server_is_dropped | tests/test_convergence.py
+C7 | test_a_key_made_in_outline_manager_is_never_touched | tests/test_convergence.py
+C8 | test_drift_reports_a_key_deleted_upstream_without_recreating_it | tests/test_convergence.py
+C9 | test_the_report_is_owner_only | tests/test_convergence.py
 
 ## Structure
 

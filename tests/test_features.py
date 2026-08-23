@@ -59,10 +59,16 @@ class FakeOutline:
     async def set_data_limit(self, kid, b):
         self._check()
         self.limits[kid] = b
+        # list_keys() must report what the server is now enforcing, or the fake
+        # says one thing to the reconciler and another to the panel.
+        if kid in self.keys:
+            self.keys[kid]["dataLimit"] = {"bytes": b}
 
     async def remove_data_limit(self, kid):
         self._check()
         self.limits.pop(kid, None)
+        if kid in self.keys:
+            self.keys[kid]["dataLimit"] = {}
 
     async def rename_key(self, kid, name):
         self.keys[kid]["name"] = name
