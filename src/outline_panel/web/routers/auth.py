@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from ...core import config, errors, security
 from ...core.settings import OWNER_USERNAME, TOTP_ENABLED, TOTP_SECRET
 from ..deps import CAPS, COOKIE_NAME, _csv, current_admin, db, on_credit, settings, signer
+from ..schemas import Me
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -105,7 +106,7 @@ async def logout(response: Response):
     return {"ok": True}
 
 
-@router.get("/me")
+@router.get("/me", response_model=Me, response_model_exclude_unset=True)
 async def me(admin: dict = Depends(current_admin)):
     # The dashboard has nothing else to branch on: it renders every control for
     # everyone unless told otherwise. This is UX, not the boundary.

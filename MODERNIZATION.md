@@ -674,7 +674,7 @@ port), **Q2 targeted** (steps 0–7, not a clean-slate rebuild), **Q3 converged*
 | 3 | **A1 fixed** — subscription aggregate | ✅ `a3277f4` |
 | 4 | Outbox drained; reconciler + drift report | ✅ `d8e3b31` |
 | 8 | Node port + conformance suite | ✅ (adapter #2 pending — see below) |
-| 5 | Response models + generated TS types | ⬜ not started |
+| 5 | Response models (12 of 91 operations, ratcheted) | 🟡 started |
 | 6 | Frontend: tokens, container queries, keyed patching, a11y | ⬜ not started |
 | 7 | SSE; polling removed | ⬜ not started |
 
@@ -754,9 +754,17 @@ above. Recommended order, and why:
 * **7 before 6.** SSE removes the poll loop, and the poll loop is what forces
   the current full-`innerHTML` re-render strategy. Rebuilding the rendering
   first means rebuilding it against a data flow that is about to change.
-* **5 whenever.** Response models are mechanical and the golden master makes
-  them verifiable — FastAPI silently *drops* fields not on the model, which is
-  exactly the failure the snapshots catch.
+* **5 is under way and deliberately partial.** Twelve operations are typed —
+  the ones the dashboard actually renders from, plus the subscription summary,
+  which is a contract with VPN clients nobody here controls. A ratchet in
+  `test_architecture.py` lets that number rise and never fall. The remaining 79
+  are mechanical; doing them in one change would be 79 chances to drop a field.
+
+  The generated-TypeScript half of step 5 moved to step 6 on purpose. The
+  frontend is inline `<script>` inside HTML, which `tsc` cannot check; the types
+  become useful the moment step 6 extracts that JavaScript into files, and not a
+  moment earlier. `scripts/dump_openapi.py` already produces the schema they
+  will be generated from, with no npm dependency and no build step.
 * **The second node adapter** is gated on having a VLESS node to develop
   against, not on any of this.
 

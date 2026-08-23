@@ -32,6 +32,7 @@ from ..deps import (
     settings,
     sids_or_404,
 )
+from ..schemas import KeyList, LimitOk, Ok
 from . import subscription as sub_router
 
 log = logging.getLogger("web.keys")
@@ -136,7 +137,7 @@ async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
     return {"serverId": sid, "serverName": m["name"], "keys": out, "error": None}
 
 
-@router.get("/keys")
+@router.get("/keys", response_model=KeyList, response_model_exclude_unset=True)
 async def list_keys(server: str | None = None,
                    admin: dict = Depends(require("keys.view"))):
     sids = sids_or_404(server, admin)
@@ -432,7 +433,8 @@ async def create_key(sid: str, request: Request, body: CreateBody,
     return key
 
 
-@router.put("/servers/{sid}/keys/{kid}/name", dependencies=[Depends(require("keys.edit"))])
+@router.put("/servers/{sid}/keys/{kid}/name", response_model=Ok, response_model_exclude_unset=True,
+            dependencies=[Depends(require("keys.edit"))])
 async def rename_key(sid: str, kid: str, body: NameBody):
     api = api_or_404(sid)
     try:
@@ -444,7 +446,8 @@ async def rename_key(sid: str, kid: str, body: NameBody):
     return {"ok": True}
 
 
-@router.put("/servers/{sid}/keys/{kid}/limit")
+@router.put("/servers/{sid}/keys/{kid}/limit", response_model=LimitOk,
+            response_model_exclude_unset=True)
 async def set_key_limit(sid: str, kid: str, body: LimitBody,
                         admin: dict = Depends(require("keys.edit"))):
     deny_free(admin)
@@ -455,7 +458,8 @@ async def set_key_limit(sid: str, kid: str, body: LimitBody,
     return {**_ok(deferred), "limit": limit_bytes}
 
 
-@router.put("/servers/{sid}/keys/{kid}/monthly")
+@router.put("/servers/{sid}/keys/{kid}/monthly", response_model=Ok,
+            response_model_exclude_unset=True)
 async def set_key_monthly(sid: str, kid: str, body: MonthlyBody,
                           admin: dict = Depends(require("keys.edit"))):
     deny_free(admin)
@@ -471,7 +475,8 @@ async def set_key_monthly(sid: str, kid: str, body: MonthlyBody,
     return _ok(deferred)
 
 
-@router.post("/servers/{sid}/keys/{kid}/disable", dependencies=[Depends(require("keys.edit"))])
+@router.post("/servers/{sid}/keys/{kid}/disable", response_model=Ok, response_model_exclude_unset=True,
+             dependencies=[Depends(require("keys.edit"))])
 async def disable_key(sid: str, kid: str):
     """Suspend the customer — on every server they are on.
 
@@ -484,7 +489,8 @@ async def disable_key(sid: str, kid: str):
     return _ok(await customer.suspend(db, ops, sid, kid))
 
 
-@router.post("/servers/{sid}/keys/{kid}/enable", dependencies=[Depends(require("keys.edit"))])
+@router.post("/servers/{sid}/keys/{kid}/enable", response_model=Ok, response_model_exclude_unset=True,
+             dependencies=[Depends(require("keys.edit"))])
 async def enable_key(sid: str, kid: str):
     """The mirror image of suspend: paying again brings back every server."""
     api_or_404(sid)
@@ -534,7 +540,8 @@ async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
     return result
 
 
-@router.post("/servers/{sid}/keys/{kid}/reset")
+@router.post("/servers/{sid}/keys/{kid}/reset", response_model=LimitOk,
+             response_model_exclude_unset=True)
 async def reset_usage(sid: str, kid: str,
                       admin: dict = Depends(require("keys.edit"))):
     """Give the key a fresh allowance now (used + quota), and re-enable it.
@@ -898,7 +905,8 @@ async def set_key_owner(sid: str, kid: str, body: OwnerBody):
     return {"ok": True, "ownerAdminId": target["id"]}
 
 
-@router.delete("/servers/{sid}/keys/{kid}", dependencies=[Depends(require("keys.delete"))])
+@router.delete("/servers/{sid}/keys/{kid}", response_model=Ok, response_model_exclude_unset=True,
+               dependencies=[Depends(require("keys.delete"))])
 async def delete_key(sid: str, kid: str):
     """Delete the customer — every server they are on.
 

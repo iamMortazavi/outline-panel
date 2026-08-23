@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from ...core import config, errors
 from ...core.outline_api import OutlineError
 from ..deps import STATIC_DIR, db, reg, settings
+from ..schemas import SubInfo
 
 router = APIRouter(tags=["subscription"])
 
@@ -201,9 +202,16 @@ async def subscription(token: str, request: Request):
                     headers=headers)
 
 
-@router.get("/sub/{token}/info")
+@router.get("/sub/{token}/info", response_model=SubInfo)
 async def subscription_info(token: str, request: Request):
-    """JSON usage summary that powers the browser page (token is the secret)."""
+    """JSON usage summary that powers the browser page (token is the secret).
+
+    Validated through `SubInfo` by hand rather than by returning a bare dict,
+    because the `Cache-Control` header has to survive: this carries the same
+    `ss://` key material as the raw subscription, and the middleware's no-store
+    rule only covers `/api/` paths — not this one, and not the profile host that
+    delegates to it.
+    """
     await _rate_limit(request)
-    # Carries the same ss:// key material as the raw sub — no-store, same as it.
-    return JSONResponse(await _collect(token), headers={"Cache-Control": "no-store"})
+    info = SubInfo(**await _collect(token))
+    return JSONResponse(info.model_dump(), headers={"Cache-Control": "no-store"})

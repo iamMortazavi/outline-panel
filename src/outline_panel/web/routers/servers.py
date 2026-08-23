@@ -13,6 +13,7 @@ from ...core import errors
 from ...core.outline_api import OutlineAPI, OutlineError, parse_access_config
 from ...core.utils import gb_to_bytes
 from ..deps import api_or_404, current_admin, db, enforce_scope, host, reg, require, scoped_ids
+from ..schemas import ServerList
 
 router = APIRouter(prefix="/api", tags=["servers"],
                    dependencies=[Depends(enforce_scope)])
@@ -73,7 +74,8 @@ async def server_health(sid: str, limit: int = 100):
     return {"history": await db.health_history(sid, max(1, min(500, limit)))}
 
 
-@router.get("/servers")
+@router.get("/servers", response_model=ServerList,
+            response_model_exclude_unset=True)
 async def list_servers(admin: dict = Depends(current_admin)):
     # No {sid}, so enforce_scope does not cover this one: filter by hand or the
     # whole panel's servers leak into a scoped admin's list.

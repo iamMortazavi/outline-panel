@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from ...core import errors
 from ..deps import current_admin, db, on_credit, price_for, require_owner
+from ..schemas import PackageList
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
 
@@ -39,7 +40,7 @@ def _public(pkg: dict, admin: dict) -> dict:
     return out
 
 
-@router.get("")
+@router.get("", response_model=PackageList, response_model_exclude_unset=True)
 async def list_packages(admin: dict = Depends(current_admin)):
     pkgs = [_public(p, admin) for p in await db.all_packages()]
     return {
