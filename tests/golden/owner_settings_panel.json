@@ -47,6 +47,24 @@
         "type": "int"
       },
       {
+        "default": 5,
+        "help": "How often the panel samples every server for the live view. One sampler serves every open tab, so this is the real load on your Outline servers regardless of how many people are watching.",
+        "key": "stream_interval",
+        "label": "Live update interval (seconds)",
+        "max": 300,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 20,
+        "help": "A comment is sent this often so a proxy does not close an idle stream. Lower it if your reverse proxy times out sooner.",
+        "key": "stream_heartbeat",
+        "label": "Live update keep-alive (seconds)",
+        "max": 300,
+        "min": 5,
+        "type": "int"
+      },
+      {
         "default": 12,
         "help": "How often VPN clients are told to re-fetch the subscription.",
         "key": "sub_update_hours",
@@ -180,6 +198,8 @@
       "notify_expiry_days": 3,
       "notify_limit_percent": 80,
       "session_max_age": 604800,
+      "stream_heartbeat": 20,
+      "stream_interval": 5,
       "sub_cache_seconds": 20,
       "sub_max_per_minute": 30,
       "sub_update_hours": 12

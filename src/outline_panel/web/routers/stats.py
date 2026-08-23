@@ -40,13 +40,15 @@ async def _stats_for(sid: str, ttl: int) -> dict:
     }
 
 
-@router.get("/stats")
-async def stats(server: str | None = None,
-                admin: dict = Depends(current_admin)):
-    sids = sids_or_404(server, admin)
-    ttl = await settings.num("metrics_ttl")
-    per = await asyncio.gather(*[_stats_for(s, ttl) for s in sids]) if sids else []
-    any_avail = any(p["available"] for p in per)
+def aggregate(per: list[dict]) -> dict:
+    """Roll per-server samples into the shape the dashboard reads.
+
+    Pulled out of the route so the live stream can reuse it: the stream sends a
+    sub-admin the totals for *their* servers only, which means re-aggregating a
+    subset of the same samples. Two implementations of this would drift, and the
+    symptom would be a reseller's KPI row quietly disagreeing with their own key
+    list.
+    """
     locmap: dict = {}
     for p in per:
         for loc in p["locations"]:
@@ -57,7 +59,7 @@ async def stats(server: str | None = None,
     locations = [{"location": v["location"], "asn": v["asn"], "asOrg": v["asOrg"],
                   "dataTransferred": {"bytes": v["bytes"]}} for v in locmap.values()]
     return {
-        "available": any_avail,
+        "available": any(p["available"] for p in per),
         "serverCount": len(per),
         "tunnelSec": sum(p["tunnelSec"] for p in per),
         "dataBytes": sum(p["dataBytes"] for p in per),
@@ -67,3 +69,15 @@ async def stats(server: str | None = None,
         "locations": locations,
         "perServer": per,
     }
+
+
+async def sample(sids: list[str], ttl: int) -> list[dict]:
+    """One reading per server. The stream's sampler calls this directly."""
+    return list(await asyncio.gather(*[_stats_for(s, ttl) for s in sids])) if sids else []
+
+
+@router.get("/stats")
+async def stats(server: str | None = None,
+                admin: dict = Depends(current_admin)):
+    sids = sids_or_404(server, admin)
+    return aggregate(await sample(sids, await settings.num("metrics_ttl")))

@@ -676,7 +676,7 @@ port), **Q2 targeted** (steps 0–7, not a clean-slate rebuild), **Q3 converged*
 | 8 | Node port + conformance suite | ✅ (adapter #2 pending — see below) |
 | 5 | Response models (12 of 91 operations, ratcheted) | 🟡 started |
 | 6 | Frontend: tokens, container queries, keyed patching, a11y | ⬜ not started |
-| 7 | SSE; polling removed | ⬜ not started |
+| 7 | SSE; polling removed | ✅ |
 
 354 tests green, ruff clean, and **every golden-master snapshot is
 byte-identical** from step 0 to here — the domain moved, the wire did not.
@@ -751,9 +751,15 @@ client, both of which were making tests lie.
 Steps 5, 6 and 7 are each a session's work and are independent of everything
 above. Recommended order, and why:
 
-* **7 before 6.** SSE removes the poll loop, and the poll loop is what forces
-  the current full-`innerHTML` re-render strategy. Rebuilding the rendering
-  first means rebuilding it against a data flow that is about to change.
+* **7 is done.** One server-side sampler feeds every tab; measured in Chromium,
+  the dashboard makes zero `/api/stats` or `/api/keys` requests while idle,
+  against one every five seconds before. Two things worth recording for whoever
+  reads this next: httpx's `ASGITransport` buffers a streaming response, so the
+  stream tests drive ASGI directly rather than through the test client — the
+  endpoint was correct long before the tests agreed it was. And a stream is a
+  long-lived connection, so it re-reads the admin row every tick and closes with
+  a `bye` frame when access is revoked; otherwise disabling someone would leave
+  them watching for as long as their tab stayed open.
 * **5 is under way and deliberately partial.** Twelve operations are typed —
   the ones the dashboard actually renders from, plus the subscription summary,
   which is a contract with VPN clients nobody here controls. A ratchet in

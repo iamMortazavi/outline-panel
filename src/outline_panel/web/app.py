@@ -51,6 +51,7 @@ from .routers import (
     backup,
     convergence,
     keys,
+    live,
     miniapp,
     packages,
     servers,
@@ -92,6 +93,8 @@ async def lifespan(app: FastAPI):
     else:
         log.info("ENABLE_SCHEDULER=false — background scheduler not started.")
     yield
+    from .stream import hub
+    await hub.stop()
     if task:
         task.cancel()
     await botmgr.stop()
@@ -177,6 +180,7 @@ app.include_router(convergence.router)
 app.include_router(packages.router)
 app.include_router(servers.router)
 app.include_router(keys.router)
+app.include_router(live.router)
 app.include_router(stats.router)
 app.include_router(settings_router.router)
 app.include_router(settings_router.bot_router)

@@ -67,6 +67,19 @@ KNOBS: dict[str, dict] = {
         "help": "0 disables caching entirely — every dashboard poll then hits the "
                 "experimental metrics endpoint of every server.",
     },
+    "stream_interval": {
+        "default": 5, "min": 1, "max": 300,
+        "label": "Live update interval (seconds)",
+        "help": "How often the panel samples every server for the live view. "
+                "One sampler serves every open tab, so this is the real load on "
+                "your Outline servers regardless of how many people are watching.",
+    },
+    "stream_heartbeat": {
+        "default": 20, "min": 5, "max": 300,
+        "label": "Live update keep-alive (seconds)",
+        "help": "A comment is sent this often so a proxy does not close an idle "
+                "stream. Lower it if your reverse proxy times out sooner.",
+    },
     "sub_update_hours": {
         "default": 12, "min": 1, "max": 168,
         "label": "Subscription refresh (hours)",

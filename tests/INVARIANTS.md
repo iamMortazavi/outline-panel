@@ -81,6 +81,16 @@ C7 | test_a_key_made_in_outline_manager_is_never_touched | tests/test_convergenc
 C8 | test_drift_reports_a_key_deleted_upstream_without_recreating_it | tests/test_convergence.py
 C9 | test_the_report_is_owner_only | tests/test_convergence.py
 
+## Live stream
+
+L1 | test_a_reseller_only_sees_their_own_customers | tests/test_stream.py
+L2 | test_revoking_an_admin_closes_their_stream | tests/test_stream.py
+L3 | test_the_stream_needs_a_session | tests/test_stream.py
+L4 | test_the_stream_sends_what_the_rest_route_sends | tests/test_stream.py
+L5 | test_an_unreachable_server_arrives_as_an_error_not_a_gap | tests/test_stream.py
+L6 | test_one_sample_serves_every_tab | tests/test_stream.py
+L7 | test_the_sampler_stops_when_the_last_tab_closes | tests/test_stream.py
+
 ## Structure
 
 S1 | test_core_never_imports_the_web_or_the_bot | tests/test_architecture.py

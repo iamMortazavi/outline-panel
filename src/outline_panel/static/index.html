@@ -117,7 +117,7 @@ const api=async(p,o={})=>{const {idem,...rest}=o;
   let d=null;try{d=await r.json();}catch(_){}
   // session expired/revoked anywhere (incl. silent polls) → bounce to login once
   if(r.status===403){toast(I18N.tErr(d),1);throw new Error(I18N.tErr(d));}
-  if(r.status===401){if(pollT){clearInterval(pollT);pollT=null;}if(S.screen!=='login')showLogin();throw new Error(I18N.tErr(d));}
+  if(r.status===401){stopLive();if(S.screen!=='login')showLogin();throw new Error(I18N.tErr(d));}
   if(!r.ok)throw new Error(d?I18N.tErr(d):('HTTP '+r.status));return d;};
 let toastT;function toast(m,bad){const t=$('#toast');t.innerHTML='<span style="width:7px;height:7px;border-radius:50%;background:'+(bad?'var(--danger)':'var(--acc)')+'"></span>'+esc(m);
   t.style.cssText='position:fixed;left:50%;bottom:30px;transform:translateX(-50%);z-index:70;background:var(--panel2);color:var(--text);border:1px solid '+(bad?'rgba(255,107,122,.4)':'var(--line2)')+';padding:12px 20px;border-radius:99px;font-size:13.5px;font-weight:500;box-shadow:0 14px 40px rgba(0,0,0,.55);display:flex;align-items:center;gap:9px;animation:ocRise .2s both';
@@ -153,7 +153,15 @@ const S={screen:'login',servers:[],keys:[],errors:[],stats:null,me:null,
 // hiding controls here only spares people buttons that would 403.
 const can=c=>!!(S.me&&S.me.caps.includes(c));
 const isOwner=()=>!!(S.me&&S.me.isOwner);
-let pollT=null;
+let pollT=null, liveES=null, liveFails=0;
+// Stop watching, whichever way we happen to be watching. Called on sign-out,
+// on a 401 from any request, and before opening a new connection — an
+// EventSource that outlives its session reconnects forever against a cookie
+// that no longer works.
+function stopLive(){
+  if(liveES){liveES.close();liveES=null;}
+  if(pollT){clearInterval(pollT);pollT=null;}
+}
 // poll-side change detection: only touch the DOM when the underlying data
 // actually changed, so a 5s tick with no new metrics causes zero re-render.
 let _sigStats='',_sigKeys='';
@@ -168,7 +176,7 @@ function toggleLang(){const l=I18N.languages.find(x=>x.id!==I18N.lang);
 /* ---------- auth ---------- */
 async function checkAuth(){try{await api('/api/me');await enterApp();}catch(_){showLogin();}}
 function showLogin(needTotp){
-  S.screen='login';if(pollT){clearInterval(pollT);pollT=null;}
+  S.screen='login';stopLive();
   root.innerHTML=`<div style="min-height:100dvh;display:grid;place-items:center;padding:24px;position:relative;overflow:hidden">
     <div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(110% 70% at 50% -10%,rgba(var(--acc-rgb),.07),transparent 58%)"></div>
     <div style="width:100%;max-width:380px;position:relative;animation:ocRise .5s both">
@@ -245,8 +253,46 @@ async function enterApp(){
   // Refresh immediately when the user returns to the tab.
   if(!enterApp._visBound){enterApp._visBound=true;
     document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.screen==='app'){refreshStats().then(()=>{renderRail();renderKpi();});}});}
-  if(pollT)clearInterval(pollT);
   _sigStats=statsSig();_sigKeys=keysSig();
+  startLive();
+}
+
+/* ---------- live updates ---------- */
+// One server-side sampler feeds every open tab, so this costs the Outline
+// servers nothing per tab — which is the whole reason it replaced polling.
+// Rendering still goes through the same two signatures, so a tick that carries
+// no change touches no DOM.
+function applySnapshot(d){
+  if(d.stats){S.stats=d.stats;pushBw();}
+  if(d.keys){S.keys=d.keys;S.errors=d.errors||[];}
+  const ss=statsSig();
+  if(ss!==_sigStats){_sigStats=ss;renderRail();renderKpi();}
+  const ks=keysSig();
+  if(ks!==_sigKeys){_sigKeys=ks;renderList();renderKpi();renderBanner();}
+}
+function startLive(){
+  stopLive();
+  if(typeof EventSource==='undefined')return startPolling();
+  const es=new EventSource('/api/stream');
+  liveES=es;
+  es.addEventListener('hello',()=>{liveFails=0;});
+  es.addEventListener('snapshot',e=>{
+    liveFails=0;
+    try{applySnapshot(JSON.parse(e.data));}catch(_){}
+  });
+  // The server says this when the account is disabled or deleted mid-stream.
+  // Without it the browser would reconnect against a dead session forever.
+  es.addEventListener('bye',()=>{stopLive();showLogin();});
+  es.onerror=()=>{
+    // EventSource retries on its own; this only catches the case where it
+    // cannot work at all — a proxy that buffers, or a network that blocks
+    // long-lived responses. Three strikes, then back to polling, because a
+    // dashboard that silently stops updating is worse than a chatty one.
+    if(es.readyState===EventSource.CLOSED||++liveFails>=3){stopLive();startPolling();}
+  };
+}
+function startPolling(){
+  if(pollT)return;
   let n=0;pollT=setInterval(async()=>{
     if(document.hidden)return;   // don't fan out to every Outline server while hidden
     await refreshStats();
