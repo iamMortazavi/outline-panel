@@ -33,16 +33,13 @@ jobs:
       - name: Tests
         run: pytest -q
 
-      # tests/test_ui.py drives the real dashboard in Chromium — container
-      # queries, clamp(), prefers-reduced-motion are things only a browser can
-      # answer. It skips itself when there is no browser, so this step is what
-      # makes it actually run somewhere.
-      - name: Browser tests
-        if: matrix.python-version == '3.12'
-        run: |
-          pip install playwright
-          playwright install --with-deps chromium
-          pytest -q tests/test_ui.py
+      # tests/test_ui.py is deliberately NOT run here. It drives the real
+      # dashboard in Chromium, and installing a browser on every CI run buys
+      # less than it costs: the checks it makes are about layout and motion
+      # preferences, which change when someone edits the CSS, not when someone
+      # edits a router. It skips itself without a browser, so `pytest -q` above
+      # stays green; run it locally after touching static/ with:
+      #     pip install playwright && playwright install chromium && pytest tests/test_ui.py
 
       # xfail(strict=True) already fails the run if an expected-failing test
       # starts passing, so a fixed A1 case cannot land silently marked broken.

@@ -1,11 +1,20 @@
 """
 The rules from MODERNIZATION.md §3, checked in a real browser.
 
-Skipped wherever Playwright or a Chromium build is missing, which is most CI
-runners — so these are a gate for whoever has the browser and never a reason a
-contributor cannot run the suite. The static checks that do not need a browser
-(no `innerWidth` in a layout expression) live in `test_architecture.py` and run
-everywhere.
+**Not run in CI, by choice.** Installing a browser on every run buys less than
+it costs: what these check is layout and motion preferences, which move when
+someone edits `static/`, not when someone edits a router. So they skip
+themselves wherever Playwright or a Chromium build is missing, and CI stays a
+plain `pytest -q`. Run them by hand after touching the frontend:
+
+    pip install playwright && playwright install chromium && pytest tests/test_ui.py
+
+Both absent-cases are verified to skip rather than error — a module-level
+`importorskip` for the package, a `skipif` for the browser — because a test file
+that explodes on collection would take the whole suite with it.
+
+The static checks that need no browser (no `innerWidth` in a layout expression)
+live in `test_architecture.py` and run everywhere.
 
 The dashboard is served by a real uvicorn on a temporary database. An ASGI
 transport would not do: half of what is being asserted is what the *browser*

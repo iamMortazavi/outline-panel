@@ -771,7 +771,9 @@ above. Recommended order, and why:
   between a phone and an unusable grid. `renderList` patches keyed rows instead
   of rebuilding the table, which is what makes a live stream survivable:
   measured in Chromium, focus, caret position and scroll position all survive a
-  snapshot arriving while you type.
+  snapshot arriving while you type. `tests/test_ui.py` holds those checks; it is
+  run by hand rather than in CI, since a browser install per run costs more than
+  it returns for checks that only move when `static/` does.
 
 * **5 is under way and deliberately partial.** Twelve operations are typed —
   the ones the dashboard actually renders from, plus the subscription summary,

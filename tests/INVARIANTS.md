@@ -91,7 +91,7 @@ L5 | test_an_unreachable_server_arrives_as_an_error_not_a_gap | tests/test_strea
 L6 | test_one_sample_serves_every_tab | tests/test_stream.py
 L7 | test_the_sampler_stops_when_the_last_tab_closes | tests/test_stream.py
 
-## Interface (browser-verified; skipped where there is no Chromium)
+## Interface (browser-verified; run locally, not in CI — see tests/test_ui.py)
 
 U1 | test_the_layout_follows_the_container_not_a_javascript_measurement | tests/test_ui.py
 U2 | test_nothing_ever_scrolls_sideways | tests/test_ui.py
