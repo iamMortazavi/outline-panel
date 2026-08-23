@@ -1,0 +1,20 @@
+{
+  "body": {
+    "caps": [
+      "keys.view"
+    ],
+    "createdTs": "<TS>",
+    "credit": 0,
+    "creditEnabled": true,
+    "disabled": false,
+    "discountPct": 5,
+    "id": 4,
+    "isOwner": false,
+    "servers": [
+      "s1"
+    ],
+    "telegramId": null,
+    "username": "goldie"
+  },
+  "status": 200
+}

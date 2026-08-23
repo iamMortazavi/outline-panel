@@ -61,6 +61,9 @@ def _norm(value, key=None):
     # the DB (and therefore the backup dir) lives in a per-run tempdir
     if isinstance(value, str) and value.startswith(("/tmp/", "/var/folders/")):
         return "<PATH>"
+    # a snapshot is named for the second it was taken in
+    if isinstance(value, str):
+        value = re.sub(r"outline-panel-\d{8}-\d{6}\.db", "outline-panel-<STAMP>.db", value)
     return value
 
 
@@ -385,5 +388,163 @@ async def test_golden_audit_shape(seeded):
     blob = json.dumps(body)
     for secret in ("sara-pw", "reza-pw", "\"pw\""):
         assert secret not in blob, f"the audit log leaked {secret!r}"
+    await owner.aclose()
+    await sara.aclose()
+
+
+# ------------------------------------------------------- the rest of the surface
+async def test_golden_admin_and_catalogue_writes(seeded):
+    """Creating and editing the things the owner administers.
+
+    These were the last responses with no snapshot at all, which made them the
+    ones a `response_model` could quietly thin without anything noticing.
+    """
+    application, deps, fakes = seeded
+    owner, sara, ids = await _seed(seeded)
+
+    r = await owner.post("/api/admins", json={
+        "username": "goldie", "password": "goldie-pw", "caps": ["keys.view"],
+        "servers": ["s1"], "credit_enabled": True, "discount_pct": 5})
+    _check("write_create_admin", r.status_code, r.json())
+    aid = r.json()["id"]
+    r = await owner.put(f"/api/admins/{aid}",
+                        json={"caps": ["keys.view", "keys.edit"], "disabled": True})
+    _check("write_edit_admin", r.status_code, r.json())
+    r = await owner.delete(f"/api/admins/{aid}")
+    _check("write_delete_admin", r.status_code, r.json())
+
+    r = await owner.post("/api/packages",
+                         json={"name": "Golden", "gb": 5, "days": 7, "price": 50_000})
+    _check("write_create_package", r.status_code, r.json())
+    pid = r.json()["id"]
+    r = await owner.put(f"/api/packages/{pid}",
+                        json={"name": "Golden II", "gb": 6, "days": 7, "price": 60_000})
+    _check("write_edit_package", r.status_code, r.json())
+    r = await owner.delete(f"/api/packages/{pid}")
+    _check("write_delete_package", r.status_code, r.json())
+
+    r = await owner.put("/api/servers/s2", json={"name": "Berlin II"})
+    _check("write_rename_server", r.status_code, r.json())
+    for name, url, body in [
+        ("metrics", "/api/servers/s1/settings/metrics", {"enabled": True}),
+        ("global_limit", "/api/servers/s1/settings/global-limit", {"limit_gb": 500}),
+        ("server_name", "/api/servers/s1/settings/name", {"name": "Tokyo Edge"}),
+    ]:
+        r = await owner.put(url, json=body)
+        _check(f"write_server_{name}", r.status_code, r.json())
+    r = await owner.delete("/api/servers/s2")
+    _check("write_delete_server", r.status_code, r.json())
+    await owner.aclose()
+    await sara.aclose()
+
+
+async def test_golden_settings_writes(seeded):
+    """Panel settings, the profile host, and the two-factor enrolment flow."""
+    application, deps, fakes = seeded
+    owner, sara, ids = await _seed(seeded)
+
+    r = await owner.put("/api/settings/panel", json={"notify_limit_percent": 75})
+    _check("write_panel_knob", r.status_code, r.json())
+    r = await owner.post("/api/settings/panel/reset")
+    _check("write_panel_reset", r.status_code, r.json())
+    r = await owner.put("/api/settings/profile",
+                        json={"baseUrl": "https://star.example.com"})
+    _check("write_profile_host", r.status_code, r.json())
+    r = await owner.put("/api/settings/profile", json={"baseUrl": ""})
+    _check("write_profile_host_cleared", r.status_code, r.json())
+
+    # Enrolling a second factor. The secret and its otpauth:// URI are the
+    # contract with every authenticator app, so the shape is worth pinning even
+    # though the values are random by design.
+    from outline_panel.core import security
+    r = await owner.post("/api/me/2fa/start")
+    _check("write_2fa_start", r.status_code, r.json())
+    secret = r.json()["secret"]
+    r = await owner.post("/api/me/2fa/enable", json={"code": security.totp_now(secret)})
+    _check("write_2fa_enable", r.status_code, r.json())
+    r = await owner.get("/api/me/2fa")
+    _check("read_2fa_on", r.status_code, r.json())
+    r = await owner.post("/api/me/2fa/disable", json={"password": "pw"})
+    _check("write_2fa_disable", r.status_code, r.json())
+
+    r = await owner.post("/api/me/password", json={"current": "pw", "new": "pw"})
+    _check("write_my_password", r.status_code, r.json())
+    r = await owner.post("/api/settings/password", json={"current": "pw", "new": "pw"})
+    _check("write_owner_password", r.status_code, r.json())
+    await owner.aclose()
+    await sara.aclose()
+
+
+async def test_golden_convergence_and_snapshots(seeded):
+    """The operator's two windows into state: what has not reached a server yet,
+    and what is on disk."""
+    application, deps, fakes = seeded
+    owner, sara, ids = await _seed(seeded)
+    for name, url in [("pending", "/api/convergence"),
+                      ("drift", "/api/convergence/drift")]:
+        r = await owner.get(url)
+        _check(f"read_convergence_{name}", r.status_code, r.json())
+    r = await owner.post("/api/convergence/drift")
+    _check("write_convergence_apply", r.status_code, r.json())
+    r = await owner.post("/api/snapshots")
+    _check("write_snapshot", r.status_code, r.json())
+    r = await owner.delete(f"/api/snapshots/{r.json()['name']}")
+    _check("write_snapshot_delete", r.status_code, r.json())
+    await owner.aclose()
+    await sara.aclose()
+
+
+async def test_golden_mini_app(seeded):
+    """The Telegram Mini App.
+
+    A separate client with its own authentication, calling the same use cases
+    through different routes — so its responses are their own contract, and they
+    had no snapshot at all. `initData` is forged here the way Telegram signs it.
+    """
+    import hashlib
+    import hmac
+    import json as _json
+    import time as _time
+    application, deps, fakes = seeded
+    owner, sara, ids = await _seed(seeded)
+    token = "123456:golden-bot-token"
+    await deps.settings.set("bot_token", token)
+
+    def init_data(uid: int) -> str:
+        fields = {"auth_date": str(int(_time.time())),
+                  "user": _json.dumps({"id": uid, "first_name": "Sara"})}
+        check = "\n".join(f"{k}={fields[k]}" for k in sorted(fields))
+        secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+        sig = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+        return "&".join([*(f"{k}={fields[k]}" for k in sorted(fields)), f"hash={sig}"])
+
+    tma = httpx.AsyncClient(transport=httpx.ASGITransport(app=application),
+                            base_url="http://panel.example.com",
+                            headers={"Authorization": "tma " + init_data(111)})
+    for name, url in [("bootstrap", "/tma/api/bootstrap"), ("keys", "/tma/api/keys"),
+                      ("stats", "/tma/api/stats"), ("packages", "/tma/api/packages")]:
+        r = await tma.get(url)
+        _check(f"tma_{name}", r.status_code, r.json())
+
+    kid = ids["sara"]
+    r = await tma.put(f"/tma/api/keys/s1/{kid}/name", json={"name": "renamed-in-telegram"})
+    _check("tma_rename", r.status_code, r.json())
+    r = await tma.post(f"/tma/api/keys/s1/{kid}/disable")
+    _check("tma_disable", r.status_code, r.json())
+    r = await tma.post(f"/tma/api/keys/s1/{kid}/enable")
+    _check("tma_enable", r.status_code, r.json())
+    r = await tma.post(f"/tma/api/keys/s1/{kid}/sub")
+    _check("tma_sub", r.status_code, r.json())
+    r = await tma.delete(f"/tma/api/keys/s1/{kid}")
+    _check("tma_delete", r.status_code, r.json())
+
+    # and the surface an unsigned blob must not reach
+    anon = httpx.AsyncClient(transport=httpx.ASGITransport(app=application),
+                             base_url="http://panel.example.com",
+                             headers={"Authorization": "tma hash=forged"})
+    r = await anon.get("/tma/api/keys")
+    _check("tma_forged_auth", r.status_code, r.json())
+    await anon.aclose()
+    await tma.aclose()
     await owner.aclose()
     await sara.aclose()

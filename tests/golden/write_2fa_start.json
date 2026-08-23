@@ -1,0 +1,7 @@
+{
+  "body": {
+    "secret": "<RAND>",
+    "uri": "otpauth://totp/Outline%20Panel%3Aadmin?secret=<RAND>&issuer=Outline%20Panel&digits=6&period=30"
+  },
+  "status": 200
+}

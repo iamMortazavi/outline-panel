@@ -1,0 +1,6 @@
+{
+  "body": {
+    "detail": "Invalid Telegram auth"
+  },
+  "status": 401
+}
