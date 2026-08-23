@@ -19,6 +19,17 @@ from ...core.settings import (
     WEBAPP_URL,
 )
 from ..deps import botmgr, current_admin, db, require, require_owner, settings
+from ..schemas import (
+    BotStatus,
+    BotTested,
+    Ok,
+    OwnerSettings,
+    PanelSaved,
+    PanelSettings,
+    ProfileHost,
+    TotpEnrolment,
+    UsernameOk,
+)
 
 # Owner-only by default, so a route added here is locked unless someone opts it
 # out on purpose. The bot section is the one delegatable part, so it gets its
@@ -30,7 +41,7 @@ bot_router = APIRouter(prefix="/api/settings", tags=["settings"],
                        dependencies=[Depends(require("bot.manage"))])
 
 
-@router.get("")
+@router.get("", response_model=OwnerSettings, response_model_exclude_unset=True)
 async def get_settings():
     return {
         "totpEnabled": await settings.get_bool(TOTP_ENABLED),
@@ -42,13 +53,13 @@ class ProfileBody(BaseModel):
     baseUrl: str = ""
 
 
-@router.get("/profile")
+@router.get("/profile", response_model=ProfileHost, response_model_exclude_unset=True)
 async def get_profile_settings():
     base = await settings.get_profile_base()
     return {"baseUrl": base or "", "host": await settings.get_profile_host() or ""}
 
 
-@router.put("/profile")
+@router.put("/profile", response_model=ProfileHost, response_model_exclude_unset=True)
 async def set_profile_settings(body: ProfileBody):
     """Set the customer profile site.
 
@@ -73,7 +84,7 @@ async def set_profile_settings(body: ProfileBody):
     return {"baseUrl": raw, "host": parsed.hostname.lower()}
 
 
-@router.get("/panel")
+@router.get("/panel", response_model=PanelSettings, response_model_exclude_unset=True)
 async def get_panel_settings():
     """Current values plus the spec that describes them.
 
@@ -91,7 +102,7 @@ async def get_panel_settings():
     }
 
 
-@router.put("/panel")
+@router.put("/panel", response_model=PanelSaved, response_model_exclude_unset=True)
 async def set_panel_settings(body: dict):
     """Write any subset of the knobs. Unknown keys are refused rather than
     ignored, so a typo is a visible error and not a setting that never applies."""
@@ -119,7 +130,7 @@ async def set_panel_settings(body: dict):
     return {"ok": True, "values": await settings.knobs()}
 
 
-@router.post("/panel/reset")
+@router.post("/panel/reset", response_model=PanelSaved, response_model_exclude_unset=True)
 async def reset_panel_settings():
     """Drop every stored override and fall back to the env/spec defaults."""
     for key in KNOBS:
@@ -134,7 +145,7 @@ class PasswordBody(BaseModel):
                                  pattern=r"^[A-Za-z0-9._-]+$")
 
 
-@router.post("/password")
+@router.post("/password", response_model=UsernameOk, response_model_exclude_unset=True)
 async def change_password(body: PasswordBody, admin: dict = Depends(current_admin)):
     """Change the owner's own username and/or password.
 
@@ -159,7 +170,7 @@ async def change_password(body: PasswordBody, admin: dict = Depends(current_admi
 # same per-admin columns /api/me/2fa/* does — two places storing one secret is
 # how you end up enabled in one and disabled in the other. `settings` is still
 # written alongside so a rollback to the previous version still finds it.
-@router.post("/2fa/start")
+@router.post("/2fa/start", response_model=TotpEnrolment, response_model_exclude_unset=True)
 async def start_2fa(admin: dict = Depends(require_owner)):
     """Generate a fresh secret and return its provisioning URI for QR display."""
     if admin["totp_enabled"] or await settings.get_bool(TOTP_ENABLED):
@@ -177,7 +188,7 @@ class CodeBody(BaseModel):
     code: str
 
 
-@router.post("/2fa/enable")
+@router.post("/2fa/enable", response_model=Ok, response_model_exclude_unset=True)
 async def enable_2fa(body: CodeBody, admin: dict = Depends(require_owner)):
     secret = admin["totp_secret"] or await settings.get(TOTP_SECRET)
     if not secret:
@@ -193,7 +204,7 @@ class PasswordOnly(BaseModel):
     password: str
 
 
-@router.post("/2fa/disable")
+@router.post("/2fa/disable", response_model=Ok, response_model_exclude_unset=True)
 async def disable_2fa(body: PasswordOnly, admin: dict = Depends(require_owner)):
     if not await settings.verify_admin_password(body.password):
         raise HTTPException(status_code=401, detail="Password is wrong")
@@ -217,7 +228,7 @@ async def _bot_status() -> dict:
     }
 
 
-@bot_router.get("/bot")
+@bot_router.get("/bot", response_model=BotStatus, response_model_exclude_unset=True)
 async def get_bot():
     return await _bot_status()
 
@@ -226,7 +237,7 @@ class BotTokenBody(BaseModel):
     token: str = Field(min_length=20)
 
 
-@bot_router.post("/bot/test")
+@bot_router.post("/bot/test", response_model=BotTested, response_model_exclude_unset=True)
 async def test_bot(body: BotTokenBody):
     try:
         username = await botmgr.validate_token(body.token.strip())
@@ -242,7 +253,7 @@ class BotBody(BaseModel):
     webappUrl: str = ""               # public https base for the Mini App
 
 
-@bot_router.put("/bot")
+@bot_router.put("/bot", response_model=BotStatus, response_model_exclude_unset=True)
 async def set_bot(body: BotBody):
     if body.token and body.token.strip():
         await settings.set(BOT_TOKEN, body.token.strip())

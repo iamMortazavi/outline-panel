@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 
 from ...core.outline_api import OutlineError
 from ..deps import current_admin, reg, require, settings, sids_or_404
+from ..schemas import Stats
 
 router = APIRouter(prefix="/api", tags=["stats"],
                    dependencies=[Depends(require("keys.view"))])
@@ -76,7 +77,7 @@ async def sample(sids: list[str], ttl: int) -> list[dict]:
     return list(await asyncio.gather(*[_stats_for(s, ttl) for s in sids])) if sids else []
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=Stats, response_model_exclude_unset=True)
 async def stats(server: str | None = None,
                 admin: dict = Depends(current_admin)):
     sids = sids_or_404(server, admin)

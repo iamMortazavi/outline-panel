@@ -13,7 +13,14 @@ from ...core import errors
 from ...core.outline_api import OutlineAPI, OutlineError, parse_access_config
 from ...core.utils import gb_to_bytes
 from ..deps import api_or_404, current_admin, db, enforce_scope, host, reg, require, scoped_ids
-from ..schemas import ServerList
+from ..schemas import (
+    HealthHistory,
+    HealthSummary,
+    Ok,
+    ServerCreated,
+    ServerList,
+    ServerSettings,
+)
 
 router = APIRouter(prefix="/api", tags=["servers"],
                    dependencies=[Depends(enforce_scope)])
@@ -51,7 +58,7 @@ async def _server_info(sid: str) -> dict:
     }
 
 
-@router.get("/servers/health")
+@router.get("/servers/health", response_model=HealthSummary, response_model_exclude_unset=True)
 async def servers_health(days: int = 7, admin: dict = Depends(current_admin)):
     """Uptime and mean latency per server over the window, plus how many checks
     each has failed in a row right now."""
@@ -67,7 +74,7 @@ async def servers_health(days: int = 7, admin: dict = Depends(current_admin)):
     return {"days": days, "servers": out}
 
 
-@router.get("/servers/{sid}/health")
+@router.get("/servers/{sid}/health", response_model=HealthHistory, response_model_exclude_unset=True)
 async def server_health(sid: str, limit: int = 100):
     """Recent probe results for one server, newest first."""
     api_or_404(sid)
@@ -86,7 +93,8 @@ async def list_servers(admin: dict = Depends(current_admin)):
     ))}
 
 
-@router.post("/servers", dependencies=[Depends(require("servers.manage"))])
+@router.post("/servers", response_model=ServerCreated, response_model_exclude_unset=True,
+             dependencies=[Depends(require("servers.manage"))])
 async def add_server(body: ServerBody):
     try:
         url, cert_sha256 = parse_access_config(body.apiUrl)
@@ -104,7 +112,8 @@ async def add_server(body: ServerBody):
     return {"ok": True, "id": sid}
 
 
-@router.put("/servers/{sid}", dependencies=[Depends(require("servers.manage"))])
+@router.put("/servers/{sid}", response_model=Ok, response_model_exclude_unset=True,
+            dependencies=[Depends(require("servers.manage"))])
 async def rename_server_local(sid: str, body: NameBody):
     if not reg.meta(sid):
         raise errors.unknown_server()
@@ -113,7 +122,8 @@ async def rename_server_local(sid: str, body: NameBody):
     return {"ok": True}
 
 
-@router.delete("/servers/{sid}", dependencies=[Depends(require("servers.manage"))])
+@router.delete("/servers/{sid}", response_model=Ok, response_model_exclude_unset=True,
+               dependencies=[Depends(require("servers.manage"))])
 async def delete_server(sid: str):
     if not reg.meta(sid):
         raise errors.unknown_server()
@@ -122,7 +132,7 @@ async def delete_server(sid: str):
 
 
 # ----------------------------------------------------- per-server settings
-@router.get("/servers/{sid}/settings")
+@router.get("/servers/{sid}/settings", response_model=ServerSettings, response_model_exclude_unset=True)
 async def get_server_settings(sid: str):
     api = api_or_404(sid)
     out = {"id": sid, "label": reg.meta(sid)["name"], "host": host(reg.meta(sid)["api_url"]),
@@ -141,7 +151,8 @@ async def get_server_settings(sid: str):
     return out
 
 
-@router.put("/servers/{sid}/settings/metrics", dependencies=[Depends(require("servers.manage"))])
+@router.put("/servers/{sid}/settings/metrics", response_model=Ok, response_model_exclude_unset=True,
+            dependencies=[Depends(require("servers.manage"))])
 async def set_metrics(sid: str, body: MetricsBody):
     api = api_or_404(sid)
     try:
@@ -151,7 +162,8 @@ async def set_metrics(sid: str, body: MetricsBody):
     return {"ok": True}
 
 
-@router.put("/servers/{sid}/settings/global-limit", dependencies=[Depends(require("servers.manage"))])
+@router.put("/servers/{sid}/settings/global-limit", response_model=Ok, response_model_exclude_unset=True,
+            dependencies=[Depends(require("servers.manage"))])
 async def set_global_limit(sid: str, body: LimitBody):
     api = api_or_404(sid)
     try:
@@ -164,7 +176,8 @@ async def set_global_limit(sid: str, body: LimitBody):
     return {"ok": True}
 
 
-@router.put("/servers/{sid}/settings/name", dependencies=[Depends(require("servers.manage"))])
+@router.put("/servers/{sid}/settings/name", response_model=Ok, response_model_exclude_unset=True,
+            dependencies=[Depends(require("servers.manage"))])
 async def set_server_name(sid: str, body: NameBody):
     api = api_or_404(sid)
     try:

@@ -11,12 +11,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from ..deps import db, require_owner
+from ..schemas import AuditPage
 
 router = APIRouter(prefix="/api/audit", tags=["audit"],
                    dependencies=[Depends(require_owner)])
 
 
-@router.get("")
+@router.get("", response_model=AuditPage, response_model_exclude_unset=True)
 async def list_audit(limit: int = Query(default=100, ge=1, le=500),
                      before_id: int | None = None,
                      actor_admin_id: int | None = None):

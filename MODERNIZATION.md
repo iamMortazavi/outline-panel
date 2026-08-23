@@ -677,7 +677,7 @@ port), **Q2 targeted** (steps 0–7, not a clean-slate rebuild), **Q3 converged*
 | 3 | **A1 fixed** — subscription aggregate | ✅ `a3277f4` |
 | 4 | Outbox drained; reconciler + drift report | ✅ `d8e3b31` |
 | 8 | Node port + conformance suite | ✅ (adapter #2 pending — see below) |
-| 5 | Response models (12 of 91 operations, ratcheted) | 🟡 started |
+| 5 | Response models — 83 of 92 operations; the other 9 are not JSON | ✅ |
 | 6 | Frontend: tokens, container queries, keyed patching, a11y | ✅ |
 | 7 | SSE; polling removed | ✅ |
 
@@ -775,17 +775,21 @@ above. Recommended order, and why:
   run by hand rather than in CI, since a browser install per run costs more than
   it returns for checks that only move when `static/` does.
 
-* **5 is under way and deliberately partial.** Twelve operations are typed —
-  the ones the dashboard actually renders from, plus the subscription summary,
-  which is a contract with VPN clients nobody here controls. A ratchet in
-  `test_architecture.py` lets that number rise and never fall. The remaining 79
-  are mechanical; doing them in one change would be 79 chances to drop a field.
+* **5 is done.** Every route that returns JSON declares what it returns — 83 of
+  92 operations. The nine that do not are a named allowlist in
+  `test_architecture.py`, not a threshold: they return a file, a stream, plain
+  text, or the whole database as a download, and a response model on any of them
+  would be a lie about the content type. Adding a route without a model now
+  fails that test and has to be argued for by name.
 
-  The generated-TypeScript half of step 5 moved to step 6 on purpose. The
-  frontend is inline `<script>` inside HTML, which `tsc` cannot check; the types
-  become useful the moment step 6 extracts that JavaScript into files, and not a
-  moment earlier. `scripts/dump_openapi.py` already produces the schema they
-  will be generated from, with no npm dependency and no build step.
+  The order mattered more than the models did. 36 new snapshots went in first —
+  the entire Mini App surface, convergence, and every admin, package, server and
+  settings write had no snapshot at all — taking the golden master from 57 to
+  93. Only then were the models attached. All 93 came back byte-identical
+  afterwards, which is the evidence that 71 newly typed routes dropped no field.
+  `response_model_exclude_unset=True` is on every one of them: without it FastAPI
+  materialises absent optional fields as `null`, which is itself a wire change.
+
 * **The second node adapter** is gated on having a VLESS node to develop
   against, not on any of this.
 

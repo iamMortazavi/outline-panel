@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from ...core import errors
 from ..deps import current_admin, db, on_credit, price_for, require_owner
-from ..schemas import PackageList
+from ..schemas import Ok, PackageList, PackageRow
 
 router = APIRouter(prefix="/api/packages", tags=["packages"])
 
@@ -51,7 +51,8 @@ async def list_packages(admin: dict = Depends(current_admin)):
     }
 
 
-@router.post("", dependencies=[Depends(require_owner)])
+@router.post("", response_model=PackageRow, response_model_exclude_unset=True,
+             dependencies=[Depends(require_owner)])
 async def create_package(body: PackageBody):
     pid = await db.add_package(body.name.strip(), body.gb or None,
                                body.days or None, body.price,
@@ -59,7 +60,8 @@ async def create_package(body: PackageBody):
     return await db.get_package(pid)
 
 
-@router.put("/{pkg_id}", dependencies=[Depends(require_owner)])
+@router.put("/{pkg_id}", response_model=PackageRow, response_model_exclude_unset=True,
+            dependencies=[Depends(require_owner)])
 async def edit_package(pkg_id: int, body: PackageBody):
     if await db.get_package(pkg_id) is None:
         raise errors.unknown_package()
@@ -71,7 +73,8 @@ async def edit_package(pkg_id: int, body: PackageBody):
     return await db.get_package(pkg_id)
 
 
-@router.delete("/{pkg_id}", dependencies=[Depends(require_owner)])
+@router.delete("/{pkg_id}", response_model=Ok, response_model_exclude_unset=True,
+               dependencies=[Depends(require_owner)])
 async def remove_package(pkg_id: int):
     if await db.get_package(pkg_id) is None:
         raise errors.unknown_package()

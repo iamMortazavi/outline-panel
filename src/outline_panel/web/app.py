@@ -61,6 +61,7 @@ from .routers import (
 from .routers import (
     settings as settings_router,
 )
+from .schemas import Ok
 
 log = logging.getLogger("webapp")
 
@@ -189,7 +190,7 @@ app.include_router(subscription.router)
 app.include_router(miniapp.router)
 
 
-@app.get("/healthz")
+@app.get("/healthz", response_model=Ok, response_model_exclude_unset=True)
 async def healthz():
     return {"ok": True}
 

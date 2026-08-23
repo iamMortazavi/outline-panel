@@ -59,6 +59,10 @@ W2 | test_golden_reseller_reads | tests/test_golden.py
 W3 | test_golden_public_subscription | tests/test_golden.py
 W4 | test_golden_errors | tests/test_golden.py
 W5 | test_golden_writes | tests/test_golden.py
+W6 | test_golden_admin_and_catalogue_writes | tests/test_golden.py
+W7 | test_golden_settings_writes | tests/test_golden.py
+W8 | test_golden_convergence_and_snapshots | tests/test_golden.py
+W9 | test_golden_mini_app | tests/test_golden.py
 
 ## The subscription aggregate (A1 — fixed in step 3)
 
@@ -107,3 +111,4 @@ S1 | test_core_never_imports_the_web_or_the_bot | tests/test_architecture.py
 S2 | test_the_rules_have_exactly_one_definition | tests/test_architecture.py
 S3 | test_only_the_composition_root_opens_the_database | tests/test_architecture.py
 S4 | test_the_api_does_not_describe_itself_to_the_internet | tests/test_architecture.py
+S5 | test_every_json_route_says_what_it_returns | tests/test_architecture.py

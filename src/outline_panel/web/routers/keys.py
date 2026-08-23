@@ -32,7 +32,7 @@ from ..deps import (
     settings,
     sids_or_404,
 )
-from ..schemas import KeyList, LimitOk, Ok
+from ..schemas import BulkResult, KeyCreated, KeyList, LimitOk, Ok, OwnerSet, Rotated, SubInfoAdmin
 from . import subscription as sub_router
 
 log = logging.getLogger("web.keys")
@@ -393,7 +393,7 @@ async def _add_extra_servers(key: dict, extras: list[str], sid: str,
     return key
 
 
-@router.post("/servers/{sid}/keys")
+@router.post("/servers/{sid}/keys", response_model=KeyCreated, response_model_exclude_unset=True)
 async def create_key(sid: str, request: Request, body: CreateBody,
                      admin: dict = Depends(require("keys.create"))):
     # The charge lands before Outline is called, so a lost response used to
@@ -497,7 +497,7 @@ async def enable_key(sid: str, kid: str):
     return _ok(await customer.resume(db, ops, sid, kid))
 
 
-@router.post("/servers/{sid}/keys/{kid}/extend")
+@router.post("/servers/{sid}/keys/{kid}/extend", response_model=LimitOk, response_model_exclude_unset=True)
 async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
                      admin: dict = Depends(require("keys.edit"))):
     """Adjust a key's validity: positive `days` extends (and re-enables a
@@ -575,7 +575,7 @@ class BulkServerBody(BaseModel):
     action: str = Field(pattern="^(add|remove)$")
 
 
-@router.post("/servers/{sid}/bulk-servers")
+@router.post("/servers/{sid}/bulk-servers", response_model=BulkResult, response_model_exclude_unset=True)
 async def bulk_server_membership(sid: str, body: BulkServerBody,
                                  admin: dict = Depends(require("keys.edit"))):
     """Put a whole selection of customers on this server, or take them off it.
@@ -664,7 +664,7 @@ async def _sub_info(token: str, admin: dict) -> dict:
     }
 
 
-@router.post("/servers/{sid}/keys/{kid}/sub")
+@router.post("/servers/{sid}/keys/{kid}/sub", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def make_sub_link(sid: str, kid: str,
                         admin: dict = Depends(require("keys.edit"))):
     """Ensure the key has a stable subscription token; return it + members."""
@@ -677,7 +677,7 @@ async def make_sub_link(sid: str, kid: str,
     return await _sub_info(token, admin)
 
 
-@router.post("/servers/{sid}/keys/{kid}/rotate")
+@router.post("/servers/{sid}/keys/{kid}/rotate", response_model=Rotated, response_model_exclude_unset=True)
 async def rotate_key(sid: str, kid: str,
                      admin: dict = Depends(require("keys.edit"))):
     """Give this customer a fresh Outline key, keeping everything else.
@@ -845,7 +845,7 @@ async def sub_or_404(token: str, admin: dict) -> list[dict]:
     return members
 
 
-@router.post("/sub/{token}/servers/{target}")
+@router.post("/sub/{token}/servers/{target}", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def sub_add_server(token: str, target: str,
                          admin: dict = Depends(require("keys.edit"))):
     """Add `target` to an existing customer's subscription."""
@@ -861,7 +861,7 @@ async def sub_add_server(token: str, target: str,
     return await _sub_info(token, admin)
 
 
-@router.delete("/sub/{token}/servers/{target}")
+@router.delete("/sub/{token}/servers/{target}", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def sub_remove_server(token: str, target: str,
                             admin: dict = Depends(require("keys.edit"))):
     """Remove `target`'s config from the subscription (unlinks the token; the
@@ -878,7 +878,8 @@ class OwnerBody(BaseModel):
     admin_id: int | None = None
 
 
-@router.put("/servers/{sid}/keys/{kid}/owner", dependencies=[Depends(require_owner)])
+@router.put("/servers/{sid}/keys/{kid}/owner", response_model=OwnerSet, response_model_exclude_unset=True,
+            dependencies=[Depends(require_owner)])
 async def set_key_owner(sid: str, kid: str, body: OwnerBody):
     """Move a user onto another admin's page.
 

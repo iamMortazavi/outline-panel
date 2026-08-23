@@ -17,12 +17,13 @@ from fastapi import APIRouter, Depends
 
 from ...application import convergence
 from ..deps import db, reg, require_owner, settings
+from ..schemas import DriftReport, PendingList, Reconciled
 
 router = APIRouter(prefix="/api/convergence", tags=["convergence"],
                    dependencies=[Depends(require_owner)])
 
 
-@router.get("")
+@router.get("", response_model=PendingList, response_model_exclude_unset=True)
 async def pending():
     """Effects still queued, newest problem first by server."""
     rows = await db.due_commands(2 ** 31, limit=500)
@@ -37,7 +38,7 @@ async def pending():
     }
 
 
-@router.get("/drift")
+@router.get("/drift", response_model=DriftReport, response_model_exclude_unset=True)
 async def drift():
     """Dry run: what each server enforces versus what this panel believes.
 
@@ -57,7 +58,7 @@ async def drift():
     }
 
 
-@router.post("/drift")
+@router.post("/drift", response_model=Reconciled, response_model_exclude_unset=True)
 async def apply_drift():
     """Queue the suspensions the dry run found, once, now."""
     return await convergence.reconcile(db, reg, apply=True)

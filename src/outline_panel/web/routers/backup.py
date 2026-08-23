@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from ...core import backup as backup_core
 from ...core.settings import BOT_ENABLED, BOT_TOKEN
 from ..deps import botmgr, db, reg, require_owner, settings
+from ..schemas import Ok, Restored, Snapshot, SnapshotList
 
 log = logging.getLogger("webapp")
 
@@ -33,7 +34,7 @@ async def download_backup():
     )
 
 
-@router.post("/restore")
+@router.post("/restore", response_model=Restored, response_model_exclude_unset=True)
 async def restore_backup(payload: dict):
     # "settings" is not optional: import_all wipes the table, so a payload
     # without it would restore a panel with no admin password — unloggable-into.
@@ -72,7 +73,7 @@ async def _dir():
     return backup_core.backup_dir(await settings.get("backup_dir"), db.path)
 
 
-@router.get("/snapshots")
+@router.get("/snapshots", response_model=SnapshotList, response_model_exclude_unset=True)
 async def list_snapshots():
     directory = await _dir()
     return {
@@ -85,7 +86,7 @@ async def list_snapshots():
     }
 
 
-@router.post("/snapshots")
+@router.post("/snapshots", response_model=Snapshot, response_model_exclude_unset=True)
 async def make_snapshot():
     """Take one now, without waiting for the schedule."""
     directory = await _dir()
@@ -115,7 +116,7 @@ async def download_snapshot(name: str):
                         headers={"Cache-Control": "no-store"})
 
 
-@router.delete("/snapshots/{name}")
+@router.delete("/snapshots/{name}", response_model=Ok, response_model_exclude_unset=True)
 async def delete_snapshot(name: str):
     if not backup_core.is_backup_name(name):
         raise HTTPException(status_code=404, detail="Unknown backup")

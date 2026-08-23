@@ -238,22 +238,21 @@ def test_the_node_port_has_no_outline_in_it():
         assert banned not in body, f"the port leaks an Outline detail: {banned}"
 
 
-def test_the_typed_routes_stay_typed():
-    """A8: no route used to declare what it returns.
+def test_every_json_route_says_what_it_returns():
+    """A8, closed.
 
-    A ratchet, not a rule — 74 paths cannot be modelled in one change, and a
-    gate that cannot pass yet gets skipped and then deleted. The count may rise;
-    it may never fall. When it reaches the whole surface this becomes an
-    assertion that every route is typed.
+    No route declared a `response_model`; every response was a hand-built dict
+    and the frontend read it by convention, so a renamed field was invisible
+    until the UI blanked. They all do now — except the handful below, which
+    return something that is not a JSON object at all.
 
-    Counted from the OpenAPI schema rather than from `app.routes`, because this
-    FastAPI holds included routers lazily and the route objects do not exist
-    until something asks for the schema. That is also the artefact the
-    frontend's types will be generated from, so it is the honest thing to count.
+    That list is the point of this test. It is an allowlist, not a threshold:
+    adding a route without a model fails here and has to be argued for by name,
+    which is the opposite of a count quietly drifting upward.
 
-    The models are only safe because the golden master went in first: FastAPI
-    *drops* a field a model does not declare, silently, and a snapshot diff is
-    the only thing that notices.
+    The models are only safe because the golden master went in first. FastAPI
+    *drops* a field a model does not declare — silently, not as a validation
+    error — and 93 response snapshots are the only thing that notices.
     """
     import importlib
     import os
@@ -264,14 +263,38 @@ def test_the_typed_routes_stay_typed():
     appmod = importlib.import_module("outline_panel.web.app")
     schema = appmod.app.openapi()
 
-    total = typed = 0
-    for methods in schema["paths"].values():
-        for op in methods.values():
-            total += 1
+    # Every one of these returns a file, a stream or plain text. A response
+    # model would be a lie about the content type.
+    NOT_JSON = {
+        ("get", "/"),                        # the dashboard itself
+        ("get", "/tma"),                     # the Mini App page
+        ("get", "/{token}"),                 # the customer's page
+        ("get", "/sub/{token}"),             # base64 config list, or that page
+        ("get", "/metrics"),                 # Prometheus text exposition
+        ("get", "/api/stream"),              # server-sent events
+        ("get", "/api/snapshots/{name}"),    # a database file
+        # The whole database as JSON. Modelling it means modelling every table
+        # twice, and it is a download rather than an API response.
+        ("get", "/api/backup"),
+        # Delegates to /sub/{token}/info, which validates through SubInfo by
+        # hand so it can keep its own Cache-Control header — the middleware's
+        # no-store rule covers /api/ paths only, and this is not one.
+        ("get", "/{token}/info"),
+    }
+
+    untyped = set()
+    for path, methods in schema["paths"].items():
+        for method, op in methods.items():
             body = (op.get("responses", {}).get("200", {})
                     .get("content", {}).get("application/json", {}))
-            if "$ref" in str(body.get("schema", {})):
-                typed += 1
-    assert typed >= 12, (
-        f"only {typed} of {total} operations declare a response_model — this "
-        f"number may rise, never fall (MODERNIZATION.md A8)")
+            if "$ref" not in str(body.get("schema", {})):
+                untyped.add((method, path))
+
+    unexpected = untyped - NOT_JSON
+    assert not unexpected, (
+        "these routes do not declare what they return: "
+        + ", ".join(f"{m.upper()} {p}" for m, p in sorted(unexpected)))
+    stale = NOT_JSON - untyped
+    assert not stale, (
+        "the allowlist names routes that are typed now — drop them from it: "
+        + ", ".join(f"{m.upper()} {p}" for m, p in sorted(stale)))
