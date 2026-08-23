@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from ...core import errors, security
 from ..deps import CAPS, current_admin, db, reg, require_owner
+from ..schemas import AdminList, AdminOut, CreditOk, Ledger, Ok
 
 router = APIRouter(prefix="/api/admins", tags=["admins"],
                    dependencies=[Depends(require_owner)])
@@ -90,14 +91,14 @@ class AdminEdit(BaseModel):
     disabled: bool | None = None
 
 
-@router.get("")
+@router.get("", response_model=AdminList, response_model_exclude_unset=True)
 async def list_admins():
     return {"admins": [_public(a) for a in await db.all_admins()],
             "caps": list(CAPS),
             "servers": [{"id": s, "name": reg.meta(s)["name"]} for s in reg.ids()]}
 
 
-@router.post("")
+@router.post("", response_model=AdminOut, response_model_exclude_unset=True)
 async def create_admin(body: AdminBody):
     if await db.get_admin_by_username(body.username):
         raise HTTPException(status_code=400, detail="That username is taken")
@@ -110,7 +111,7 @@ async def create_admin(body: AdminBody):
     # Validate BEFORE the insert: a duplicate Telegram id used to 400 *after*
     # add_admin, leaving a half-configured admin row behind on every attempt.
     await _check_telegram(body.telegram_id, None)
-    h, s = security.hash_password(body.password)
+    h, s = await security.hash_password_async(body.password)
     aid = await db.add_admin(body.username, h, s, caps=caps, servers=servers)
     await db.update_admin(aid, credit_enabled=1 if body.credit_enabled else 0,
                           discount_pct=body.discount_pct,
@@ -123,7 +124,7 @@ async def create_admin(body: AdminBody):
     return _public(await db.get_admin(aid))
 
 
-@router.put("/{admin_id}")
+@router.put("/{admin_id}", response_model=AdminOut, response_model_exclude_unset=True)
 async def edit_admin(admin_id: int, body: AdminEdit):
     row = await db.get_admin(admin_id)
     if row is None:
@@ -135,7 +136,7 @@ async def edit_admin(admin_id: int, body: AdminEdit):
                             detail="The owner's access cannot be restricted")
     fields: dict = {}
     if body.password:
-        h, s = security.hash_password(body.password)
+        h, s = await security.hash_password_async(body.password)
         fields.update(pw_hash=h, pw_salt=s)
     if body.caps is not None:
         fields["caps"] = _clean_caps(body.caps)
@@ -157,7 +158,7 @@ async def edit_admin(admin_id: int, body: AdminEdit):
     return _public(await db.get_admin(admin_id))
 
 
-@router.post("/{admin_id}/credit")
+@router.post("/{admin_id}/credit", response_model=CreditOk, response_model_exclude_unset=True)
 async def add_credit(admin_id: int, body: CreditBody):
     """Top up (or correct) a balance. Never sets it: an absolute write would
     have no trace of what changed or why."""
@@ -174,14 +175,14 @@ async def add_credit(admin_id: int, body: CreditBody):
     return {"ok": True, "credit": bal}
 
 
-@router.get("/{admin_id}/ledger")
+@router.get("/{admin_id}/ledger", response_model=Ledger, response_model_exclude_unset=True)
 async def admin_ledger(admin_id: int):
     if await db.get_admin(admin_id) is None:
         raise errors.unknown_admin()
     return {"entries": await db.ledger_for(admin_id)}
 
 
-@router.delete("/{admin_id}")
+@router.delete("/{admin_id}", response_model=Ok, response_model_exclude_unset=True)
 async def remove_admin(admin_id: int, me: dict = Depends(current_admin)):
     row = await db.get_admin(admin_id)
     if row is None:

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from ...core import config, errors, security
 from ...core.settings import OWNER_USERNAME, TOTP_ENABLED, TOTP_SECRET
 from ..deps import CAPS, COOKIE_NAME, _csv, current_admin, db, on_credit, settings, signer
+from ..schemas import Ledger, Me, Ok, TotpEnrolment, TotpState
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
@@ -54,7 +55,7 @@ async def _record_login_fail(ip: str) -> None:
     await db.record_rate_event(_GLOBAL)
 
 
-@router.post("/login")
+@router.post("/login", response_model=Ok, response_model_exclude_unset=True)
 async def login(body: LoginBody, request: Request, response: Response):
     ip = _client_ip(request)
     await _check_login_rate(ip, await settings.num("login_max_fails"),
@@ -99,13 +100,13 @@ async def login(body: LoginBody, request: Request, response: Response):
     return {"ok": True}
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=Ok, response_model_exclude_unset=True)
 async def logout(response: Response):
     response.delete_cookie(COOKIE_NAME)
     return {"ok": True}
 
 
-@router.get("/me")
+@router.get("/me", response_model=Me, response_model_exclude_unset=True)
 async def me(admin: dict = Depends(current_admin)):
     # The dashboard has nothing else to branch on: it renders every control for
     # everyone unless told otherwise. This is UX, not the boundary.
@@ -122,7 +123,7 @@ async def me(admin: dict = Depends(current_admin)):
     }
 
 
-@router.get("/me/ledger")
+@router.get("/me/ledger", response_model=Ledger, response_model_exclude_unset=True)
 async def my_ledger(admin: dict = Depends(current_admin)):
     """An admin is spending money; they get to see where it went."""
     return {"entries": await db.ledger_for(admin["id"])}
@@ -133,7 +134,7 @@ class MyPasswordBody(BaseModel):
     new: str = Field(min_length=6, max_length=200)
 
 
-@router.post("/me/password")
+@router.post("/me/password", response_model=Ok, response_model_exclude_unset=True)
 async def change_my_password(body: MyPasswordBody,
                              admin: dict = Depends(current_admin)):
     """Rotate your own password, whoever you are.
@@ -149,7 +150,7 @@ async def change_my_password(body: MyPasswordBody,
     if admin["is_owner"]:
         await settings.set_admin_password(body.new)
     else:
-        h, s = security.hash_password(body.new)
+        h, s = await security.hash_password_async(body.new)
         await db.update_admin(admin["id"], pw_hash=h, pw_salt=s)
     return {"ok": True}
 
@@ -158,13 +159,13 @@ async def change_my_password(body: MyPasswordBody,
 # Enrolling is something you do to your own account, so all three routes work
 # for whoever is signed in. The owner-only /api/settings/2fa/* pair stays as it
 # was for older clients; both now write the same per-admin columns.
-@router.get("/me/2fa")
+@router.get("/me/2fa", response_model=TotpState, response_model_exclude_unset=True)
 async def my_2fa(admin: dict = Depends(current_admin)):
     return {"enabled": bool(admin["totp_enabled"]),
             "pending": bool(admin["totp_secret"] and not admin["totp_enabled"])}
 
 
-@router.post("/me/2fa/start")
+@router.post("/me/2fa/start", response_model=TotpEnrolment, response_model_exclude_unset=True)
 async def start_my_2fa(admin: dict = Depends(current_admin)):
     """Mint a secret and hand back its otpauth:// URI for the QR.
 
@@ -183,7 +184,7 @@ class CodeBody(BaseModel):
     code: str
 
 
-@router.post("/me/2fa/enable")
+@router.post("/me/2fa/enable", response_model=Ok, response_model_exclude_unset=True)
 async def enable_my_2fa(body: CodeBody, admin: dict = Depends(current_admin)):
     if not admin["totp_secret"]:
         raise errors.totp_not_started()
@@ -197,7 +198,7 @@ class MyPasswordOnly(BaseModel):
     password: str
 
 
-@router.post("/me/2fa/disable")
+@router.post("/me/2fa/disable", response_model=Ok, response_model_exclude_unset=True)
 async def disable_my_2fa(body: MyPasswordOnly,
                          admin: dict = Depends(current_admin)):
     """Turning it off costs a password, so a borrowed open tab cannot."""

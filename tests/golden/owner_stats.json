@@ -1,0 +1,37 @@
+{
+  "body": {
+    "available": false,
+    "bwCurrent": 0,
+    "bwPeak": 0,
+    "bwTs": null,
+    "dataBytes": 0,
+    "locations": [],
+    "perServer": [
+      {
+        "available": false,
+        "bwCurrent": 0,
+        "bwPeak": 0,
+        "bwTs": null,
+        "dataBytes": 0,
+        "id": "s1",
+        "locations": [],
+        "name": "Tokyo",
+        "tunnelSec": 0
+      },
+      {
+        "available": false,
+        "bwCurrent": 0,
+        "bwPeak": 0,
+        "bwTs": null,
+        "dataBytes": 0,
+        "id": "s2",
+        "locations": [],
+        "name": "Berlin",
+        "tunnelSec": 0
+      }
+    ],
+    "serverCount": 2,
+    "tunnelSec": 0
+  },
+  "status": 200
+}

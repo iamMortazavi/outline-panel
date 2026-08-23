@@ -1,0 +1,16 @@
+{
+  "body": {
+    "accessUrl": "ss://YWVzOnB3@1.2.3.4:8388/?o=1",
+    "createdTs": "<TS>",
+    "durationDays": 45,
+    "id": "10",
+    "limit": 26843545600,
+    "monthlyBytes": null,
+    "name": "golden-new",
+    "pending": true,
+    "profileUrl": "/sub/<RAND>",
+    "serverId": "s1",
+    "subToken": "<RAND>"
+  },
+  "status": 200
+}

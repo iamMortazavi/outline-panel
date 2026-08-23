@@ -1,0 +1,6 @@
+{
+  "body": {
+    "detail": "Warn at % of data limit: must be between 0 and 100"
+  },
+  "status": 400
+}

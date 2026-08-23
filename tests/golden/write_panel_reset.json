@@ -1,0 +1,29 @@
+{
+  "body": {
+    "ok": true,
+    "values": {
+      "audit_retention_days": 90,
+      "backup_interval_hours": 24,
+      "backup_keep": 14,
+      "bulk_concurrency": 8,
+      "currency": "Toman",
+      "cycle_days": 30,
+      "expiry_check_interval": 60,
+      "health_alert_failures": 3,
+      "health_retention_days": 14,
+      "login_global_max_fails": 30,
+      "login_max_fails": 5,
+      "login_window": 300,
+      "metrics_ttl": 15,
+      "notify_expiry_days": 3,
+      "notify_limit_percent": 80,
+      "session_max_age": 604800,
+      "stream_heartbeat": 20,
+      "stream_interval": 5,
+      "sub_cache_seconds": 20,
+      "sub_max_per_minute": 30,
+      "sub_update_hours": 12
+    }
+  },
+  "status": 200
+}

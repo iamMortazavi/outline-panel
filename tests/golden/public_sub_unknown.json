@@ -1,0 +1,7 @@
+{
+  "body": {
+    "code": "sub.unknown",
+    "detail": "Unknown subscription"
+  },
+  "status": 404
+}

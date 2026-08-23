@@ -1,0 +1,7 @@
+{
+  "body": {
+    "baseUrl": "https://star.example.com",
+    "host": "star.example.com"
+  },
+  "status": 200
+}

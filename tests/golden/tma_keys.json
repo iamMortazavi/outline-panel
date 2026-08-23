@@ -1,0 +1,31 @@
+{
+  "body": {
+    "errors": [],
+    "keys": [
+      {
+        "accessUrl": "ss://YWVzOnB3@1.2.3.4:8388/?o=1",
+        "activated": false,
+        "createdTs": "<TS>",
+        "disabled": false,
+        "durationDays": 30,
+        "expiry": null,
+        "id": "9",
+        "lastSeen": null,
+        "limit": 10737418240,
+        "monthlyBytes": null,
+        "name": "sara-customer",
+        "ownerAdminId": 2,
+        "ownerName": "sara",
+        "peakDevices": null,
+        "pending": true,
+        "profileUrl": "/sub/<RAND>",
+        "serverId": "s1",
+        "serverName": "Tokyo",
+        "subToken": "<RAND>",
+        "tunnelSec": null,
+        "used": 0
+      }
+    ]
+  },
+  "status": 200
+}

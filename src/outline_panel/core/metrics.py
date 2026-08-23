@@ -86,6 +86,9 @@ declare("outline_panel_http_requests_total", "HTTP requests served.")
 declare("outline_panel_http_request_seconds", "Duration of the last request.", "gauge")
 declare("outline_panel_keys_created_total", "Access keys created.")
 declare("outline_panel_keys_deleted_total", "Access keys deleted.")
+declare("outline_panel_keys_capped_total",
+        "Keys cut off for reaching their allowance on a backend that cannot "
+        "enforce a limit itself.")
 declare("outline_panel_keys_rotated_total", "Access keys replaced for a customer.")
 declare("outline_panel_credit_charged_total", "Credit taken for purchases.")
 declare("outline_panel_credit_added_total", "Credit granted (top-ups and reversals).")
@@ -95,6 +98,9 @@ declare("outline_panel_scheduler_passes_total", "Completed scheduler passes.")
 declare("outline_panel_scheduler_leader", "1 when this process holds the lease.", "gauge")
 declare("outline_panel_keys", "Access keys known to the panel.", "gauge")
 declare("outline_panel_servers", "Configured Outline servers.", "gauge")
+declare("outline_panel_outbox_depth",
+        "Effects the panel has decided but a server has not been told yet.",
+        "gauge")
 declare("outline_panel_credit_drift", "Admins whose balance disagrees with their ledger.",
         "gauge")
 declare("outline_panel_uptime_seconds", "Seconds since this process started.", "gauge")

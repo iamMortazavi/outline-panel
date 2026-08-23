@@ -1,0 +1,23 @@
+{
+  "body": {
+    "members": [
+      {
+        "keyId": "9",
+        "name": "renamed-in-telegram",
+        "serverId": "s1",
+        "serverName": "Tokyo"
+      }
+    ],
+    "path": "/sub/<RAND>",
+    "profileUrl": null,
+    "servers": [
+      {
+        "id": "s1",
+        "included": true,
+        "name": "Tokyo"
+      }
+    ],
+    "token": "<RAND>"
+  },
+  "status": 200
+}

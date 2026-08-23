@@ -1,0 +1,12 @@
+{
+  "body": {
+    "created_ts": "<TS>",
+    "days": 7,
+    "gb": 5.0,
+    "id": 6,
+    "monthly_gb": null,
+    "name": "Golden",
+    "price": 50000
+  },
+  "status": 200
+}

@@ -1,0 +1,26 @@
+{
+  "body": {
+    "days": 7,
+    "servers": [
+      {
+        "avgLatencyMs": 42,
+        "failingNow": 0,
+        "id": "s1",
+        "name": "Tokyo",
+        "ok": 1,
+        "probes": 1,
+        "uptimePct": 100.0
+      },
+      {
+        "avgLatencyMs": null,
+        "failingNow": 1,
+        "id": "s2",
+        "name": "Berlin",
+        "ok": 0,
+        "probes": 1,
+        "uptimePct": 0.0
+      }
+    ]
+  },
+  "status": 200
+}

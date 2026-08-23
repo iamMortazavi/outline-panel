@@ -1,0 +1,7 @@
+{
+  "body": {
+    "code": "server.unknown",
+    "detail": "Unknown server"
+  },
+  "status": 404
+}

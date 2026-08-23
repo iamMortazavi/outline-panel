@@ -1,0 +1,7 @@
+{
+  "body": {
+    "code": "key.unknown",
+    "detail": "Unknown key"
+  },
+  "status": 404
+}

@@ -35,7 +35,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "h2>=4.1"]
+# Talking to an Xray node. Three pure-Python wheels (h2 pulls hpack and
+# hyperframe) rather than grpcio's binary wheel and generated stubs — see
+# core/xray/__init__.py. A panel with only Outline servers never imports it.
+xray = ["h2>=4.1"]
 
 [project.urls]
 Homepage = "https://github.com/iamMortazavi/outline-panel"
@@ -72,3 +76,10 @@ ignore = [
     "B008",   # FastAPI relies on calls (Depends/Header/Cookie) in arg defaults
     "B904",   # web handlers re-raise as HTTPException without chaining on purpose
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Sharing a fixture between test modules means importing it, and the test that
+# uses it takes a parameter of the same name. Ruff reads that as a redefinition;
+# it is the pattern pytest documents, and the alternative is a noqa on every
+# test in the file.
+"tests/*" = ["F811"]

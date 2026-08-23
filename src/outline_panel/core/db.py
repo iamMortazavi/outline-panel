@@ -183,6 +183,31 @@ CREATE TABLE IF NOT EXISTS server_health (
 """
 
 
+# One row per effect that has not reached its server yet.
+#
+# A subscription spans several Outline servers and any of them can be down when
+# a customer is suspended or renewed. Failing the whole operation would mean an
+# unreachable server can stop you cutting off a customer on the servers that are
+# reachable — the case you most need to work. So the panel records the intent
+# here and a worker keeps trying.
+#
+# `next_try_ts` rather than a plain queue: retries back off, and a row that
+# cannot be applied must not spin against a dead server every pass.
+_OUTBOX_SCHEMA = """
+CREATE TABLE IF NOT EXISTS outbox (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    token       TEXT,
+    server_id   TEXT NOT NULL,
+    key_id      TEXT NOT NULL,
+    command     TEXT NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    last_error  TEXT,
+    next_try_ts INTEGER NOT NULL,
+    created_ts  INTEGER NOT NULL
+);
+"""
+
+
 class DB:
     def __init__(self, path: str):
         self.path = path
@@ -345,6 +370,53 @@ class DB:
                 (security.profile_token(r["key_id"]), r["server_id"], r["key_id"]),
             )
 
+    async def _m010_server_kind(self) -> None:
+        """Which backend a server speaks, and how to reach it.
+
+        Every existing row is Outline — that is the only thing the panel could
+        talk to until now — so the default backfills correctly with no data
+        migration. `config` is JSON rather than columns because what an adapter
+        needs is the adapter's business: Outline needs a URL and a certificate
+        fingerprint (which keep their own columns, so nothing about that path
+        changes), while Xray needs an inbound tag and the Reality parameters a
+        customer's link is built from.
+        """
+        cur = await self.conn.execute("PRAGMA table_info(servers)")
+        cols = [r[1] for r in await cur.fetchall()]
+        if "kind" not in cols:
+            await self.conn.execute(
+                "ALTER TABLE servers ADD COLUMN kind TEXT DEFAULT 'outline'")
+            await self.conn.execute(
+                "UPDATE servers SET kind = 'outline' WHERE kind IS NULL")
+        if "config" not in cols:
+            await self.conn.execute("ALTER TABLE servers ADD COLUMN config TEXT")
+
+    async def _m009_outbox(self) -> None:
+        """Effects that have not reached their server yet (see web/../executor)."""
+        await self.conn.execute(_OUTBOX_SCHEMA)
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox(next_try_ts)")
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_outbox_token ON outbox(token)")
+
+    async def _m008_key_lookup_indexes(self) -> None:
+        """Index the two lookups that had none.
+
+        `keys` only ever had its composite primary key, so both
+        `get_keys_by_sub_token` and `get_key_by_sub_token` scanned the whole
+        table — on the **public**, unauthenticated subscription route, which
+        every VPN client re-fetches on its own refresh interval. Filtering a
+        reseller's page by `owner_admin_id` scanned it too, in Python, after
+        loading every row.
+
+        Nothing about behaviour changes here; this is the same answer, found
+        without reading the table.
+        """
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keys_sub_token ON keys(sub_token)")
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keys_owner ON keys(owner_admin_id)")
+
     async def _m007_per_admin_totp(self) -> None:
         """A second factor for every admin, not only the owner.
 
@@ -402,13 +474,15 @@ class DB:
 
     # servers ---------------------------------------------------------------
     async def add_server(self, sid: str, name: str, api_url: str,
-                         cert_sha256: str | None = None) -> None:
+                         cert_sha256: str | None = None,
+                         kind: str = "outline", config: str | None = None) -> None:
         async with self._lock:
             await self.conn.execute(
                 "INSERT OR REPLACE INTO servers "
-                "(id, name, api_url, cert_sha256, created_ts) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (sid, name, api_url, cert_sha256, int(time.time())),
+                "(id, name, api_url, cert_sha256, kind, config, created_ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (sid, name, api_url, cert_sha256, kind or "outline", config,
+                 int(time.time())),
             )
             await self.conn.commit()
 
@@ -932,6 +1006,53 @@ class DB:
             await self.conn.commit()
             return cur.rowcount
 
+    # outbox ----------------------------------------------------------------
+    async def enqueue_command(self, token: str | None, server_id: str,
+                              key_id: str, command: str,
+                              error: str | None = None) -> int:
+        """Record an effect that could not be applied now. Returns the row id."""
+        now = int(time.time())
+        async with self._lock:
+            cur = await self.conn.execute(
+                "INSERT INTO outbox (token, server_id, key_id, command, attempts,"
+                " last_error, next_try_ts, created_ts)"
+                " VALUES (?, ?, ?, ?, 1, ?, ?, ?)",
+                (token, server_id, key_id, command, (error or "")[:300] or None,
+                 now + 30, now),
+            )
+            await self.conn.commit()
+            return cur.lastrowid
+
+    async def due_commands(self, now_ts: int, limit: int = 100) -> list[dict]:
+        cur = await self.conn.execute(
+            "SELECT * FROM outbox WHERE next_try_ts <= ? ORDER BY id LIMIT ?",
+            (now_ts, limit))
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def reschedule_command(self, row_id: int, delay: int,
+                                 error: str | None) -> None:
+        """Back this row off after a failed attempt."""
+        async with self._lock:
+            await self.conn.execute(
+                "UPDATE outbox SET attempts = attempts + 1, last_error = ?,"
+                " next_try_ts = ? WHERE id = ?",
+                ((error or "")[:300] or None, int(time.time()) + delay, row_id))
+            await self.conn.commit()
+
+    async def drop_command(self, row_id: int) -> None:
+        async with self._lock:
+            await self.conn.execute("DELETE FROM outbox WHERE id = ?", (row_id,))
+            await self.conn.commit()
+
+    async def pending_commands(self, token: str) -> list[dict]:
+        cur = await self.conn.execute(
+            "SELECT * FROM outbox WHERE token = ? ORDER BY id", (token,))
+        return [dict(r) for r in await cur.fetchall()]
+
+    async def outbox_depth(self) -> int:
+        cur = await self.conn.execute("SELECT COUNT(*) AS n FROM outbox")
+        return int((await cur.fetchone())["n"])
+
     # audit -----------------------------------------------------------------
     async def add_audit(self, actor_admin_id: int | None, actor_name: str | None,
                         action: str, target: str | None, status: int | None,
@@ -1023,7 +1144,10 @@ class DB:
             return cur.rowcount
 
     # backup / restore ------------------------------------------------------
-    _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts")
+    _SERVER_COLS = ("id", "name", "api_url", "cert_sha256", "created_ts",
+                    # a backup taken before these existed simply has neither,
+                    # and the column filter in import_all drops what is absent
+                    "kind", "config")
     _KEY_COLS = ("server_id", "key_id", "name", "limit_bytes", "duration_days",
                  "activated_ts", "expiry_ts", "disabled", "monthly_bytes",
                  "reset_ts", "sub_token", "created_ts", "owner_admin_id")
@@ -1135,4 +1259,7 @@ _MIGRATIONS = (
     DB._m005_server_health,
     DB._m006_backfill_profile_tokens,
     DB._m007_per_admin_totp,
+    DB._m008_key_lookup_indexes,
+    DB._m009_outbox,
+    DB._m010_server_kind,
 )

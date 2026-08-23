@@ -1,0 +1,21 @@
+{
+  "body": {
+    "caps": [
+      "keys.view",
+      "keys.create",
+      "keys.edit",
+      "keys.delete",
+      "servers.manage",
+      "bot.manage"
+    ],
+    "credit": 0,
+    "creditEnabled": false,
+    "discountPct": 0,
+    "id": 1,
+    "isOwner": true,
+    "ok": true,
+    "servers": [],
+    "username": "admin"
+  },
+  "status": 200
+}

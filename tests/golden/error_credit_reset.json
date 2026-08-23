@@ -1,0 +1,7 @@
+{
+  "body": {
+    "code": "credit.must_buy_package",
+    "detail": "You buy from the price list — renew by picking a package"
+  },
+  "status": 403
+}

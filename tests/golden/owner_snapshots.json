@@ -1,0 +1,11 @@
+{
+  "body": {
+    "dir": "<PATH>",
+    "enabled": true,
+    "everyHours": 24,
+    "keep": 14,
+    "lastTs": 0,
+    "snapshots": []
+  },
+  "status": 200
+}

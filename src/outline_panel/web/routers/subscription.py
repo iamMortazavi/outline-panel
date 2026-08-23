@@ -26,14 +26,31 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from ...core import config, errors
 from ...core.outline_api import OutlineError
 from ..deps import STATIC_DIR, db, reg, settings
+from ..schemas import SubInfo
 
 router = APIRouter(tags=["subscription"])
 
 
-def _ss_with_label(access_url: str, label: str) -> str:
-    """Clean ``ss://base64@host:port#label`` (drop Outline's /?outline=1 path)."""
-    m = re.match(r"^(ss://[^@]+@[^/?#]+)", access_url or "")
-    base = m.group(1) if m else (access_url or "").split("#")[0].split("?")[0]
+def _with_label(access_url: str, label: str) -> str:
+    """Put the customer's name on a config line, whatever protocol it is.
+
+    Outline hands back `ss://…@host:port/?outline=1`, and that trailing path and
+    query are noise every client ignores — so for `ss://` they are dropped.
+
+    Nothing else may be touched. A `vless://` URL carries its whole
+    configuration in the query string — the Reality public key, the SNI, the
+    fingerprint, the flow — and the old code, which stripped everything after
+    `?` for any scheme it did not recognise, turned a working config into a
+    line that cannot connect. That is the shape of bug a second backend finds.
+    """
+    url = access_url or ""
+    if not url:
+        return ""
+    if url.startswith("ss://"):
+        m = re.match(r"^(ss://[^@]+@[^/?#]+)", url)
+        base = m.group(1) if m else url.split("#")[0].split("?")[0]
+    else:
+        base = url.split("#")[0]          # replace the label, keep the rest
     return f"{base}#{quote(label)}" if base else ""
 
 
@@ -131,7 +148,7 @@ async def _collect_fresh(token: str) -> dict:
         name = key.get("name") or m.get("name") or kid
         title = title or name
         sname = (reg.meta(sid) or {}).get("name") or sid
-        line = _ss_with_label(key.get("accessUrl", ""),
+        line = _with_label(key.get("accessUrl", ""),
                               f"{name} · {sname}" if multi else name)
         if not line:
             continue
@@ -201,9 +218,16 @@ async def subscription(token: str, request: Request):
                     headers=headers)
 
 
-@router.get("/sub/{token}/info")
+@router.get("/sub/{token}/info", response_model=SubInfo)
 async def subscription_info(token: str, request: Request):
-    """JSON usage summary that powers the browser page (token is the secret)."""
+    """JSON usage summary that powers the browser page (token is the secret).
+
+    Validated through `SubInfo` by hand rather than by returning a bare dict,
+    because the `Cache-Control` header has to survive: this carries the same
+    `ss://` key material as the raw subscription, and the middleware's no-store
+    rule only covers `/api/` paths — not this one, and not the profile host that
+    delegates to it.
+    """
     await _rate_limit(request)
-    # Carries the same ss:// key material as the raw sub — no-store, same as it.
-    return JSONResponse(await _collect(token), headers={"Cache-Control": "no-store"})
+    info = SubInfo(**await _collect(token))
+    return JSONResponse(info.model_dump(), headers={"Cache-Control": "no-store"})

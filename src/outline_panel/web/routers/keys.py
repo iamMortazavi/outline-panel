@@ -9,9 +9,12 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from ...application import customer
+from ...application.executor import Executor
 from ...core import errors, metrics, security
 from ...core.outline_api import OutlineAPI, OutlineError
 from ...core.utils import gb_to_bytes
+from ...ports.node import MetricsCapable
 from .. import idempotency
 from ..deps import (
     api_or_404,
@@ -30,15 +33,43 @@ from ..deps import (
     settings,
     sids_or_404,
 )
+from ..schemas import BulkResult, KeyCreated, KeyList, LimitOk, Ok, OwnerSet, Rotated, SubInfoAdmin
 from . import subscription as sub_router
 
 log = logging.getLogger("web.keys")
+
+# One customer, every server they are on. Endpoints still name a single key
+# because that is what a URL and an Outline server understand; nothing past
+# this point acts on one member (see MODERNIZATION.md A1).
+ops = Executor(reg, db)
+
+
+def _ok(deferred: list[dict]) -> dict:
+    """The response every write shares.
+
+    Plain `{"ok": True}` when every member reached its server, which is the
+    shape the panel has always returned. `pending` appears only when some
+    member did not: the panel has recorded the intent and a worker is
+    retrying, and saying nothing would be claiming an effect that has not
+    happened yet.
+    """
+    return {"ok": True, "pending": deferred} if deferred else {"ok": True}
 router = APIRouter(prefix="/api", tags=["keys"],
                    dependencies=[Depends(enforce_scope)])
 
 
 # --------------------------------------------------------------- read helpers
-async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
+async def _conn_info(api) -> dict[str, dict]:
+    """Last-seen and peak devices, when the backend can answer that.
+
+    `MetricsCapable` is a capability, not part of `NodePort`: it is Outline's
+    experimental endpoint, off by default even there, and an Xray node has no
+    equivalent at all. The dashboard already degrades to "advanced stats are
+    off" — asking anyway turned that into a 500 for every panel with an Xray
+    server on it.
+    """
+    if not isinstance(api, MetricsCapable):
+        return {}
     try:
         m = await api.get_server_metrics_cached("30d", await settings.num("metrics_ttl"))
     except OutlineError:
@@ -92,7 +123,9 @@ async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
         activated = meta.get("activated_ts") is not None
         out.append({
             "id": kid, "serverId": sid, "serverName": m["name"],
-            "name": k.get("name") or f"Key {kid}",
+            # Outline stores a name; Xray has no such field. The panel always
+            # knows it, so fall back to the row before inventing "Key <uuid>".
+            "name": k.get("name") or meta.get("name") or f"Key {kid}",
             "accessUrl": k.get("accessUrl"),
             "used": int(usage.get(str(kid), 0)),
             "limit": limit_b,
@@ -117,7 +150,7 @@ async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
     return {"serverId": sid, "serverName": m["name"], "keys": out, "error": None}
 
 
-@router.get("/keys")
+@router.get("/keys", response_model=KeyList, response_model_exclude_unset=True)
 async def list_keys(server: str | None = None,
                    admin: dict = Depends(require("keys.view"))):
     sids = sids_or_404(server, admin)
@@ -252,42 +285,19 @@ def deny_free(admin: dict) -> None:
 
 
 async def _apply_package(sid: str, kid: str, pkg: dict) -> dict:
-    """Add a package's time and volume to an existing key (a renewal).
+    """Add a package's time and volume to an existing customer (a renewal).
 
-    limit_bytes is the *cumulative ceiling* Outline counts against, never a
-    plan size, so adding to it is the correct operation. Outline is told first
-    and the DB committed after — a 502 must not move the dates, or the retry
-    charges twice and extends twice.
+    Every server they are on, not just the one in the URL: a renewal that moves
+    one row leaves the scheduler to cut the customer off everywhere else at the
+    old date, after they paid.
+
+    `limit_bytes` is the *cumulative ceiling* Outline counts against, never a
+    plan size, so adding to it is the correct operation (invariant T2).
     """
-    api = api_or_404(sid)
-    meta = await ensure_local(sid, kid)
-    now = int(time.time())
-
-    cur_limit = meta.get("limit_bytes")
-    if pkg["gb"] is None or cur_limit is None:
-        new_limit = None          # unlimited either way; never take away access
-    else:
-        new_limit = int(cur_limit) + gb_to_bytes(pkg["gb"])
-    try:
-        if new_limit is None:
-            await api.remove_data_limit(kid)
-        else:
-            await api.set_data_limit(kid, new_limit)
-    except OutlineError as e:
-        raise errors.upstream(str(e))
-
-    await db.set_limit(sid, kid, new_limit)
-    days = int(pkg["days"] or 0)
-    if days:
-        if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
-            # still pending: the clock has not started, so lengthen the term
-            await db.set_duration(sid, kid, int(meta["duration_days"]) + days)
-        else:
-            base = max(meta.get("expiry_ts") or 0, now)
-            await db.set_expiry(sid, kid, base + days * 86400)
-    if meta.get("disabled"):
-        await db.set_disabled(sid, kid, False)
-    return {"ok": True, "limit": new_limit}
+    api_or_404(sid)
+    await ensure_local(sid, kid)
+    deferred, new_limit = await customer.apply_package(db, ops, sid, kid, pkg)
+    return {**_ok(deferred), "limit": new_limit}
 
 
 async def _reverse(admin: dict, bought: tuple[dict, int, int] | None, sid: str,
@@ -396,7 +406,7 @@ async def _add_extra_servers(key: dict, extras: list[str], sid: str,
     return key
 
 
-@router.post("/servers/{sid}/keys")
+@router.post("/servers/{sid}/keys", response_model=KeyCreated, response_model_exclude_unset=True)
 async def create_key(sid: str, request: Request, body: CreateBody,
                      admin: dict = Depends(require("keys.create"))):
     # The charge lands before Outline is called, so a lost response used to
@@ -436,7 +446,8 @@ async def create_key(sid: str, request: Request, body: CreateBody,
     return key
 
 
-@router.put("/servers/{sid}/keys/{kid}/name", dependencies=[Depends(require("keys.edit"))])
+@router.put("/servers/{sid}/keys/{kid}/name", response_model=Ok, response_model_exclude_unset=True,
+            dependencies=[Depends(require("keys.edit"))])
 async def rename_key(sid: str, kid: str, body: NameBody):
     api = api_or_404(sid)
     try:
@@ -448,80 +459,58 @@ async def rename_key(sid: str, kid: str, body: NameBody):
     return {"ok": True}
 
 
-@router.put("/servers/{sid}/keys/{kid}/limit")
+@router.put("/servers/{sid}/keys/{kid}/limit", response_model=LimitOk,
+            response_model_exclude_unset=True)
 async def set_key_limit(sid: str, kid: str, body: LimitBody,
                         admin: dict = Depends(require("keys.edit"))):
     deny_free(admin)
-    api = api_or_404(sid)
+    api_or_404(sid)
     limit_bytes = gb_to_bytes(body.limit_gb) if body.limit_gb > 0 else None
-    meta = await ensure_local(sid, kid)
-    if not (meta and meta.get("disabled")):
-        try:
-            if limit_bytes is not None:
-                await api.set_data_limit(kid, limit_bytes)
-            else:
-                await api.remove_data_limit(kid)
-        except OutlineError as e:
-            raise errors.upstream(str(e))
-    await db.set_limit(sid, kid, limit_bytes)
-    return {"ok": True, "limit": limit_bytes}
+    await ensure_local(sid, kid)
+    deferred = await customer.set_allowance(db, ops, sid, kid, limit_bytes)
+    return {**_ok(deferred), "limit": limit_bytes}
 
 
-@router.put("/servers/{sid}/keys/{kid}/monthly")
+@router.put("/servers/{sid}/keys/{kid}/monthly", response_model=Ok,
+            response_model_exclude_unset=True)
 async def set_key_monthly(sid: str, kid: str, body: MonthlyBody,
                           admin: dict = Depends(require("keys.edit"))):
     deny_free(admin)
-    api = api_or_404(sid)
-    meta = await ensure_local(sid, kid)
-    if body.monthly_gb > 0:
-        monthly = gb_to_bytes(body.monthly_gb)
-        # Seed the first cycle's allowance on Outline (create_key_for:157 does
-        # the same). Without it the quota is bookkeeping only and the key runs
-        # unmetered until the first scheduler reset, a full cycle away.
-        if meta.get("limit_bytes") is None and not meta.get("disabled"):
-            try:
-                usage = await api.get_transfer_metrics()
-                # same shape as the scheduler's reset (scheduler.py:89-92):
-                # limit_bytes holds the cumulative ceiling, not the plan size
-                new_limit = int(usage.get(str(kid), 0)) + monthly
-                await api.set_data_limit(kid, new_limit)
-            except OutlineError as e:
-                raise errors.upstream(str(e))
-            await db.set_limit(sid, kid, new_limit)
-        # First reset one cycle out (like create_key_for) so saving a quota
-        # doesn't trigger an immediate reset on the next scheduler pass.
-        await db.set_monthly(sid, kid, monthly,
-                             int(time.time()) + await settings.cycle_seconds())
-    else:
-        await db.set_monthly(sid, kid, None, None)
-    return {"ok": True}
-
-
-@router.post("/servers/{sid}/keys/{kid}/disable", dependencies=[Depends(require("keys.edit"))])
-async def disable_key(sid: str, kid: str):
-    api = api_or_404(sid)
+    api_or_404(sid)
     await ensure_local(sid, kid)
-    try:
-        await api.set_data_limit(kid, 0)
-    except OutlineError as e:
-        raise errors.upstream(str(e))
-    await db.set_disabled(sid, kid, True)
-    return {"ok": True}
+    monthly = gb_to_bytes(body.monthly_gb) if body.monthly_gb > 0 else None
+    # The first reset is one cycle out, so saving a quota does not trigger an
+    # immediate reset on the next scheduler pass. Seeding this cycle's allowance
+    # upstream is the aggregate's job — without it the quota is bookkeeping only
+    # and the key runs unmetered until that first reset, a whole cycle away.
+    deferred = await customer.set_monthly(db, ops, reg, sid, kid, monthly,
+                                          await settings.cycle_seconds())
+    return _ok(deferred)
 
 
-@router.post("/servers/{sid}/keys/{kid}/enable", dependencies=[Depends(require("keys.edit"))])
+@router.post("/servers/{sid}/keys/{kid}/disable", response_model=Ok, response_model_exclude_unset=True,
+             dependencies=[Depends(require("keys.edit"))])
+async def disable_key(sid: str, kid: str):
+    """Suspend the customer — on every server they are on.
+
+    Suspending only the key named in the URL left them fully live on the mirror,
+    which is the server their client fails over to the moment the primary stops
+    answering. That is not a suspension.
+    """
+    api_or_404(sid)
+    await ensure_local(sid, kid)
+    return _ok(await customer.suspend(db, ops, sid, kid))
+
+
+@router.post("/servers/{sid}/keys/{kid}/enable", response_model=Ok, response_model_exclude_unset=True,
+             dependencies=[Depends(require("keys.edit"))])
 async def enable_key(sid: str, kid: str):
-    api = api_or_404(sid)
-    meta = await db.get_key(sid, kid)
-    try:
-        await enable_on_outline(api, kid, meta or {})
-    except OutlineError as e:
-        raise errors.upstream(str(e))
-    await db.set_disabled(sid, kid, False)
-    return {"ok": True}
+    """The mirror image of suspend: paying again brings back every server."""
+    api_or_404(sid)
+    return _ok(await customer.resume(db, ops, sid, kid))
 
 
-@router.post("/servers/{sid}/keys/{kid}/extend")
+@router.post("/servers/{sid}/keys/{kid}/extend", response_model=LimitOk, response_model_exclude_unset=True)
 async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
                      admin: dict = Depends(require("keys.edit"))):
     """Adjust a key's validity: positive `days` extends (and re-enables a
@@ -553,35 +542,19 @@ async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
         raise HTTPException(status_code=400, detail="days must not be zero")
     # No money on this path, but the days still stack up on a double-send.
     try:
-        api = api_or_404(sid)
-        meta = await ensure_local(sid, kid)
-        now = int(time.time())
-        # Re-enable FIRST: committing the new expiry before the Outline call means a
-        # 502 still moves the date, and the admin's retry extends a second time.
-        # only re-enable on an extension, never on a reduction
-        if body.days > 0 and meta.get("disabled"):
-            try:
-                await enable_on_outline(api, kid, meta)
-            except OutlineError as e:
-                raise errors.upstream(str(e))
-        if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
-            # not yet activated — adjust the stored duration (min 1 day)
-            await db.set_duration(sid, kid,
-                                  max(1, int(meta["duration_days"]) + body.days))
-        else:
-            base = max(meta.get("expiry_ts") or 0, now)
-            await db.set_expiry(sid, kid, max(now, base + body.days * 86400))
-        if body.days > 0 and meta.get("disabled"):
-            await db.set_disabled(sid, kid, False)
+        api_or_404(sid)
+        await ensure_local(sid, kid)
+        deferred = await customer.extend(db, ops, sid, kid, body.days)
     except BaseException:
         await guard.abandon()
         raise
-    result = {"ok": True}
+    result = _ok(deferred)
     await guard.done(result)
     return result
 
 
-@router.post("/servers/{sid}/keys/{kid}/reset")
+@router.post("/servers/{sid}/keys/{kid}/reset", response_model=LimitOk,
+             response_model_exclude_unset=True)
 async def reset_usage(sid: str, kid: str,
                       admin: dict = Depends(require("keys.edit"))):
     """Give the key a fresh allowance now (used + quota), and re-enable it.
@@ -590,24 +563,17 @@ async def reset_usage(sid: str, kid: str,
     raises the data limit to current-usage + the per-cycle allowance.
     """
     deny_free(admin)
-    api = api_or_404(sid)
+    api_or_404(sid)
     meta = await ensure_local(sid, kid)
     # Only monthly_bytes may be the base. limit_bytes is the *cumulative ceiling*
-    # this endpoint itself writes below, so using it would compound every cycle
+    # this endpoint itself writes, so using it would compound every cycle
     # (10 -> 20 -> 40 GB). A plain data limit has no per-cycle size to restore.
-    base = meta.get("monthly_bytes")
-    if not base:
+    if not meta.get("monthly_bytes"):
         raise HTTPException(status_code=400, detail="Set a monthly quota first")
-    try:
-        usage = await api.get_transfer_metrics()
-        used = int(usage.get(str(kid), 0))
-        new_limit = used + int(base)
-        await api.set_data_limit(kid, new_limit)
-    except OutlineError as e:
-        raise errors.upstream(str(e))
-    await db.set_limit(sid, kid, new_limit)
-    await db.set_disabled(sid, kid, False)
-    return {"ok": True, "limit": new_limit}
+    # Recomputed per member: Outline counts usage per key, so "used + allowance"
+    # is a different number on each server the customer is on.
+    deferred, new_limit = await customer.reset_usage(db, ops, reg, sid, kid)
+    return {**_ok(deferred), "limit": new_limit}
 
 
 class KeyRef(BaseModel):
@@ -622,7 +588,7 @@ class BulkServerBody(BaseModel):
     action: str = Field(pattern="^(add|remove)$")
 
 
-@router.post("/servers/{sid}/bulk-servers")
+@router.post("/servers/{sid}/bulk-servers", response_model=BulkResult, response_model_exclude_unset=True)
 async def bulk_server_membership(sid: str, body: BulkServerBody,
                                  admin: dict = Depends(require("keys.edit"))):
     """Put a whole selection of customers on this server, or take them off it.
@@ -637,10 +603,32 @@ async def bulk_server_membership(sid: str, body: BulkServerBody,
     Partial success is the normal outcome, not an error: one unreachable server
     or one key someone else owns must not sink the other fourteen. Every item
     comes back with its own verdict and the caller reports them.
+
+    Three phases, and the order of them is the point:
+
+    1. **Authorise every row, one at a time.** This is the security boundary and
+       it stays sequential and cheap — the DB alone for a key the panel already
+       knows. `ensure_local` pays an upstream lookup only for a key it has never
+       seen, which is the adoption path.
+    2. **Do the upstream work once per *subscription*, several at a time.** Once
+       per subscription rather than once per row because a selection can name
+       two members of the same customer, and mirroring them separately would put
+       two keys on the destination for one person — the second unbilled and
+       invisible. Several at a time because this ran strictly in series: a few
+       hundred customers against a server across the sea took minutes, which is
+       long enough for a reverse proxy to close the connection and leave the
+       operator not knowing what landed.
+    3. **Report in the order asked.** Concurrency is an implementation detail;
+       a list that comes back shuffled is not.
+
+    Safe to retry as a whole: `mirror_onto` returns early for a server the
+    customer is already on, and `_unmirror` for one they are not.
     """
     api_or_404(sid)
-    done: list[dict] = []
-    failed: list[dict] = []
+
+    # phase 1 — authorise, and group the rows by the customer they name
+    plan: dict[str, list[dict]] = {}
+    resolved: list[dict] = []
     for ref in body.keys:
         label = f"{ref.server_id}/{ref.key_id}"
         try:
@@ -656,17 +644,49 @@ async def bulk_server_membership(sid: str, body: BulkServerBody,
                 token = security.profile_token(ref.key_id)
                 await db.set_sub_token(ref.server_id, ref.key_id, token)
             await sub_or_404(token, admin)
-            if body.action == "add":
-                await mirror_onto(token, sid)
-            else:
-                await _unmirror(token, sid)
-            done.append({"serverId": ref.server_id, "keyId": ref.key_id,
-                         "name": meta.get("name") or ref.key_id, "token": token})
         except HTTPException as e:
-            failed.append({"key": label, "error": str(e.detail)})
+            resolved.append({"label": label, "error": str(e.detail)})
+            continue
         except Exception as e:  # noqa: BLE001 — one bad key must not sink the batch
-            log.exception("bulk %s failed for %s", body.action, label)
-            failed.append({"key": label, "error": str(e)})
+            log.exception("bulk %s could not resolve %s", body.action, label)
+            resolved.append({"label": label, "error": str(e)})
+            continue
+        row = {"serverId": ref.server_id, "keyId": ref.key_id,
+               "name": meta.get("name") or ref.key_id, "token": token}
+        plan.setdefault(token, []).append(row)
+        resolved.append({"label": label, "row": row, "token": token})
+
+    # phase 2 — one operation per subscription, a few at a time
+    gate = asyncio.Semaphore(max(1, await settings.num("bulk_concurrency")))
+
+    async def apply(token: str) -> str | None:
+        async with gate:
+            try:
+                if body.action == "add":
+                    await mirror_onto(token, sid)
+                else:
+                    await _unmirror(token, sid)
+            except HTTPException as e:
+                return str(e.detail)
+            except Exception as e:  # noqa: BLE001
+                log.exception("bulk %s failed for subscription %s", body.action, token)
+                return str(e)
+            return None
+
+    tokens = list(plan)
+    outcomes = dict(zip(tokens, await asyncio.gather(*[apply(t) for t in tokens]),
+                        strict=True))
+
+    # phase 3 — a verdict per row, in the order the caller asked
+    done: list[dict] = []
+    failed: list[dict] = []
+    for item in resolved:
+        error = item.get("error") or outcomes.get(item.get("token"))
+        if error:
+            failed.append({"key": item["label"], "error": error})
+        else:
+            done.append(item["row"])
+
     metrics.inc("outline_panel_bulk_server_total", {"server": sid,
                                                     "action": body.action})
     return {"ok": True, "action": body.action, "server": sid,
@@ -711,7 +731,7 @@ async def _sub_info(token: str, admin: dict) -> dict:
     }
 
 
-@router.post("/servers/{sid}/keys/{kid}/sub")
+@router.post("/servers/{sid}/keys/{kid}/sub", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def make_sub_link(sid: str, kid: str,
                         admin: dict = Depends(require("keys.edit"))):
     """Ensure the key has a stable subscription token; return it + members."""
@@ -724,7 +744,7 @@ async def make_sub_link(sid: str, kid: str,
     return await _sub_info(token, admin)
 
 
-@router.post("/servers/{sid}/keys/{kid}/rotate")
+@router.post("/servers/{sid}/keys/{kid}/rotate", response_model=Rotated, response_model_exclude_unset=True)
 async def rotate_key(sid: str, kid: str,
                      admin: dict = Depends(require("keys.edit"))):
     """Give this customer a fresh Outline key, keeping everything else.
@@ -850,6 +870,13 @@ async def mirror_onto(token: str, target: str) -> None:
         if primary.get("activated_ts"):
             await db.activate(target, key["id"], int(primary["activated_ts"]),
                               int(primary["expiry_ts"] or 0))
+        # The monthly quota is part of the plan, not of the primary's key. Left
+        # off, the mirror was invisible to the scheduler's reset pass and to
+        # `reset_usage`, so it kept the ceiling it was born with for good —
+        # while the customer's own page showed a quota that refreshed.
+        if primary.get("monthly_bytes"):
+            await db.set_monthly(target, key["id"], int(primary["monthly_bytes"]),
+                                 primary.get("reset_ts"))
         if primary.get("disabled"):
             await db.set_disabled(target, key["id"], True)
         await db.set_sub_token(target, key["id"], token)
@@ -885,7 +912,7 @@ async def sub_or_404(token: str, admin: dict) -> list[dict]:
     return members
 
 
-@router.post("/sub/{token}/servers/{target}")
+@router.post("/sub/{token}/servers/{target}", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def sub_add_server(token: str, target: str,
                          admin: dict = Depends(require("keys.edit"))):
     """Add `target` to an existing customer's subscription."""
@@ -901,7 +928,7 @@ async def sub_add_server(token: str, target: str,
     return await _sub_info(token, admin)
 
 
-@router.delete("/sub/{token}/servers/{target}")
+@router.delete("/sub/{token}/servers/{target}", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def sub_remove_server(token: str, target: str,
                             admin: dict = Depends(require("keys.edit"))):
     """Remove `target`'s config from the subscription (unlinks the token; the
@@ -918,7 +945,8 @@ class OwnerBody(BaseModel):
     admin_id: int | None = None
 
 
-@router.put("/servers/{sid}/keys/{kid}/owner", dependencies=[Depends(require_owner)])
+@router.put("/servers/{sid}/keys/{kid}/owner", response_model=OwnerSet, response_model_exclude_unset=True,
+            dependencies=[Depends(require_owner)])
 async def set_key_owner(sid: str, kid: str, body: OwnerBody):
     """Move a user onto another admin's page.
 
@@ -945,21 +973,21 @@ async def set_key_owner(sid: str, kid: str, body: OwnerBody):
     return {"ok": True, "ownerAdminId": target["id"]}
 
 
-@router.delete("/servers/{sid}/keys/{kid}", dependencies=[Depends(require("keys.delete"))])
+@router.delete("/servers/{sid}/keys/{kid}", response_model=Ok, response_model_exclude_unset=True,
+               dependencies=[Depends(require("keys.delete"))])
 async def delete_key(sid: str, kid: str):
-    api = api_or_404(sid)
-    try:
-        await api.delete_key(kid)
-    except OutlineError as e:
-        # Already gone upstream (deleted straight from Outline Manager) is a
-        # success for us: still drop the local row, or it becomes an
-        # undeletable ghost — invisible in the key list, yet still holding the
-        # subscription token that sub_add_server clones from.
-        if e.status != 404:
-            raise errors.upstream(str(e))
+    """Delete the customer — every server they are on.
+
+    Deleting only the named key left live configs on every mirror *and* left the
+    public subscription serving them, with no panel row to find them by. An
+    upstream 404 is still success: a key deleted straight from Outline Manager
+    must not become an undeletable ghost here.
+    """
+    api_or_404(sid)
     meta = await db.get_key(sid, kid)
-    await db.delete_key(sid, kid)
-    # the config is gone; stop serving it from the cached subscription too
+    gone = len((await customer.load(db, sid, kid)).members) or 1
+    deferred = await customer.remove(db, ops, sid, kid)
+    # the configs are gone; stop serving them from the cached subscription too
     sub_router.invalidate((meta or {}).get("sub_token"))
-    metrics.inc("outline_panel_keys_deleted_total", {"server": sid})
-    return {"ok": True}
+    metrics.inc("outline_panel_keys_deleted_total", {"server": sid}, by=float(gone))
+    return _ok(deferred)

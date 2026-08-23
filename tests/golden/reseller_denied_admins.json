@@ -1,0 +1,7 @@
+{
+  "body": {
+    "code": "auth.owner_only",
+    "detail": "Owner only"
+  },
+  "status": 403
+}

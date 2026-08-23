@@ -20,5 +20,29 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-      - name: Run tests
+
+      # Deterministic gates, cheapest first: a lint error should not wait two
+      # minutes behind the test suite to be reported.
+      - name: Lint
+        run: ruff check .
+
+      # The structural rules (tests/test_architecture.py) and the invariant
+      # register (tests/INVARIANTS.md) are ordinary tests, so they run below
+      # with everything else. Called out here because they are the ones that
+      # fail for reasons a reviewer would otherwise have to notice by eye.
+      - name: Tests
         run: pytest -q
+
+      # tests/test_ui.py is deliberately NOT run here. It drives the real
+      # dashboard in Chromium, and installing a browser on every CI run buys
+      # less than it costs: the checks it makes are about layout and motion
+      # preferences, which change when someone edits the CSS, not when someone
+      # edits a router. It skips itself without a browser, so `pytest -q` above
+      # stays green; run it locally after touching static/ with:
+      #     pip install playwright && playwright install chromium && pytest tests/test_ui.py
+
+      # xfail(strict=True) already fails the run if an expected-failing test
+      # starts passing, so a fixed A1 case cannot land silently marked broken.
+      - name: Report expected failures
+        if: always()
+        run: pytest -q -rx --no-header || true

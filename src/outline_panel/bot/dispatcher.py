@@ -13,7 +13,6 @@ encodes the server id, e.g. ``key:<sid>:<kid>``.
 from __future__ import annotations
 
 import html
-import time
 from collections.abc import Awaitable, Callable
 
 from aiogram import Dispatcher, F
@@ -28,6 +27,8 @@ from aiogram.types import (
     WebAppInfo,
 )
 
+from ..application import customer
+from ..application.executor import Executor
 from ..core.outline_api import OutlineError
 from ..core.rights import can_see, has_cap, on_credit, owns, price_for
 from ..core.utils import fmt_bytes, fmt_expiry, gb_to_bytes
@@ -44,6 +45,19 @@ class NewUser(StatesGroup):
 class EditKey(StatesGroup):
     rename = State()
     limit = State()
+
+
+def _pending(deferred: list[dict]) -> str:
+    """A tail for the confirmation when some server did not get the message.
+
+    Silence would be the panel claiming an effect that has not happened yet. The
+    intent is queued and a worker is retrying, and the admin should know which
+    server is behind.
+    """
+    if not deferred:
+        return ""
+    names = ", ".join(sorted({d["serverId"] for d in deferred}))
+    return f"\n\n⏳ Not yet applied on {names} — retrying."
 
 
 class _Uid:
@@ -63,6 +77,11 @@ def build_dispatcher(
     create_key=None,
 ) -> Dispatcher:
     dp = Dispatcher()
+    # The same path the dashboard takes. The bot used to write `keys` rows
+    # directly — its own +30 days, its own disable — which is how a customer on
+    # two servers ended up suspended on one of them (MODERNIZATION.md A1). There
+    # is one implementation of each transition now and Telegram uses it.
+    ops = Executor(registry, db)
 
     async def admin_ids() -> set[int]:
         res = get_admin_ids()
@@ -479,38 +498,29 @@ def build_dispatcher(
         admin = await gate_key(msg, "keys.edit", sid, kid)
         if not admin or await refuse_free(msg, admin):
             return
-        api = registry.get(sid)
         limit_bytes = gb_to_bytes(gb) if gb > 0 else None
-        meta = await db.get_key(sid, kid)
-        if not meta:
+        if not await db.get_key(sid, kid):
             await db.add_key(sid, kid, "", None, None)
-            meta = await db.get_key(sid, kid)
-        if not meta.get("disabled"):
-            try:
-                if limit_bytes is not None:
-                    await api.set_data_limit(kid, limit_bytes)
-                else:
-                    await api.remove_data_limit(kid)
-            except OutlineError as e:
-                return await msg.answer(f"❌ Could not change the data limit:\n{e}")
-        await db.set_limit(sid, kid, limit_bytes)
-        await msg.answer(f"✅ Data limit changed to {fmt_bytes(limit_bytes)}.",
-                         reply_markup=back_menu())
+        try:
+            deferred = await customer.set_allowance(db, ops, sid, kid, limit_bytes)
+        except OutlineError as e:
+            return await msg.answer(f"❌ Could not change the data limit:\n{e}")
+        await msg.answer(
+            f"✅ Data limit changed to {fmt_bytes(limit_bytes)}." + _pending(deferred),
+            reply_markup=back_menu())
 
     @dp.callback_query(F.data.startswith("disable:"))
     async def cb_disable(cq: CallbackQuery) -> None:
         sid, kid = parse_cb(cq.data)
         if not await gate_key(cq, "keys.edit", sid, kid):
             return
-        api = registry.get(sid)
         if not await db.get_key(sid, kid):
             await db.add_key(sid, kid, "", None, None)
         try:
-            await api.set_data_limit(kid, 0)
+            deferred = await customer.suspend(db, ops, sid, kid)
         except OutlineError as e:
             return await cq.answer(f"Error: {e}", show_alert=True)
-        await db.set_disabled(sid, kid, True)
-        await cq.answer("User disabled ⛔️", show_alert=True)
+        await cq.answer("User disabled ⛔️" + _pending(deferred), show_alert=True)
         await cq.message.edit_reply_markup(reply_markup=key_menu(sid, kid, True))
 
     @dp.callback_query(F.data.startswith("enable:"))
@@ -518,17 +528,11 @@ def build_dispatcher(
         sid, kid = parse_cb(cq.data)
         if not await gate_key(cq, "keys.edit", sid, kid):
             return
-        api = registry.get(sid)
-        meta = await db.get_key(sid, kid) or {}
         try:
-            if meta.get("limit_bytes") is not None:
-                await api.set_data_limit(kid, int(meta["limit_bytes"]))
-            else:
-                await api.remove_data_limit(kid)
+            deferred = await customer.resume(db, ops, sid, kid)
         except OutlineError as e:
             return await cq.answer(f"Error: {e}", show_alert=True)
-        await db.set_disabled(sid, kid, False)
-        await cq.answer("User enabled ✅", show_alert=True)
+        await cq.answer("User enabled ✅" + _pending(deferred), show_alert=True)
         await cq.message.edit_reply_markup(reply_markup=key_menu(sid, kid, False))
 
     @dp.callback_query(F.data.startswith("del:"))
@@ -537,13 +541,11 @@ def build_dispatcher(
         admin = await gate_key(cq, "keys.delete", sid, kid)
         if not admin:
             return
-        api = registry.get(sid)
         try:
-            await api.delete_key(kid)
-            await db.delete_key(sid, kid)
+            deferred = await customer.remove(db, ops, sid, kid)
         except OutlineError as e:
             return await cq.answer(f"Error: {e}", show_alert=True)
-        await cq.answer("User deleted ✅", show_alert=True)
+        await cq.answer("User deleted ✅" + _pending(deferred), show_alert=True)
         await render_list(cq.message, admin)
 
     @dp.callback_query(F.data.startswith("extend:"))
@@ -552,26 +554,13 @@ def build_dispatcher(
         admin = await gate_key(cq, "keys.edit", sid, kid)
         if not admin or await refuse_free(cq, admin):
             return
-        api = registry.get(sid)
-        meta = await db.get_key(sid, kid)
-        if not meta:
+        if not await db.get_key(sid, kid):
             await db.add_key(sid, kid, "", None, None)
-            meta = await db.get_key(sid, kid)
-        if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
-            await db.set_duration(sid, kid, int(meta["duration_days"]) + 30)
-        else:
-            base = max(meta.get("expiry_ts") or 0, int(time.time()))
-            await db.set_expiry(sid, kid, base + 30 * 86400)
-        if meta.get("disabled"):
-            try:
-                if meta.get("limit_bytes") is not None:
-                    await api.set_data_limit(kid, int(meta["limit_bytes"]))
-                else:
-                    await api.remove_data_limit(kid)
-                await db.set_disabled(sid, kid, False)
-            except OutlineError as e:
-                return await cq.answer(f"Extended, but enabling failed: {e}", show_alert=True)
-        await cq.answer("Extended by 30 days ✅", show_alert=True)
+        try:
+            deferred = await customer.extend(db, ops, sid, kid, 30)
+        except OutlineError as e:
+            return await cq.answer(f"Could not extend: {e}", show_alert=True)
+        await cq.answer("Extended by 30 days ✅" + _pending(deferred), show_alert=True)
         await render_list(cq.message, admin)
 
     return dp

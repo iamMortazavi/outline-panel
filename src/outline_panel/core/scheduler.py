@@ -206,11 +206,41 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
                 log.warning("monthly reset for %s/%s failed: %s", sid, kid, e)
             key = await db.get_key(sid, kid) or key  # refreshed values
 
+        # Enforce the ceiling when the backend cannot do it itself.
+        #
+        # Outline caps a key server-side; Xray has no equivalent, so without
+        # this a customer on an Xray node runs past their allowance forever.
+        # Deliberately per member, and deliberately *not* marked `disabled`:
+        # that flag means "an admin suspended this", and setting it here would
+        # make the monthly reset below skip the very keys it exists to refresh.
+        lim = key.get("limit_bytes")
+        if lim and not key.get("disabled") and not getattr(
+                api, "enforces_data_limit", True):
+            used = int((await usage(sid)).get(str(kid), 0))
+            tag_cap = (sid, kid, "capped")
+            if used >= int(lim):
+                try:
+                    await api.set_data_limit(kid, 0)
+                except OutlineError as e:
+                    log.warning("could not cap %s/%s: %s", sid, kid, e)
+                else:
+                    if tag_cap not in notified:
+                        notified.add(tag_cap)
+                        metrics.inc("outline_panel_keys_capped_total", {"server": sid})
+                        log.info("key %s/%s reached its allowance and was cut off "
+                                 "(%s of %s).", sid, kid, fmt_bytes(used),
+                                 fmt_bytes(lim))
+                        await _safe_notify(
+                            notifier,
+                            f"🚫 <b>{name}</b> has used their whole allowance "
+                            f"({fmt_bytes(used)}) and has been cut off.", key)
+            else:
+                notified.discard(tag_cap)
+
         if not notifier or key.get("disabled"):
             continue
 
         # data-limit warning
-        lim = key.get("limit_bytes")
         tag_lim = (sid, kid, "limit")
         if lim:
             used = int((await usage(sid)).get(str(kid), 0))
@@ -268,6 +298,25 @@ async def _check_once(registry, db, notifier, notified, settings=None) -> None:
             await backup.maybe_backup(db, settings, db.path, now)
         except Exception as e:  # noqa: BLE001 — a full disk must not stop expiry
             log.warning("backup failed: %s", e)
+
+    # 4a) convergence: retry the effects that never reached their server, and
+    # (only when switched on) close the gap the A1 defect left behind. Both are
+    # the lease holder's job, so N workers do not race the same retries.
+    if settings is not None:
+        try:
+            from ..application import convergence
+            summary = await convergence.drain(db, registry, now)
+            if summary["applied"] or summary["failed"]:
+                log.info("outbox: %(applied)d applied, %(failed)d still failing, "
+                         "%(dropped)d dropped", summary)
+            metrics.observe("outline_panel_outbox_depth", await db.outbox_depth())
+            if await settings.get_bool("reconcile_enabled", False):
+                result = await convergence.reconcile(db, registry, apply=True)
+                if result["queued"]:
+                    log.warning("reconciliation queued %d suspensions that had "
+                                "not reached their server", result["queued"])
+        except Exception as e:  # noqa: BLE001 — convergence must not stop expiry
+            log.warning("convergence pass failed: %s", e)
 
     # 4b) reconciliation: admins.credit is what a purchase is checked against,
     # the ledger is how it got there. They must agree, and nothing was watching.

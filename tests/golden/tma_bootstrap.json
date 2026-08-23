@@ -1,0 +1,27 @@
+{
+  "body": {
+    "me": {
+      "caps": [
+        "keys.view",
+        "keys.create",
+        "keys.edit",
+        "keys.delete"
+      ],
+      "credit": 4919000,
+      "creditEnabled": true,
+      "isOwner": false,
+      "username": "sara"
+    },
+    "servers": [
+      {
+        "id": "s1",
+        "name": "Tokyo"
+      }
+    ],
+    "user": {
+      "id": 111,
+      "name": "Sara"
+    }
+  },
+  "status": 200
+}

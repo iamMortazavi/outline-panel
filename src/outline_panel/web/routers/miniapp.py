@@ -31,6 +31,16 @@ from ..deps import (
     scoped_ids,
     settings,
 )
+from ..schemas import (
+    KeyCreated,
+    KeyList,
+    LimitOk,
+    Ok,
+    PackageList,
+    Stats,
+    SubInfoAdmin,
+    TmaBootstrap,
+)
 from . import keys as keys_router
 from . import packages as packages_router
 from . import stats as stats_router
@@ -68,7 +78,7 @@ async def miniapp_page():
     return FileResponse(STATIC_DIR / "miniapp.html")
 
 
-@router.get("/tma/api/bootstrap")
+@router.get("/tma/api/bootstrap", response_model=TmaBootstrap, response_model_exclude_unset=True)
 async def tma_bootstrap(auth: dict = Depends(require_tma)):
     user = auth.get("_tg") or {}
     # the app renders from this, so it must know what this admin may do
@@ -85,19 +95,19 @@ async def tma_bootstrap(auth: dict = Depends(require_tma)):
     }
 
 
-@router.get("/tma/api/keys")
+@router.get("/tma/api/keys", response_model=KeyList, response_model_exclude_unset=True)
 async def tma_keys(server: str | None = None, auth: dict = Depends(require_tma)):
     assert_cap(auth, "keys.view")
     return await keys_router.list_keys(server, auth)
 
 
-@router.get("/tma/api/stats")
+@router.get("/tma/api/stats", response_model=Stats, response_model_exclude_unset=True)
 async def tma_stats(server: str | None = None, auth: dict = Depends(require_tma)):
     assert_cap(auth, "keys.view")
     return await stats_router.stats(server, auth)
 
 
-@router.get("/tma/api/packages")
+@router.get("/tma/api/packages", response_model=PackageList, response_model_exclude_unset=True)
 async def tma_packages(auth: dict = Depends(require_tma)):
     return await packages_router.list_packages(auth)
 
@@ -111,7 +121,7 @@ class TmaCreate(BaseModel):
     package_id: int | None = None
 
 
-@router.post("/tma/api/keys")
+@router.post("/tma/api/keys", response_model=KeyCreated, response_model_exclude_unset=True)
 async def tma_create(body: TmaCreate, request: Request,
                      auth: dict = Depends(require_tma)):
     assert_cap(auth, "keys.create")
@@ -138,57 +148,57 @@ async def _may(admin: dict, cap: str, sid: str, kid: str | None = None) -> None:
 
 
 # --------------------------------------------------- per-key edit (reuses keys)
-@router.put("/tma/api/keys/{sid}/{kid}/name")
+@router.put("/tma/api/keys/{sid}/{kid}/name", response_model=Ok, response_model_exclude_unset=True)
 async def tma_rename(sid: str, kid: str, body: NameBody, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
     return await keys_router.rename_key(sid, kid, body)
 
 
-@router.put("/tma/api/keys/{sid}/{kid}/limit")
+@router.put("/tma/api/keys/{sid}/{kid}/limit", response_model=LimitOk, response_model_exclude_unset=True)
 async def tma_limit(sid: str, kid: str, body: LimitBody, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
     return await keys_router.set_key_limit(sid, kid, body, auth)
 
 
-@router.post("/tma/api/keys/{sid}/{kid}/enable")
+@router.post("/tma/api/keys/{sid}/{kid}/enable", response_model=Ok, response_model_exclude_unset=True)
 async def tma_enable(sid: str, kid: str, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
     return await keys_router.enable_key(sid, kid)
 
 
-@router.post("/tma/api/keys/{sid}/{kid}/disable")
+@router.post("/tma/api/keys/{sid}/{kid}/disable", response_model=Ok, response_model_exclude_unset=True)
 async def tma_disable(sid: str, kid: str, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
     return await keys_router.disable_key(sid, kid)
 
 
-@router.post("/tma/api/keys/{sid}/{kid}/extend")
+@router.post("/tma/api/keys/{sid}/{kid}/extend", response_model=LimitOk, response_model_exclude_unset=True)
 async def tma_extend(sid: str, kid: str, body: ExtendBody, request: Request,
                      auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
     return await keys_router.extend_key(sid, kid, request, body, auth)
 
 
-@router.delete("/tma/api/keys/{sid}/{kid}")
+@router.delete("/tma/api/keys/{sid}/{kid}", response_model=Ok, response_model_exclude_unset=True)
 async def tma_delete(sid: str, kid: str, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.delete", sid, kid)
     return await keys_router.delete_key(sid, kid)
 
 
 # ----------------------------------------------------------- subscription (TMA)
-@router.post("/tma/api/keys/{sid}/{kid}/sub")
+@router.post("/tma/api/keys/{sid}/{kid}/sub", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def tma_make_sub(sid: str, kid: str, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", sid, kid)
     return await keys_router.make_sub_link(sid, kid, auth)
 
 
-@router.post("/tma/api/sub/{token}/servers/{target}")
+@router.post("/tma/api/sub/{token}/servers/{target}", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def tma_sub_add(token: str, target: str, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", target)
     return await keys_router.sub_add_server(token, target, auth)
 
 
-@router.delete("/tma/api/sub/{token}/servers/{target}")
+@router.delete("/tma/api/sub/{token}/servers/{target}", response_model=SubInfoAdmin, response_model_exclude_unset=True)
 async def tma_sub_remove(token: str, target: str, auth: dict = Depends(require_tma)):
     await _may(auth, "keys.edit", target)
     return await keys_router.sub_remove_server(token, target, auth)

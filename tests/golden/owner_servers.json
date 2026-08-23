@@ -1,0 +1,23 @@
+{
+  "body": {
+    "servers": [
+      {
+        "host": "10.0.0.1:1",
+        "id": "s1",
+        "name": "Tokyo",
+        "reachable": true,
+        "serverName": "fake",
+        "version": "1.0"
+      },
+      {
+        "host": "10.0.0.1:1",
+        "id": "s2",
+        "name": "Berlin",
+        "reachable": true,
+        "serverName": "fake",
+        "version": "1.0"
+      }
+    ]
+  },
+  "status": 200
+}

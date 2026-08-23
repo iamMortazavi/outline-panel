@@ -1,0 +1,219 @@
+{
+  "body": {
+    "spec": [
+      {
+        "default": 80,
+        "help": "Alert the key's admin once a user passes this share of their allowance.",
+        "key": "notify_limit_percent",
+        "label": "Warn at % of data limit",
+        "max": 100,
+        "min": 0,
+        "type": "int"
+      },
+      {
+        "default": 3,
+        "help": "0 turns expiry warnings off.",
+        "key": "notify_expiry_days",
+        "label": "Warn this many days before expiry",
+        "max": 365,
+        "min": 0,
+        "type": "int"
+      },
+      {
+        "default": 60,
+        "help": "How often to activate, reset, warn and expire. Lower means more load on every Outline server.",
+        "key": "expiry_check_interval",
+        "label": "Scheduler interval (seconds)",
+        "max": 86400,
+        "min": 10,
+        "type": "int"
+      },
+      {
+        "default": 30,
+        "help": "Length of one monthly-quota period.",
+        "key": "cycle_days",
+        "label": "Billing cycle (days)",
+        "max": 365,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 15,
+        "help": "0 disables caching entirely — every dashboard poll then hits the experimental metrics endpoint of every server.",
+        "key": "metrics_ttl",
+        "label": "Metrics cache (seconds)",
+        "max": 3600,
+        "min": 0,
+        "type": "int"
+      },
+      {
+        "default": 5,
+        "help": "How often the panel samples every server for the live view. One sampler serves every open tab, so this is the real load on your Outline servers regardless of how many people are watching.",
+        "key": "stream_interval",
+        "label": "Live update interval (seconds)",
+        "max": 300,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 20,
+        "help": "A comment is sent this often so a proxy does not close an idle stream. Lower it if your reverse proxy times out sooner.",
+        "key": "stream_heartbeat",
+        "label": "Live update keep-alive (seconds)",
+        "max": 300,
+        "min": 5,
+        "type": "int"
+      },
+      {
+        "default": 12,
+        "help": "How often VPN clients are told to re-fetch the subscription.",
+        "key": "sub_update_hours",
+        "label": "Subscription refresh (hours)",
+        "max": 168,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 604800,
+        "help": "How long a login stays valid.",
+        "key": "session_max_age",
+        "label": "Session lifetime (seconds)",
+        "max": 31536000,
+        "min": 300,
+        "type": "int"
+      },
+      {
+        "default": 5,
+        "help": "Attempts allowed from one address inside the window below.",
+        "key": "login_max_fails",
+        "label": "Failed logins per IP",
+        "max": 1000,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 300,
+        "help": "",
+        "key": "login_window",
+        "label": "Login rate-limit window (seconds)",
+        "max": 86400,
+        "min": 10,
+        "type": "int"
+      },
+      {
+        "default": 30,
+        "help": "Ceiling across every address, so rotating IPs can't walk past the per-IP limit.",
+        "key": "login_global_max_fails",
+        "label": "Failed logins in total",
+        "max": 100000,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 3,
+        "help": "Consecutive, not total — one missed check is a blip, and alerting on blips teaches people to ignore the alert.",
+        "key": "health_alert_failures",
+        "label": "Alert after this many failed checks",
+        "max": 100,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 14,
+        "help": "",
+        "key": "health_retention_days",
+        "label": "Keep server health history for (days)",
+        "max": 365,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 24,
+        "help": "Snapshots are taken with VACUUM INTO, which does not interrupt the panel. Turn the whole thing off with Backups enabled.",
+        "key": "backup_interval_hours",
+        "label": "Automatic backup every (hours)",
+        "max": 8760,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 14,
+        "help": "Older snapshots are deleted once this many newer ones exist.",
+        "key": "backup_keep",
+        "label": "Backups to keep",
+        "max": 1000,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 8,
+        "help": "How many customers a bulk server change works on in parallel. Higher finishes sooner and asks more of the destination server at once; 1 is the old one-after-another behaviour.",
+        "key": "bulk_concurrency",
+        "label": "Bulk operations at once",
+        "max": 64,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 20,
+        "help": "The subscription link is public and each fetch reaches every server, so a client on a tight refresh loop multiplies load. 0 disables caching.",
+        "key": "sub_cache_seconds",
+        "label": "Subscription page cache (seconds)",
+        "max": 3600,
+        "min": 0,
+        "type": "int"
+      },
+      {
+        "default": 30,
+        "help": "Anything above this is refused with 429.",
+        "key": "sub_max_per_minute",
+        "label": "Subscription fetches per minute, per address",
+        "max": 10000,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": 90,
+        "help": "Older entries are deleted by the scheduler. The log only grows, so this is what stops it.",
+        "key": "audit_retention_days",
+        "label": "Keep the audit log for (days)",
+        "max": 3650,
+        "min": 1,
+        "type": "int"
+      },
+      {
+        "default": "Toman",
+        "help": "Shown next to every price and balance.",
+        "key": "currency",
+        "label": "Currency label",
+        "max": 12,
+        "min": null,
+        "type": "str"
+      }
+    ],
+    "values": {
+      "audit_retention_days": 90,
+      "backup_interval_hours": 24,
+      "backup_keep": 14,
+      "bulk_concurrency": 8,
+      "currency": "Toman",
+      "cycle_days": 30,
+      "expiry_check_interval": 60,
+      "health_alert_failures": 3,
+      "health_retention_days": 14,
+      "login_global_max_fails": 30,
+      "login_max_fails": 5,
+      "login_window": 300,
+      "metrics_ttl": 15,
+      "notify_expiry_days": 3,
+      "notify_limit_percent": 80,
+      "session_max_age": 604800,
+      "stream_heartbeat": 20,
+      "stream_interval": 5,
+      "sub_cache_seconds": 20,
+      "sub_max_per_minute": 30,
+      "sub_update_hours": 12
+    }
+  },
+  "status": 200
+}

@@ -17,6 +17,9 @@ class FakeOutline:
         self.limits = {}
         self._id = 0
         self.fail_limit_writes = False  # simulate a briefly unreachable server
+        self.metrics_enabled = False
+        self.global_limit = None
+        self.server_name = "fake"
 
     async def create_key(self, name=None, limit_bytes=None):
         self._id += 1
@@ -29,6 +32,10 @@ class FakeOutline:
         return self.keys[kid]
 
     async def get_key(self, kid):
+        if kid not in self.keys:  # the real API 404s, and callers branch on that
+            from outline_panel.core.outline_api import OutlineError
+            raise OutlineError("Error response from server (404): Not Found",
+                               status=404)
         return self.keys[kid]
 
     async def delete_key(self, kid):
@@ -52,10 +59,16 @@ class FakeOutline:
     async def set_data_limit(self, kid, b):
         self._check()
         self.limits[kid] = b
+        # list_keys() must report what the server is now enforcing, or the fake
+        # says one thing to the reconciler and another to the panel.
+        if kid in self.keys:
+            self.keys[kid]["dataLimit"] = {"bytes": b}
 
     async def remove_data_limit(self, kid):
         self._check()
         self.limits.pop(kid, None)
+        if kid in self.keys:
+            self.keys[kid]["dataLimit"] = {}
 
     async def rename_key(self, kid, name):
         self.keys[kid]["name"] = name
@@ -69,6 +82,25 @@ class FakeOutline:
 
     async def get_server_info(self):
         return {"name": "fake", "version": "1.0"}
+
+    # The panel asks every server whether metrics sharing is on before it offers
+    # the advanced stats. Without these the fake is not a faithful stand-in and
+    # /api/servers/{sid}/settings 500s on an AttributeError the real client
+    # cannot raise.
+    async def get_metrics_enabled(self):
+        return self.metrics_enabled
+
+    async def set_metrics_enabled(self, enabled):
+        self.metrics_enabled = bool(enabled)
+
+    async def set_global_data_limit(self, limit_bytes):
+        self.global_limit = int(limit_bytes)
+
+    async def remove_global_data_limit(self):
+        self.global_limit = None
+
+    async def rename_server(self, name):
+        self.server_name = name
 
     async def close(self):
         pass

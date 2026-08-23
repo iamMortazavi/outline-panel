@@ -1,0 +1,35 @@
+{
+  "body": {
+    "entries": [
+      {
+        "admin_id": 2,
+        "balance_after": 4919000,
+        "created_ts": "<TS>",
+        "delta": -81000,
+        "id": 2,
+        "key_id": "9",
+        "note": null,
+        "package_id": 1,
+        "package_name": "Starter",
+        "price_before_discount": 90000,
+        "reason": "purchase",
+        "server_id": "s1"
+      },
+      {
+        "admin_id": 2,
+        "balance_after": 5000000,
+        "created_ts": "<TS>",
+        "delta": 5000000,
+        "id": 1,
+        "key_id": null,
+        "note": "opening balance",
+        "package_id": null,
+        "package_name": null,
+        "price_before_discount": null,
+        "reason": "topup",
+        "server_id": null
+      }
+    ]
+  },
+  "status": 200
+}

@@ -13,8 +13,8 @@ from test_subadmins import _login, _mk_sub, app  # noqa: F401  (fixtures)
 
 
 def _code(secret, offset=0):
+
     from outline_panel.core import security
-    import time as _t
     # the panel's own generator, so the test cannot drift from the verifier
     return security.totp_now(secret) if hasattr(security, "totp_now") else _hotp(secret, offset)
 

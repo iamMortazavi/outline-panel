@@ -8,6 +8,7 @@ Authenticator / Authy and Outline's existing in-page QR renderer.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -28,6 +29,28 @@ def hash_password(password: str) -> tuple[str, str]:
     salt = os.urandom(16)
     dk = hashlib.scrypt(password.encode(), salt=salt, n=_N, r=_R, p=_P, dklen=_DKLEN)
     return dk.hex(), salt.hex()
+
+
+async def hash_password_async(password: str) -> tuple[str, str]:
+    """`hash_password`, off the event loop.
+
+    scrypt at these parameters costs ~55 ms of straight CPU. Called directly
+    from an async handler it stops the whole worker for that long — every other
+    request, the SSE stream, the scheduler's next tick. The cost is deliberate
+    and stays; what changes is who waits for it.
+    """
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(password: str, hash_hex: str,
+                                salt_hex: str) -> bool:
+    """`verify_password`, off the event loop — see `hash_password_async`.
+
+    This one matters more: a wrong password pays the full cost, so an
+    unauthenticated caller could hold the worker still one attempt at a time
+    until the login rate limiter cut them off.
+    """
+    return await asyncio.to_thread(verify_password, password, hash_hex, salt_hex)
 
 
 def verify_password(password: str, hash_hex: str, salt_hex: str) -> bool:
