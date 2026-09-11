@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import base64
 import re
-import time
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
@@ -27,6 +26,7 @@ from ...core import config, errors
 from ...core.concurrency import map_concurrently
 from ...core.outline_api import OutlineError
 from ...core.settings import SettingsView
+from .. import subcache
 from ..deps import STATIC_DIR, db, reg, settings
 
 router = APIRouter(tags=["subscription"])
@@ -51,25 +51,12 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in request.headers.get("accept", "").lower() and "mozilla" in ua
 
 
-# token -> (expires_at, summary). Process-local and deliberately so: this is a
-# load shield, not a source of truth, and a worker serving a copy a few seconds
-# older than its neighbour's costs nothing. Bounded by _CACHE_MAX so a flood of
-# invented tokens cannot grow it — misses raise 404 before ever landing here.
-#
-# Usage figures going a few seconds stale is cosmetic — suspending a user sets
-# their Outline data limit to zero, which cuts the tunnel immediately whatever
-# this says. *Membership* is not cosmetic: unlinking a server has to stop that
-# config being handed out, so every route that changes who is in a subscription
-# calls invalidate() below.
-_cache: dict[str, tuple[float, dict]] = {}
-_CACHE_MAX = 5000
-
-
-def invalidate(token: str | None) -> None:
-    """Drop a cached summary. Called wherever a subscription's membership
-    changes, so a removed server stops being served at once."""
-    if token:
-        _cache.pop(token, None)
+# The cache itself lives in web.subcache: the key routes have to drop an entry
+# the moment they change who is in a subscription, and a router importing a
+# router to do that is how the import cycle in this package began. Re-exported
+# under the names this module has always used.
+_cache = subcache._cache
+invalidate = subcache.invalidate
 
 
 async def _rate_limit(request: Request) -> None:
@@ -96,14 +83,11 @@ async def _collect(token: str) -> dict:
     cfg = await settings.view()
     ttl = cfg.num("sub_cache_seconds")
     if ttl:
-        hit = _cache.get(token)
-        if hit and hit[0] > time.monotonic():
-            return hit[1]
+        hit = subcache.get(token)
+        if hit is not None:
+            return hit
     info = await _collect_fresh(token, cfg)
-    if ttl:
-        if len(_cache) >= _CACHE_MAX:
-            _cache.clear()
-        _cache[token] = (time.monotonic() + ttl, info)
+    subcache.put(token, info, ttl)
     return info
 
 

@@ -24,7 +24,7 @@ import logging
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from .deps import db
+from .state import db
 
 log = logging.getLogger("web.idempotency")
 

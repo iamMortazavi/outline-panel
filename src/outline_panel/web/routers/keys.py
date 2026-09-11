@@ -1,4 +1,10 @@
-"""Access-key (user) management across all servers."""
+"""Access-key (user) management across all servers.
+
+The HTTP layer only: what a route is called, who may call it, and the shape of
+its answer. What creating, charging for, mirroring or adopting a key *means*
+lives in ``services.keys`` — the Telegram bot and the Mini App need exactly
+that, and a route function is not something they should be reaching into.
+"""
 
 from __future__ import annotations
 
@@ -14,30 +20,31 @@ from ...core.concurrency import map_concurrently
 from ...core.outline_api import OutlineAPI, OutlineError
 from ...core.settings import SettingsView
 from ...core.utils import gb_to_bytes
-from .. import idempotency
+from .. import idempotency, subcache
 from ..deps import (
     api_or_404,
     assert_key_access,
     can_see,
     db,
     enforce_scope,
-    is_owner,
-    on_credit,
     owns,
-    price_for,
     reg,
     require,
     require_owner,
-    scoped_ids,
     settings,
     sids_or_404,
 )
-from . import subscription as sub_router
+from ..services import keys as ksvc
+
+# The purchase shapes live beside the logic that charges for them; re-exported
+# here because FastAPI reads them off this module and the Mini App imports them.
+from ..services.keys import CreateBody, ExtendBody
+
+__all__ = ["router", "CreateBody", "ExtendBody"]
 
 log = logging.getLogger("web.keys")
 router = APIRouter(prefix="/api", tags=["keys"],
                    dependencies=[Depends(enforce_scope)])
-
 
 # --------------------------------------------------------------- read helpers
 async def _conn_info(api: OutlineAPI, ttl: int) -> dict[str, dict]:
@@ -142,58 +149,7 @@ async def list_keys(server: str | None = None,
     ]
     return {"keys": keys, "errors": errors}
 
-
-# --------------------------------------------------------------- write helpers
-async def ensure_local(sid: str, kid: str) -> dict:
-    """The local row for a key, creating one if the panel has not seen it.
-
-    This is the adoption path: a key made straight from Outline Manager has no
-    row here until someone edits it. It gets a customer link at the same moment,
-    for the same reason a newly created key does — otherwise adopted keys are a
-    quiet second class with no page to send anyone to.
-
-    Adoption asks Outline whether the key is real first. It used to take the id
-    on faith, so a key id that never existed got a row, a customer link and —
-    once anything mirrored it onto a second server — an actual Outline key built
-    from the invented row. Only this branch pays the lookup: an id we have a row
-    for is one we have already seen.
-    """
-    meta = await db.get_key(sid, kid)
-    if not meta:
-        try:
-            await api_or_404(sid).get_key(kid)
-        except OutlineError:
-            raise errors.unknown_key()
-        await db.add_key(sid, kid, "", None, None)
-        await db.set_sub_token(sid, kid, security.profile_token(kid))
-        meta = await db.get_key(sid, kid)
-    return meta
-
-
-async def enable_on_outline(api: OutlineAPI, kid: str, meta: dict) -> None:
-    if meta and meta.get("limit_bytes") is not None:
-        await api.set_data_limit(kid, int(meta["limit_bytes"]))
-    else:
-        await api.remove_data_limit(kid)
-
-
 # --------------------------------------------------------------------- models
-class CreateBody(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    limit_gb: float = Field(ge=0, default=0)
-    days: int = Field(ge=0, default=0)
-    monthly_gb: float = Field(ge=0, default=0)
-    # False: the countdown waits for the user's first connection (the default,
-    # so an unused key isn't burning its validity). True: it starts right now.
-    start_now: bool = False
-    # Credit-enabled admins must buy a package; the fields above are then
-    # ignored, since the package decides what the user gets.
-    package_id: int | None = None
-    # Extra servers to put this customer on, beyond the one in the path. One
-    # subscription, one link, a config on each — see mirror_onto for why the
-    # allowance is not divided.
-    extra_servers: list[str] = []
-
 
 class NameBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
@@ -207,241 +163,18 @@ class MonthlyBody(BaseModel):
     monthly_gb: float = Field(ge=0)
 
 
-class ExtendBody(BaseModel):
-    # positive extends validity (and re-enables); negative shortens it.
-    days: int = Field(default=0, ge=-3650, le=3650)
-    # A credit admin renews by buying another package instead of naming days.
-    package_id: int | None = None
-
-
-async def _buy(admin: dict, package_id: int | None, sid: str,
-               kid: str | None = None) -> tuple[dict, int, int] | None:
-    """Charge `admin` for a package, or raise. Returns (package, price, entry id).
-
-    Returns None when the caller is not on credit, meaning "no purchase, use
-    the free-form path". Reserving BEFORE the Outline call is deliberate: the
-    caller must reverse it if the call fails (see _reverse), because a check
-    that does not also take the money lets two tabs both pass it.
-    """
-    if not on_credit(admin):
-        return None
-    if package_id is None:
-        raise errors.pick_a_package()
-    pkg = await db.get_package(package_id)
-    if pkg is None:
-        raise errors.unknown_package()
-    price = price_for(pkg, admin)
-    entry = await db.charge(admin["id"], price, reason="purchase",
-                            package_id=pkg["id"], package_name=pkg["name"],
-                            price_before_discount=int(pkg["price"]),
-                            server_id=sid, key_id=kid)
-    if entry is None:
-        raise errors.not_enough_credit(
-            pkg["name"], price, int(admin.get("credit") or 0),
-            await settings.text("currency"))
-    return pkg, price, entry
-
-
-def deny_free(admin: dict) -> None:
-    """Refuse a route that hands a customer time or volume outside the price list.
-
-    `extend_key` already enforces this through `_buy` — "any time or volume that
-    reaches a user is paid for". Raising the data limit, granting a monthly
-    quota and resetting usage all reach a user just as surely, and all three
-    were free: a reseller bought the cheapest package and then topped it up here
-    for nothing.
-
-    Mirroring onto a second server is the deliberate exception — see
-    `mirror_onto`. It is failover for a customer already paid for, not more
-    product, so it does not call this.
-    """
-    if on_credit(admin):
-        raise errors.buy_a_package()
-
-
-async def _apply_package(sid: str, kid: str, pkg: dict) -> dict:
-    """Add a package's time and volume to an existing key (a renewal).
-
-    limit_bytes is the *cumulative ceiling* Outline counts against, never a
-    plan size, so adding to it is the correct operation. Outline is told first
-    and the DB committed after — a 502 must not move the dates, or the retry
-    charges twice and extends twice.
-    """
-    api = api_or_404(sid)
-    meta = await ensure_local(sid, kid)
-    now = int(time.time())
-
-    cur_limit = meta.get("limit_bytes")
-    if pkg["gb"] is None or cur_limit is None:
-        new_limit = None          # unlimited either way; never take away access
-    else:
-        new_limit = int(cur_limit) + gb_to_bytes(pkg["gb"])
-    try:
-        if new_limit is None:
-            await api.remove_data_limit(kid)
-        else:
-            await api.set_data_limit(kid, new_limit)
-    except OutlineError as e:
-        raise errors.upstream(str(e))
-
-    await db.set_limit(sid, kid, new_limit)
-    days = int(pkg["days"] or 0)
-    if days:
-        if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
-            # still pending: the clock has not started, so lengthen the term
-            await db.set_duration(sid, kid, int(meta["duration_days"]) + days)
-        else:
-            base = max(meta.get("expiry_ts") or 0, now)
-            await db.set_expiry(sid, kid, base + days * 86400)
-    if meta.get("disabled"):
-        await db.set_disabled(sid, kid, False)
-    return {"ok": True, "limit": new_limit}
-
-
-async def _reverse(admin: dict, bought: tuple[dict, int, int] | None, sid: str,
-                   note: str) -> None:
-    """Give back a charge for a sale that did not happen.
-
-    "No refunds" is about an admin deleting a user they sold. Nothing was
-    bought here, so keeping the money would just be an error.
-    """
-    if not bought:
-        return
-    pkg, price, _entry = bought
-    try:
-        await db.credit_admin(admin["id"], price, reason="reversal",
-                              package_id=pkg["id"], package_name=pkg["name"],
-                              server_id=sid, note=note)
-    except Exception:  # noqa: BLE001 — never mask the original failure
-        log.exception("could not reverse a charge for admin %s", admin["id"])
-
-
 # --------------------------------------------------------------------- routes
-async def create_key_for(sid: str, name: str, limit_gb: float, days: int,
-                         monthly_gb: float = 0, start_now: bool = False,
-                         owner_admin_id: int | None = None) -> dict:
-    """Create a key on Outline and persist its local metadata.
-
-    Shared by the dashboard route and the Telegram Mini App. Raises
-    ``HTTPException`` on failure and removes any orphan key left on the server.
-
-    ``start_now`` picks when the validity clock starts: at creation, or (the
-    default) on the user's first connection, which the scheduler detects.
-    """
-    api = api_or_404(sid)
-    limit_bytes = gb_to_bytes(limit_gb) if limit_gb > 0 else None
-    monthly_bytes = gb_to_bytes(monthly_gb) if monthly_gb > 0 else None
-    if monthly_bytes and limit_bytes is None:
-        limit_bytes = monthly_bytes
-    duration = days if days > 0 else None
-    try:
-        key = await api.create_key(name=name, limit_bytes=limit_bytes)
-    except OutlineError as e:
-        raise errors.upstream(str(e))
-    try:
-        await db.add_key(sid, key["id"], name, limit_bytes, duration,
-                         owner_admin_id=owner_admin_id)
-        now = int(time.time())
-        if duration and start_now:
-            # Activating here is all it takes: the scheduler only adopts keys
-            # whose activated_ts is still NULL, so it leaves this one alone and
-            # the normal expiry sweep does the rest.
-            await db.activate(sid, key["id"], now, now + duration * 86400)
-        if monthly_bytes:
-            await db.set_monthly(sid, key["id"], monthly_bytes, now + await settings.cycle_seconds())
-        # Issued here rather than on demand: a link the reseller has to remember
-        # to generate is a link most customers never receive.
-        await db.set_sub_token(sid, key["id"], security.profile_token(key["id"]))
-    except Exception as e:  # noqa: BLE001 — avoid an orphan key on the server
-        log.exception("DB persist failed; deleting orphan key %s", key.get("id"))
-        try:
-            await api.delete_key(key["id"])
-        except OutlineError:
-            pass
-        raise HTTPException(status_code=500, detail=f"Failed to persist key: {e}")
-    metrics.inc("outline_panel_keys_created_total", {"server": sid})
-    base = await settings.get_profile_base()
-    tok = (await db.get_key(sid, key["id"]) or {}).get("sub_token")
-    return {"id": key["id"], "serverId": sid, "name": name,
-            "subToken": tok,
-            "profileUrl": (f"{base}/{tok}" if base and tok
-                           else (f"/sub/{tok}" if tok else None)),
-            "accessUrl": key["accessUrl"], "limit": limit_bytes,
-            "monthlyBytes": monthly_bytes, "createdTs": now,
-            "durationDays": duration,
-            "pending": duration is not None and not start_now}
-
-
-async def _add_extra_servers(key: dict, extras: list[str], sid: str,
-                             admin: dict) -> dict:
-    """Mirror a freshly created key onto the other servers that were picked.
-
-    Failures here do **not** undo the creation. The customer already has a
-    working config and, for a credit admin, the package is already paid for —
-    unwinding that because a third server was briefly unreachable would be worse
-    than handing back a key that works on two. The ones that failed are named in
-    the response so the panel can say so.
-    """
-    wanted = [t for t in dict.fromkeys(extras) if t and t != sid]
-    if not wanted or not key.get("subToken"):
-        return key
-    added, failed = [], []
-    for target in wanted:
-        if not can_see(admin, target) or reg.meta(target) is None:
-            failed.append({"id": target, "error": "Unknown server"})
-            continue
-        try:
-            await mirror_onto(key["subToken"], target)
-            added.append(target)
-        except HTTPException as e:
-            failed.append({"id": target, "error": str(e.detail)})
-        except Exception as e:  # noqa: BLE001
-            log.exception("could not mirror new key onto %s", target)
-            failed.append({"id": target, "error": str(e)})
-    key["servers"] = [sid, *added]
-    if failed:
-        key["serverErrors"] = failed
-    return key
-
 
 @router.post("/servers/{sid}/keys")
 async def create_key(sid: str, request: Request, body: CreateBody,
                      admin: dict = Depends(require("keys.create"))):
-    # The charge lands before Outline is called, so a lost response used to
-    # leave the admin paying for a retry. An Idempotency-Key replays the first
-    # answer instead.
-    guard = await idempotency.begin(request, admin)
-    if guard.replay:
-        return guard.replay
-    mine = None if is_owner(admin) else admin["id"]
-    try:
-        bought = await _buy(admin, body.package_id, sid)
-        if not bought:
-            key = await create_key_for(sid, body.name, body.limit_gb, body.days,
-                                       body.monthly_gb, body.start_now, mine)
-            key = await _add_extra_servers(key, body.extra_servers, sid, admin)
-            await guard.done(key)
-            return key
-        pkg, _price, entry = bought
-        try:
-            # The package decides what the user gets — the body's own limit/days
-            # are ignored rather than merged, or the buyer picks their own size.
-            key = await create_key_for(sid, body.name, pkg["gb"] or 0,
-                                       pkg["days"] or 0, pkg["monthly_gb"] or 0,
-                                       body.start_now, mine)
-        except BaseException as e:
-            await _reverse(admin, bought, sid, f"create failed: {e}")
-            raise
-    except BaseException:
-        # Every failure above either charged nothing or reversed it, so the key
-        # is free to be retried.
-        await guard.abandon()
-        raise
-    # now that the key exists, point the charge at what it bought
-    await db.tag_ledger(entry, sid, key["id"])
-    key = await _add_extra_servers(key, body.extra_servers, sid, admin)
-    await guard.done(key)
-    return key
+    """Create — or sell — a key on this server.
+
+    Every door into this (dashboard, Mini App, Telegram) lands on the same
+    service call, so a reseller cannot find a cheaper one by changing client.
+    """
+    return await ksvc.create_key_flow(admin, sid, body, request)
+
 
 
 @router.put("/servers/{sid}/keys/{kid}/name", dependencies=[Depends(require("keys.edit"))])
@@ -451,7 +184,7 @@ async def rename_key(sid: str, kid: str, body: NameBody):
         await api.rename_key(kid, body.name)
     except OutlineError as e:
         raise errors.upstream(str(e))
-    await ensure_local(sid, kid)
+    await ksvc.ensure_local(sid, kid)
     await db.set_name(sid, kid, body.name)
     return {"ok": True}
 
@@ -459,10 +192,10 @@ async def rename_key(sid: str, kid: str, body: NameBody):
 @router.put("/servers/{sid}/keys/{kid}/limit")
 async def set_key_limit(sid: str, kid: str, body: LimitBody,
                         admin: dict = Depends(require("keys.edit"))):
-    deny_free(admin)
+    ksvc.deny_free(admin)
     api = api_or_404(sid)
     limit_bytes = gb_to_bytes(body.limit_gb) if body.limit_gb > 0 else None
-    meta = await ensure_local(sid, kid)
+    meta = await ksvc.ensure_local(sid, kid)
     if not (meta and meta.get("disabled")):
         try:
             if limit_bytes is not None:
@@ -478,9 +211,9 @@ async def set_key_limit(sid: str, kid: str, body: LimitBody,
 @router.put("/servers/{sid}/keys/{kid}/monthly")
 async def set_key_monthly(sid: str, kid: str, body: MonthlyBody,
                           admin: dict = Depends(require("keys.edit"))):
-    deny_free(admin)
+    ksvc.deny_free(admin)
     api = api_or_404(sid)
-    meta = await ensure_local(sid, kid)
+    meta = await ksvc.ensure_local(sid, kid)
     if body.monthly_gb > 0:
         monthly = gb_to_bytes(body.monthly_gb)
         # Seed the first cycle's allowance on Outline (create_key_for:157 does
@@ -508,7 +241,7 @@ async def set_key_monthly(sid: str, kid: str, body: MonthlyBody,
 @router.post("/servers/{sid}/keys/{kid}/disable", dependencies=[Depends(require("keys.edit"))])
 async def disable_key(sid: str, kid: str):
     api = api_or_404(sid)
-    await ensure_local(sid, kid)
+    await ksvc.ensure_local(sid, kid)
     try:
         await api.set_data_limit(kid, 0)
     except OutlineError as e:
@@ -522,7 +255,7 @@ async def enable_key(sid: str, kid: str):
     api = api_or_404(sid)
     meta = await db.get_key(sid, kid)
     try:
-        await enable_on_outline(api, kid, meta or {})
+        await ksvc.enable_on_outline(api, kid, meta or {})
     except OutlineError as e:
         raise errors.upstream(str(e))
     await db.set_disabled(sid, kid, False)
@@ -543,15 +276,15 @@ async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
     if guard.replay:
         return guard.replay
     try:
-        bought = await _buy(admin, body.package_id, sid, kid)
+        bought = await ksvc.buy_package(admin, body.package_id, sid, kid)
     except BaseException:
         await guard.abandon()
         raise
     if bought:
         try:
-            result = await _apply_package(sid, kid, bought[0])
+            result = await ksvc.apply_package(sid, kid, bought[0])
         except BaseException as e:
-            await _reverse(admin, bought, sid, f"renew failed: {e}")
+            await ksvc.refund(admin, bought, sid, f"renew failed: {e}")
             await guard.abandon()
             raise
         await guard.done(result)
@@ -562,14 +295,14 @@ async def extend_key(sid: str, kid: str, request: Request, body: ExtendBody,
     # No money on this path, but the days still stack up on a double-send.
     try:
         api = api_or_404(sid)
-        meta = await ensure_local(sid, kid)
+        meta = await ksvc.ensure_local(sid, kid)
         now = int(time.time())
         # Re-enable FIRST: committing the new expiry before the Outline call means a
         # 502 still moves the date, and the admin's retry extends a second time.
         # only re-enable on an extension, never on a reduction
         if body.days > 0 and meta.get("disabled"):
             try:
-                await enable_on_outline(api, kid, meta)
+                await ksvc.enable_on_outline(api, kid, meta)
             except OutlineError as e:
                 raise errors.upstream(str(e))
         if meta.get("duration_days") is not None and meta.get("activated_ts") is None:
@@ -597,9 +330,9 @@ async def reset_usage(sid: str, kid: str,
     Outline's usage counter is cumulative and can't be zeroed, so a "reset"
     raises the data limit to current-usage + the per-cycle allowance.
     """
-    deny_free(admin)
+    ksvc.deny_free(admin)
     api = api_or_404(sid)
-    meta = await ensure_local(sid, kid)
+    meta = await ksvc.ensure_local(sid, kid)
     # Only monthly_bytes may be the base. limit_bytes is the *cumulative ceiling*
     # this endpoint itself writes below, so using it would compound every cycle
     # (10 -> 20 -> 40 GB). A plain data limit has no per-cycle size to restore.
@@ -655,7 +388,7 @@ async def bulk_server_membership(sid: str, body: BulkServerBody,
             # The same gate the single-key routes get from enforce_scope: scope
             # on the key's *own* server, plus ownership of the key itself.
             await assert_key_access(admin, ref.server_id, ref.key_id)
-            meta = await ensure_local(ref.server_id, ref.key_id)
+            meta = await ksvc.ensure_local(ref.server_id, ref.key_id)
             token = meta.get("sub_token")
             if not token:
                 # An older key with no subscription yet. Mint one rather than
@@ -663,11 +396,11 @@ async def bulk_server_membership(sid: str, body: BulkServerBody,
                 # ones this feature cannot help.
                 token = security.profile_token(ref.key_id)
                 await db.set_sub_token(ref.server_id, ref.key_id, token)
-            await sub_or_404(token, admin)
+            await ksvc.sub_or_404(token, admin)
             if body.action == "add":
-                await mirror_onto(token, sid)
+                await ksvc.mirror_onto(token, sid)
             else:
-                await _unmirror(token, sid)
+                await ksvc.unmirror(token, sid)
             done.append({"serverId": ref.server_id, "keyId": ref.key_id,
                          "name": meta.get("name") or ref.key_id, "token": token})
         except HTTPException as e:
@@ -680,56 +413,17 @@ async def bulk_server_membership(sid: str, body: BulkServerBody,
     return {"ok": True, "action": body.action, "server": sid,
             "done": done, "failed": failed}
 
-
-async def _unmirror(token: str, target: str) -> None:
-    """Drop `target`'s config out of a subscription. Caller checks access."""
-    for m in await db.get_keys_by_sub_token(token):
-        if m["server_id"] == target:
-            await db.set_sub_token(target, m["key_id"], None)
-    sub_router.invalidate(token)   # the removed config must stop being served
-
-
-async def _sub_info(token: str, admin: dict) -> dict:
-    """Members of a subscription + which configured servers are included.
-
-    The server list is what the UI offers as "mirror onto…", so it is filtered
-    to the caller's scope — otherwise a sub-admin would see every server's name
-    here even though everything else hides them.
-    """
-    members = await db.get_keys_by_sub_token(token)
-    member_sids = {m["server_id"] for m in members}
-    base = await settings.get_profile_base()
-    return {
-        "token": token,
-        # The short customer link when a profile host is configured, the
-        # long-standing /sub/ path otherwise — one field, so the UI shows
-        # whatever this panel is actually able to serve.
-        "profileUrl": f"{base}/{token}" if base else None,
-        "path": f"/sub/{token}",
-        "members": [
-            {"serverId": m["server_id"],
-             "serverName": (reg.meta(m["server_id"]) or {}).get("name"),
-             "keyId": m["key_id"], "name": m.get("name")}
-            for m in members if can_see(admin, m["server_id"])
-        ],
-        "servers": [
-            {"id": s, "name": reg.meta(s)["name"], "included": s in member_sids}
-            for s in scoped_ids(admin)
-        ],
-    }
-
-
 @router.post("/servers/{sid}/keys/{kid}/sub")
 async def make_sub_link(sid: str, kid: str,
                         admin: dict = Depends(require("keys.edit"))):
     """Ensure the key has a stable subscription token; return it + members."""
     api_or_404(sid)
-    meta = await ensure_local(sid, kid)
+    meta = await ksvc.ensure_local(sid, kid)
     token = meta.get("sub_token")
     if not token:
         token = security.profile_token(kid)
         await db.set_sub_token(sid, kid, token)
-    return await _sub_info(token, admin)
+    return await ksvc.sub_info(token, admin)
 
 
 @router.post("/servers/{sid}/keys/{kid}/rotate")
@@ -752,7 +446,7 @@ async def rotate_key(sid: str, kid: str,
     stale key to clean up — rather than no config at all.
     """
     api = api_or_404(sid)
-    meta = await ensure_local(sid, kid)
+    meta = await ksvc.ensure_local(sid, kid)
 
     try:
         usage = await api.get_transfer_metrics()
@@ -811,86 +505,13 @@ async def rotate_key(sid: str, kid: str,
             log.warning("rotate: new key %s is live but the old one (%s) "
                         "could not be deleted: %s", new_kid, kid, e)
     await db.delete_key(sid, kid)
-    sub_router.invalidate(meta.get("sub_token"))
+    subcache.invalidate(meta.get("sub_token"))
 
     metrics.inc("outline_panel_keys_rotated_total", {"server": sid})
     return {"ok": True, "id": new_kid, "previousId": kid,
             "accessUrl": fresh.get("accessUrl"),
             "limit": new_limit, "carriedUsed": used,
             "subToken": meta.get("sub_token")}
-
-
-async def mirror_onto(token: str, target: str) -> None:
-    """Put this subscription on `target` too, cloning the primary.
-
-    The customer gets the same allowance on every server they are given. That
-    is a deliberate business decision by the panel owner, not an oversight: a
-    multi-server subscription is sold for failover, people realistically use one
-    server at a time, and metering it any other way either cuts someone off
-    mid-month or doubles what they pay for a fallback they rarely touch. It does
-    mean a determined customer could spend the full allowance on each server —
-    the owner absorbs that.
-
-    Caller checks scope. Raises on failure; nothing is left half-built.
-    """
-    members = await db.get_keys_by_sub_token(token)
-    if not members:
-        raise errors.unknown_subscription()
-    if any(m["server_id"] == target for m in members):
-        return                                   # already included
-    api = api_or_404(target)
-    primary = members[0]
-    name = primary.get("name") or "user"
-    limit_bytes = primary.get("limit_bytes")
-    duration = primary.get("duration_days")
-    try:
-        key = await api.create_key(name=name, limit_bytes=limit_bytes)
-        # The mirror is the same subscription, so it inherits the primary's
-        # state — not a fresh one. Without this an expired, suspended user gets
-        # a live config with a full allowance and a clock that restarts.
-        if primary.get("disabled"):
-            await api.set_data_limit(key["id"], 0)
-    except OutlineError as e:
-        raise errors.upstream(str(e))
-    try:
-        await db.add_key(target, key["id"], name, limit_bytes, duration,
-                         owner_admin_id=primary.get("owner_admin_id"))
-        if primary.get("activated_ts"):
-            await db.activate(target, key["id"], int(primary["activated_ts"]),
-                              int(primary["expiry_ts"] or 0))
-        if primary.get("disabled"):
-            await db.set_disabled(target, key["id"], True)
-        await db.set_sub_token(target, key["id"], token)
-    except Exception as e:  # noqa: BLE001 — don't leave an orphan key
-        log.exception("sub mirror persist failed; deleting orphan key")
-        try:
-            await api.delete_key(key["id"])
-        except OutlineError:
-            pass
-        raise HTTPException(status_code=500, detail=f"Failed to add server: {e}")
-    sub_router.invalidate(token)
-
-
-async def sub_or_404(token: str, admin: dict) -> list[dict]:
-    """This subscription's keys — or 404, because it is not the caller's.
-
-    These two routes are keyed by `token`, not by `{sid}/{kid}`, so
-    `enforce_scope` never runs on them. Checking `target` alone only answered
-    "may you use that server": the *subscription* went unchecked, and the token
-    is the customer link — it is forwarded, pasted into groups, and every
-    reseller holds the ones they sold. Any admin with keys.edit could therefore
-    mint a config on a rival's customer, or unlink one and cut them off.
-
-    A subscription must be wholly the caller's: one member on a server they
-    cannot see is still someone else's customer.
-    """
-    members = await db.get_keys_by_sub_token(token)
-    if not members:
-        raise errors.unknown_subscription()
-    if not is_owner(admin) and not all(
-            can_see(admin, m["server_id"]) and owns(admin, m) for m in members):
-        raise errors.unknown_subscription()
-    return members
 
 
 @router.post("/sub/{token}/servers/{target}")
@@ -904,9 +525,9 @@ async def sub_add_server(token: str, target: str,
     # No deny_free here on purpose: mirroring is the one top-up the owner gives
     # away — see mirror_onto, and test_a_credit_admin_may_put_a_customer_on_
     # several_servers.
-    await sub_or_404(token, admin)
-    await mirror_onto(token, target)
-    return await _sub_info(token, admin)
+    await ksvc.sub_or_404(token, admin)
+    await ksvc.mirror_onto(token, target)
+    return await ksvc.sub_info(token, admin)
 
 
 @router.delete("/sub/{token}/servers/{target}")
@@ -916,9 +537,9 @@ async def sub_remove_server(token: str, target: str,
     key itself is kept — delete it from the key list if no longer needed)."""
     if not can_see(admin, target):  # `target`, so enforce_scope misses it too
         raise errors.unknown_server()
-    await sub_or_404(token, admin)
-    await _unmirror(token, target)
-    return await _sub_info(token, admin)
+    await ksvc.sub_or_404(token, admin)
+    await ksvc.unmirror(token, target)
+    return await ksvc.sub_info(token, admin)
 
 
 class OwnerBody(BaseModel):
@@ -933,7 +554,7 @@ async def set_key_owner(sid: str, kid: str, body: OwnerBody):
     Owner-only: ownership decides who may see and bill a customer, so letting a
     reseller reassign one would let them hand it off — or put it out of reach.
     """
-    await ensure_local(sid, kid)
+    await ksvc.ensure_local(sid, kid)
     target = None
     if body.admin_id is not None:
         target = await db.get_admin(body.admin_id)
@@ -968,6 +589,6 @@ async def delete_key(sid: str, kid: str):
     meta = await db.get_key(sid, kid)
     await db.delete_key(sid, kid)
     # the config is gone; stop serving it from the cached subscription too
-    sub_router.invalidate((meta or {}).get("sub_token"))
+    subcache.invalidate((meta or {}).get("sub_token"))
     metrics.inc("outline_panel_keys_deleted_total", {"server": sid})
     return {"ok": True}

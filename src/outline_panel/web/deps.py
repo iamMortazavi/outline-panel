@@ -1,33 +1,50 @@
-"""Shared web state and FastAPI dependencies (auth, registry, helpers)."""
+"""FastAPI dependencies: who is calling, and whether they may.
+
+The shared objects live in `state` and the key logic the Telegram bot needs
+lives in `services.keys`, so this module can import both and build the bot
+manager here — at module level, without reaching into a router from inside a
+function body the way it used to.
+
+That wiring staying in **one** place matters more than it looks: `bot/run.py`
+gets a fully-configured manager simply by importing this module. The standalone
+bot once built its dispatcher without `create_key` and without `resolve_admin`,
+which made every bot admin a panel owner and broke key creation outright
+(REFACTOR_PLAN S2). Nothing is wired at a call site, so no call site can forget.
+
+Everything in `state` is re-exported here, because `..deps` is where the routers
+have always imported `db`, `reg`, `settings` and the rights helpers from.
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
-from urllib.parse import urlparse
-
 from fastapi import Cookie, Depends, Request
-from itsdangerous import BadSignature, URLSafeTimedSerializer
+from itsdangerous import BadSignature
 
 from ..bot.manager import BotManager
-from ..core import config, errors
-from ..core.db import DB
-from ..core.outline_api import OutlineAPI
-
-# The rules live in core so the bot can use them too (deps → bot.manager →
-# bot.dispatcher would be a cycle). Re-exported here because the routers import
-# them from deps alongside db/reg.
-from ..core.rights import (
+from ..core import errors
+from .services import keys as key_service
+from .state import (
     CAPS,
+    COOKIE_NAME,
+    STATIC_DIR,
+    api_or_404,
+    assert_cap,
+    assert_key_access,
     can_see,
     csv_list,
+    db,
     has_cap,
+    host,
     is_owner,
     on_credit,
     owns,
     price_for,
+    reg,
+    scoped_ids,
+    settings,
+    sids_or_404,
+    signer,
 )
-from ..core.settings import SettingsStore
-from .registry import Registry
 
 _csv = csv_list
 __all__ = [  # re-exported: the routers import the rules from here
@@ -38,31 +55,9 @@ __all__ = [  # re-exported: the routers import the rules from here
     "api_or_404", "sids_or_404", "scoped_ids", "host",
 ]
 
-COOKIE_NAME = "outline_session"
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-
-db = DB(config.DB_PATH)
-reg = Registry(db)
-settings = SettingsStore(db)
-async def create_key_as(admin: dict, sid: str, **fields) -> dict:
-    """Create a key exactly the way the dashboard does, on behalf of `admin`.
-
-    The bot used to have its own copy of this and so charged nobody and
-    attributed nothing — a credit reseller could mint free keys over Telegram.
-    The import is deliberately lazy: routers.keys imports this module, so a
-    top-level import here would be a cycle.
-    """
-    from .routers import keys as keys_router
-    # No Request: this is a Telegram button press, not an HTTP call that could
-    # be retried with the same idempotency key.
-    return await keys_router.create_key(
-        sid, None, keys_router.CreateBody(**fields), admin)
-
-
 botmgr = BotManager(db, reg, settings.get_admin_ids, settings.get_webapp_url,
                     resolve_admin=settings.admin_for_telegram,
-                    create_key=create_key_as)
-signer = URLSafeTimedSerializer(config.SESSION_SECRET, salt="session")
+                    create_key=key_service.create_key_as)
 
 
 async def current_admin(request: Request,
@@ -98,10 +93,6 @@ async def current_admin(request: Request,
     return row
 
 
-def scoped_ids(admin: dict) -> list[str]:
-    return [s for s in reg.ids() if can_see(admin, s)]
-
-
 def require(*caps: str):
     """Dependency factory: every listed capability is required."""
     async def _check(admin: dict = Depends(current_admin)) -> dict:
@@ -116,27 +107,6 @@ async def require_owner(admin: dict = Depends(current_admin)) -> dict:
     if not is_owner(admin):
         raise errors.owner_only()
     return admin
-
-
-def assert_cap(admin: dict, cap: str) -> None:
-    """Raise unless this admin holds `cap`. The dependency form is require()."""
-    if not has_cap(admin, cap):
-        raise errors.no_permission()
-
-
-async def assert_key_access(admin: dict, sid: str | None,
-                            kid: str | None = None) -> None:
-    """The scope + ownership rules, callable outside a FastAPI dependency.
-
-    The dashboard reaches these through enforce_scope; the Telegram bot and
-    Mini App call them directly. One implementation, so Telegram cannot drift
-    into being a back door with laxer rules than the panel.
-    """
-    if sid and not can_see(admin, sid):
-        raise errors.unknown_server()
-    if sid and kid and not is_owner(admin):
-        if not owns(admin, await db.get_key(sid, kid)):
-            raise errors.unknown_key()
 
 
 async def enforce_scope(request: Request,
@@ -155,30 +125,3 @@ async def enforce_scope(request: Request,
 async def admin_for_telegram(uid: int | None) -> dict | None:
     """The panel admin behind a Telegram user — the bot resolves the same way."""
     return await settings.admin_for_telegram(uid)
-
-
-def api_or_404(sid: str) -> OutlineAPI:
-    api = reg.get(sid)
-    if api is None:
-        raise errors.unknown_server()
-    return api
-
-
-def sids_or_404(server: str | None, admin: dict) -> list[str]:
-    """Servers a list/stats query covers: the named one, or all *of mine*.
-
-    An unknown id must 404, not fall back to "all" — that inverts a filter into
-    its opposite and reports every server's data as that one server's.
-    """
-    if not server:
-        return scoped_ids(admin)
-    if reg.meta(server) is None or not can_see(admin, server):
-        raise errors.unknown_server()
-    return [server]
-
-
-def host(url: str) -> str:
-    try:
-        return urlparse(url).netloc
-    except Exception:
-        return ""
