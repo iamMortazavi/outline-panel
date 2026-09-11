@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from ...core import errors, metrics, security
+from ...core.concurrency import map_concurrently
 from ...core.outline_api import OutlineAPI, OutlineError
+from ...core.settings import SettingsView
 from ...core.utils import gb_to_bytes
 from .. import idempotency
 from ..deps import (
@@ -38,9 +40,9 @@ router = APIRouter(prefix="/api", tags=["keys"],
 
 
 # --------------------------------------------------------------- read helpers
-async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
+async def _conn_info(api: OutlineAPI, ttl: int) -> dict[str, dict]:
     try:
-        m = await api.get_server_metrics_cached("30d", await settings.num("metrics_ttl"))
+        m = await api.get_server_metrics_cached("30d", ttl)
     except OutlineError:
         return {}
     conn = {}
@@ -54,7 +56,8 @@ async def _conn_info(api: OutlineAPI) -> dict[str, dict]:
     return conn
 
 
-async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
+async def keys_for_server(sid: str, admin: dict, names: dict,
+                          cfg: SettingsView) -> dict:
     m = reg.meta(sid)
     if m is None:  # server removed between snapshot and fetch
         return {"serverId": sid, "serverName": None, "keys": [], "error": "Server removed"}
@@ -64,13 +67,14 @@ async def keys_for_server(sid: str, admin: dict, names: dict) -> dict:
         # pool; _conn_info swallows its own errors, so only list_keys /
         # get_transfer_metrics raising OutlineError lands in the except below.
         keys, usage, conn = await asyncio.gather(
-            api.list_keys(), api.get_transfer_metrics(), _conn_info(api)
+            api.list_keys(), api.get_transfer_metrics(),
+            _conn_info(api, cfg.num("metrics_ttl")),
         )
     except OutlineError as e:
         # Server briefly unreachable — surface the error, don't drop its keys.
         return {"serverId": sid, "serverName": m["name"], "keys": [], "error": str(e)}
     local = {k["key_id"]: k for k in await db.keys_for(sid)}
-    base = await settings.get_profile_base()
+    base = cfg.profile_base()
     out = []
     for k in keys:
         kid = k["id"]
@@ -125,7 +129,11 @@ async def list_keys(server: str | None = None,
     names = {a["id"]: a["username"] for a in await db.all_admins()}
     owner = await db.get_owner()
     names[None] = owner["username"] if owner else "owner"
-    results = await asyncio.gather(*[keys_for_server(s, admin, names) for s in sids])
+    # Read the settings once for the whole request. Each server used to re-read
+    # the metrics TTL and the profile base for itself, so listing keys cost two
+    # extra row reads per configured server on every poll.
+    cfg = await settings.view()
+    results = await map_concurrently(sids, lambda s: keys_for_server(s, admin, names, cfg))
     keys = [k for r in results for k in r["keys"]]
     keys.sort(key=lambda x: (x["serverName"] or "", int(x["id"]) if str(x["id"]).isdigit() else 0))
     errors = [

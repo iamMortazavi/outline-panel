@@ -102,7 +102,10 @@ async def metrics_endpoint(db, reg) -> PlainTextResponse:
     rather than tracked on every write — one query at scrape time cannot drift
     from reality the way an incrementing counter can."""
     try:
-        metrics.observe("outline_panel_keys", len(await db.all_keys()))
+        # COUNT(*), not len(all_keys()): a scrape has no use for the rows, and
+        # building one dict per key every fifteen seconds is real work on a
+        # panel with a few thousand customers.
+        metrics.observe("outline_panel_keys", await db.count_keys())
         metrics.observe("outline_panel_servers", len(reg.ids()))
         metrics.observe("outline_panel_credit_drift", len(await db.credit_drift()))
     except Exception:  # noqa: BLE001 — a scrape must not fail on a busy database

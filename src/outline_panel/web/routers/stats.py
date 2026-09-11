@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from fastapi import APIRouter, Depends
 
+from ...core.concurrency import map_concurrently
 from ...core.outline_api import OutlineError
 from ..deps import current_admin, reg, require, settings, sids_or_404
 
@@ -45,7 +44,7 @@ async def stats(server: str | None = None,
                 admin: dict = Depends(current_admin)):
     sids = sids_or_404(server, admin)
     ttl = await settings.num("metrics_ttl")
-    per = await asyncio.gather(*[_stats_for(s, ttl) for s in sids]) if sids else []
+    per = await map_concurrently(sids, lambda s: _stats_for(s, ttl))
     any_avail = any(p["available"] for p in per)
     locmap: dict = {}
     for p in per:

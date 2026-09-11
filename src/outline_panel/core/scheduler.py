@@ -22,6 +22,7 @@ import time
 import uuid
 
 from . import backup, config, metrics
+from .concurrency import map_concurrently
 from .outline_api import OutlineError
 from .utils import MONTH_SECONDS, fmt_bytes, fmt_expiry
 
@@ -99,6 +100,21 @@ async def _safe_notify(notifier, text: str, key: dict | None = None) -> None:
         log.warning("failed to send notification: %s", e)
 
 
+async def _probe_one(registry, sid: str) -> tuple[str, bool, int, str | None] | None:
+    """Ask one server whether it is alive. Network only — no writes, no alerts,
+    so a whole fleet's worth of these can be in flight together."""
+    api = registry.get(sid)
+    if api is None:
+        return None
+    started = time.monotonic()
+    try:
+        await api.get_server_info()
+        reachable, err = True, None
+    except OutlineError as e:
+        reachable, err = False, str(e)
+    return sid, reachable, int((time.monotonic() - started) * 1000), err
+
+
 async def _probe_servers(registry, db, notifier, notified, settings) -> None:
     """Ask every server whether it is alive, and remember the answer.
 
@@ -108,18 +124,18 @@ async def _probe_servers(registry, db, notifier, notified, settings) -> None:
     after an alert actually went out.
     """
     threshold = await settings.num("health_alert_failures")
-    for sid in registry.ids() if hasattr(registry, "ids") else []:
-        api = registry.get(sid)
-        if api is None:
+    sids = registry.ids() if hasattr(registry, "ids") else []
+    # Probe the whole fleet at once. One at a time, an unreachable server spent
+    # its entire connect timeout before the next was even tried, so a couple of
+    # dead servers pushed the rest of the pass — expiry enforcement included —
+    # minutes late. The writes and alerts below stay sequential: they share the
+    # `notified` set and the one database connection.
+    probes = await map_concurrently(sids, lambda s: _probe_one(registry, s))
+    for probe in probes:
+        if probe is None:
             continue
+        sid, reachable, latency, err = probe
         name = (registry.meta(sid) or {}).get("name") or sid
-        started = time.monotonic()
-        try:
-            await api.get_server_info()
-            reachable, err = True, None
-        except OutlineError as e:
-            reachable, err = False, str(e)
-        latency = int((time.monotonic() - started) * 1000)
         await db.record_health(sid, reachable, latency if reachable else None, err)
 
         tag = (sid, None, "down")

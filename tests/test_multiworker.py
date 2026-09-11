@@ -221,7 +221,7 @@ async def test_the_cache_can_be_switched_off():
     await deps.db.init()
     calls = {"n": 0}
 
-    async def fresh(token):
+    async def fresh(token, cfg=None):
         calls["n"] += 1
         return {"name": token}
 

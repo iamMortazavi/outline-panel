@@ -380,6 +380,31 @@ class DB:
         await self.conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_health ON server_health(server_id, ts DESC)")
 
+    async def _m008_key_lookup_indexes(self) -> None:
+        """Indexes for the three lookups that run on somebody else's schedule.
+
+        `keys` is scanned end to end by all three, which is invisible on a panel
+        with fifty customers and is not on one with fifty thousand.
+
+        `sub_token` is the one that matters most: it is resolved on every fetch
+        of a public subscription link, and that rate is set by customers' VPN
+        clients re-fetching on their own timers, not by anything an admin does.
+
+        The other two are the scheduler's sweeps. They are partial indexes —
+        their WHERE clauses are exactly the queries' — so each holds only the
+        handful of rows that are actually candidates rather than a copy of the
+        table: almost every key is already activated, and almost none is expired
+        and still enabled.
+        """
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keys_sub_token ON keys(sub_token)")
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keys_pending ON keys(server_id, key_id)"
+            " WHERE duration_days IS NOT NULL AND activated_ts IS NULL")
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_keys_expiring ON keys(expiry_ts)"
+            " WHERE expiry_ts IS NOT NULL AND disabled = 0")
+
     async def close(self) -> None:
         if self._db is not None:
             await self._db.close()
@@ -472,6 +497,13 @@ class DB:
     async def all_keys(self) -> list[dict]:
         cur = await self.conn.execute("SELECT * FROM keys")
         return [dict(r) for r in await cur.fetchall()]
+
+    async def count_keys(self) -> int:
+        """How many keys exist. For callers that want the number, not the rows —
+        the /metrics scrape built a dict per key every fifteen seconds to do
+        this with len()."""
+        cur = await self.conn.execute("SELECT COUNT(*) AS n FROM keys")
+        return int((await cur.fetchone())["n"])
 
     async def delete_key(self, server_id: str, key_id: str) -> None:
         async with self._lock:
@@ -1135,4 +1167,5 @@ _MIGRATIONS = (
     DB._m005_server_health,
     DB._m006_backfill_profile_tokens,
     DB._m007_per_admin_totp,
+    DB._m008_key_lookup_indexes,
 )

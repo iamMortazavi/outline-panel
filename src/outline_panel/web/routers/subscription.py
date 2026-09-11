@@ -24,7 +24,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from ...core import config, errors
+from ...core.concurrency import map_concurrently
 from ...core.outline_api import OutlineError
+from ...core.settings import SettingsView
 from ..deps import STATIC_DIR, db, reg, settings
 
 router = APIRouter(tags=["subscription"])
@@ -91,12 +93,13 @@ async def _rate_limit(request: Request) -> None:
 async def _collect(token: str) -> dict:
     """Resolve a subscription token into a usage summary (``servers[*].url`` are
     the clean ``ss://`` lines the raw sub is built from)."""
-    ttl = await settings.num("sub_cache_seconds")
+    cfg = await settings.view()
+    ttl = cfg.num("sub_cache_seconds")
     if ttl:
         hit = _cache.get(token)
         if hit and hit[0] > time.monotonic():
             return hit[1]
-    info = await _collect_fresh(token)
+    info = await _collect_fresh(token, cfg)
     if ttl:
         if len(_cache) >= _CACHE_MAX:
             _cache.clear()
@@ -104,29 +107,63 @@ async def _collect(token: str) -> dict:
     return info
 
 
-async def _collect_fresh(token: str) -> dict:
+async def _server_slice(sid: str, members: list[dict]) -> dict:
+    """Everything one server contributes to a subscription, fetched in one go.
+
+    The usage table is per server, so it is read once no matter how many of the
+    subscription's keys live there; the key lookups then go out together rather
+    than one after another.
+    """
+    api = reg.get(sid)
+    if api is None:
+        return {}
+    try:
+        usage = await api.get_transfer_metrics()
+    except OutlineError:
+        return {}
+
+    async def one(m: dict) -> tuple[str, dict | None]:
+        try:
+            return m["key_id"], await api.get_key(m["key_id"])
+        except OutlineError:
+            return m["key_id"], None
+
+    return {"usage": usage, "keys": dict(await map_concurrently(members, one))}
+
+
+async def _collect_fresh(token: str, cfg: SettingsView | None = None) -> dict:
     await reg.sync()   # public route: no current_admin to refresh the list for us
+    cfg = cfg or await settings.view()
     members = await db.get_keys_by_sub_token(token)
     if not members:
         raise errors.unknown_subscription()
 
-    multi = len({m["server_id"] for m in members}) > 1
-    usage_by_server: dict[str, dict] = {}
+    # Group the members by server, then talk to every server at once. This used
+    # to walk the members one at a time, so a subscription spanning N servers
+    # paid N usage reads plus N key lookups end to end — on the one endpoint
+    # whose rate customers set rather than admins, since every VPN client
+    # re-fetches it on its own timer. The slowest server now decides how long
+    # this takes, instead of the sum of all of them.
+    by_server: dict[str, list[dict]] = {}
+    for m in members:
+        by_server.setdefault(m["server_id"], []).append(m)
+    sids = list(by_server)
+    slices = dict(zip(sids, await map_concurrently(
+        sids, lambda s: _server_slice(s, by_server[s])), strict=True))
+
+    multi = len(by_server) > 1
     servers: list[dict] = []
     title = None
     download = total = expire = pending_days = 0
     any_unlimited = False
 
+    # Rebuilt in the members' own order — created_ts — which is the order the
+    # configs are handed to the client in.
     for m in members:
         sid, kid = m["server_id"], m["key_id"]
-        api = reg.get(sid)
-        if api is None:
-            continue
-        try:
-            if sid not in usage_by_server:
-                usage_by_server[sid] = await api.get_transfer_metrics()
-            key = await api.get_key(kid)
-        except OutlineError:
+        got = slices.get(sid) or {}
+        key = (got.get("keys") or {}).get(kid)
+        if key is None:   # server gone, unreachable, or this key is not on it
             continue
         name = key.get("name") or m.get("name") or kid
         title = title or name
@@ -135,7 +172,7 @@ async def _collect_fresh(token: str) -> dict:
                               f"{name} · {sname}" if multi else name)
         if not line:
             continue
-        used = int(usage_by_server[sid].get(str(kid), 0))
+        used = int(got["usage"].get(str(kid), 0))
         lim = m.get("limit_bytes")
         exp = m.get("expiry_ts")
         download += used
@@ -170,7 +207,7 @@ async def _collect_fresh(token: str) -> dict:
         # 0 unless the validity period has not begun; then it is the term the
         # countdown will run for once the user first connects.
         "pendingDays": pending_days,
-        "updateInterval": await settings.num("sub_update_hours"),
+        "updateInterval": cfg.num("sub_update_hours"),
         "servers": servers,
     }
 

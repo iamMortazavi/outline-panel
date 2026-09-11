@@ -140,6 +140,76 @@ KNOBS: dict[str, dict] = {
 OWNER_USERNAME = "admin"
 
 
+# How a stored string becomes a knob's value. Shared by the store and the view
+# below so the two can never disagree about what a setting means — the range
+# check in particular, which is the difference between an interval of 60 and a
+# scheduler spinning flat out against every Outline server.
+def _knob_num(spec: dict, raw: str | None) -> int:
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return int(spec["default"])
+    if val < spec["min"] or val > spec["max"]:
+        return int(spec["default"])
+    return val
+
+
+def _knob_text(spec: dict, raw: str | None) -> str:
+    return raw or str(spec["default"])
+
+
+def _norm_base(raw: str | None) -> str | None:
+    url = (raw or "").strip().rstrip("/")
+    return url or None
+
+
+class SettingsView:
+    """The settings table as it was at one moment, read once.
+
+    `SettingsStore` goes to SQLite on every single call, deliberately: a cache
+    that lived as long as the process is what left the standalone bot polling
+    with a token the panel had already replaced. That default is right and it
+    stays.
+
+    What it is not built for is being asked the same question repeatedly inside
+    one unit of work. `knobs()` asked twenty times to serve one request, and
+    `/api/keys` re-read the metrics TTL and the profile base once per server, so
+    the cost of listing keys grew with the size of the fleet for no reason.
+
+    A view settles both: one SELECT, and a lifetime — a single request, a single
+    scheduler pass — short enough that there is no staleness to reason about.
+    Build one with ``await store.view()``; it is a plain dict underneath, so
+    every accessor here is sync.
+    """
+
+    __slots__ = ("_values",)
+
+    def __init__(self, values: dict[str, str]):
+        self._values = values
+
+    def get(self, key: str, default: str | None = None) -> str | None:
+        val = self._values.get(key)
+        return val if val is not None else default
+
+    def num(self, key: str) -> int:
+        return _knob_num(KNOBS[key], self.get(key))
+
+    def text(self, key: str) -> str:
+        return _knob_text(KNOBS[key], self.get(key))
+
+    def knobs(self) -> dict[str, int | str]:
+        return {
+            k: (self.text(k) if v.get("type") == "str" else self.num(k))
+            for k, v in KNOBS.items()
+        }
+
+    def cycle_seconds(self) -> int:
+        return self.num("cycle_days") * 86400
+
+    def profile_base(self) -> str | None:
+        return _norm_base(self.get(PROFILE_BASE_URL))
+
+
 class SettingsStore:
     """Reads straight through to SQLite — deliberately uncached.
 
@@ -160,6 +230,15 @@ class SettingsStore:
     async def set(self, key: str, value: str | None) -> None:
         await self.db.set_setting(key, value)
 
+    async def view(self) -> SettingsView:
+        """Every setting in one read, for a caller that needs several.
+
+        Use it wherever more than one setting is consulted to do one thing —
+        a request, a scheduler pass. See `SettingsView` for why this is a view
+        and not a cache.
+        """
+        return SettingsView(await self.db.all_settings())
+
     # panel knobs -----------------------------------------------------------
     async def num(self, key: str) -> int:
         """A numeric knob's current value, falling back to its env/spec default.
@@ -168,24 +247,14 @@ class SettingsStore:
         a hand-edited `expiry_check_interval` of 0 would spin the scheduler flat
         out against every Outline server.
         """
-        spec = KNOBS[key]
-        raw = await self.get(key)
-        try:
-            val = int(raw)
-        except (TypeError, ValueError):
-            return int(spec["default"])
-        if val < spec["min"] or val > spec["max"]:
-            return int(spec["default"])
-        return val
+        return _knob_num(KNOBS[key], await self.get(key))
 
     async def text(self, key: str) -> str:
-        return (await self.get(key)) or str(KNOBS[key]["default"])
+        return _knob_text(KNOBS[key], await self.get(key))
 
     async def knobs(self) -> dict[str, int | str]:
-        return {
-            k: (await self.text(k) if v.get("type") == "str" else await self.num(k))
-            for k, v in KNOBS.items()
-        }
+        # One SELECT for the lot; this used to be two row reads per knob.
+        return (await self.view()).knobs()
 
     async def cycle_seconds(self) -> int:
         return await self.num("cycle_days") * 86400
@@ -219,8 +288,7 @@ class SettingsStore:
 
     async def get_profile_base(self) -> str | None:
         """Base URL of the customer profile site, or None when not configured."""
-        url = (await self.get(PROFILE_BASE_URL) or "").strip().rstrip("/")
-        return url or None
+        return _norm_base(await self.get(PROFILE_BASE_URL))
 
     async def get_profile_host(self) -> str | None:
         """Just the hostname, lowercased and without a port — what a Host header
