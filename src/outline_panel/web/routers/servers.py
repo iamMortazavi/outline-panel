@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 import uuid
 
@@ -10,8 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ...core import errors
+from ...core.concurrency import map_concurrently
 from ...core.outline_api import OutlineAPI, OutlineError, parse_access_config
 from ...core.utils import gb_to_bytes
+from .. import subcache
 from ..deps import api_or_404, current_admin, db, enforce_scope, host, reg, require, scoped_ids
 
 router = APIRouter(prefix="/api", tags=["servers"],
@@ -37,6 +38,9 @@ class MetricsBody(BaseModel):
 
 async def _server_info(sid: str) -> dict:
     m = reg.meta(sid)
+    if m is None:   # removed between listing the ids and asking about them
+        return {"id": sid, "name": None, "host": "", "reachable": False,
+                "serverName": None, "version": None}
     info, reachable = {}, False
     try:
         info = await m["api"].get_server_info()
@@ -79,9 +83,7 @@ async def list_servers(admin: dict = Depends(current_admin)):
     # whole panel's servers leak into a scoped admin's list.
     # Probe concurrently (like stats.py): serially, N unreachable servers each
     # burn the full 15s timeout and the whole list times out behind a proxy.
-    return {"servers": list(await asyncio.gather(
-        *[_server_info(sid) for sid in scoped_ids(admin)]
-    ))}
+    return {"servers": await map_concurrently(scoped_ids(admin), _server_info)}
 
 
 @router.post("/servers", dependencies=[Depends(require("servers.manage"))])
@@ -115,7 +117,15 @@ async def rename_server_local(sid: str, body: NameBody):
 async def delete_server(sid: str):
     if not reg.meta(sid):
         raise errors.unknown_server()
+    # Removing a server drops its key rows, which changes the membership of
+    # every subscription that had a config on it — and a cached summary went on
+    # handing that config out afterwards, for a server this panel no longer
+    # manages. Same rule as unlinking one: collect the tokens while the rows are
+    # still there, then drop their cached copies.
+    tokens = {k["sub_token"] for k in await db.keys_for(sid) if k.get("sub_token")}
     await reg.remove(sid)
+    for token in tokens:
+        subcache.invalidate(token)
     return {"ok": True}
 
 

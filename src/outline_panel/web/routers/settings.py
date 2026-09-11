@@ -93,8 +93,16 @@ async def get_panel_settings():
 
 @router.put("/panel")
 async def set_panel_settings(body: dict):
-    """Write any subset of the knobs. Unknown keys are refused rather than
-    ignored, so a typo is a visible error and not a setting that never applies."""
+    """Write any subset of the knobs — all of them, or none.
+
+    Unknown keys are refused rather than ignored, so a typo is a visible error.
+    It used to be a visible error *and* a half-applied update: the loop wrote
+    each value as it validated it and stopped at the first bad one, so
+    ``{"cycle_days": 7, "typo": 1}`` answered 400 while the billing cycle had
+    already moved. The settings screen sends the whole form, so that left the
+    panel in a state nobody asked for and the screen still showing the old one.
+    """
+    pending: list[tuple[str, str]] = []
     for key, raw in body.items():
         spec = KNOBS.get(key)
         if spec is None:
@@ -104,7 +112,7 @@ async def set_panel_settings(body: dict):
             if not val or len(val) > spec.get("max", 64):
                 raise HTTPException(status_code=400,
                                     detail=f"{spec['label']}: 1–{spec.get('max', 64)} characters")
-            await settings.set(key, val)
+            pending.append((key, val))
             continue
         try:
             num = int(raw)
@@ -115,7 +123,9 @@ async def set_panel_settings(body: dict):
             raise HTTPException(
                 status_code=400,
                 detail=f"{spec['label']}: must be between {spec['min']} and {spec['max']}")
-        await settings.set(key, str(num))
+        pending.append((key, str(num)))
+    for key, val in pending:
+        await settings.set(key, val)
     return {"ok": True, "values": await settings.knobs()}
 
 

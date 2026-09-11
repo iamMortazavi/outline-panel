@@ -28,8 +28,18 @@ class FakeOutline:
             self.limits[kid] = limit_bytes
         return self.keys[kid]
 
-    async def get_key(self, kid):
+    def _must(self, kid):
+        """Outline 404s on an id it does not have. The double used to KeyError
+        instead, which no `except OutlineError` catches — so every guard that
+        exists to turn "no such key" into a 404 was never actually exercised."""
+        if kid not in self.keys:
+            from outline_panel.core.outline_api import OutlineError
+            raise OutlineError("Error response from server (404): Not Found",
+                               status=404)
         return self.keys[kid]
+
+    async def get_key(self, kid):
+        return self._must(kid)
 
     async def delete_key(self, kid):
         if kid not in self.keys:  # the real API 404s on a key that's already gone
@@ -58,7 +68,7 @@ class FakeOutline:
         self.limits.pop(kid, None)
 
     async def rename_key(self, kid, name):
-        self.keys[kid]["name"] = name
+        self._must(kid)["name"] = name
 
     async def get_server_metrics(self, since="30d"):
         from outline_panel.core.outline_api import OutlineError

@@ -19,6 +19,7 @@ import logging
 from fastapi import Request
 
 from ..core import config
+from .state import db
 
 log = logging.getLogger("web.audit")
 
@@ -112,7 +113,6 @@ async def audit_middleware(request: Request, call_next):
         # never authenticated — a failed login, an expired session — and those
         # are exactly the ones worth keeping, with a null actor.
         admin = getattr(request.state, "audit_admin", None)
-        from .deps import db
         await db.add_audit(
             actor_admin_id=admin["id"] if admin else None,
             actor_name=admin["username"] if admin else None,

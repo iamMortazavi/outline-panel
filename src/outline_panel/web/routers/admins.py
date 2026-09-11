@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ...core import errors, security
-from ..deps import CAPS, current_admin, db, reg, require_owner
+from ..deps import CAPS, db, reg, require_owner
 
 router = APIRouter(prefix="/api/admins", tags=["admins"],
                    dependencies=[Depends(require_owner)])
@@ -182,7 +182,7 @@ async def admin_ledger(admin_id: int):
 
 
 @router.delete("/{admin_id}")
-async def remove_admin(admin_id: int, me: dict = Depends(current_admin)):
+async def remove_admin(admin_id: int):
     row = await db.get_admin(admin_id)
     if row is None:
         raise errors.unknown_admin()

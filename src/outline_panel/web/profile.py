@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from .deps import STATIC_DIR, settings
+from .routers import subscription
 
 router = APIRouter(tags=["profile"])
 
@@ -105,5 +106,4 @@ async def profile_info(token: str, request: Request):
     never drift from what /sub/<token>/info reports."""
     if not _TOKEN.match(token):
         raise HTTPException(status_code=404, detail="Not found")
-    from .routers import subscription
     return await subscription.subscription_info(token, request)

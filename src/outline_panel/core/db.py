@@ -672,11 +672,33 @@ class DB:
             await self.conn.commit()
 
     async def delete_admin(self, admin_id: int) -> None:
+        """Remove a sub-admin, and hand their customers back to the owner.
+
+        Their keys used to keep pointing at an id with no row behind it. Nothing
+        crashed — `owns()` gives the owner every key and the list falls back to
+        their name — so the panel *showed* those users as the owner's while the
+        database said they belonged to someone who no longer existed, and
+        filtering by that admin still offered them under a deleted person.
+        NULL is what "the owner's" has always meant in this column, so write it.
+
+        Deleting the customers along with the reseller is not the alternative:
+        they are paying users with working configs, and their seller leaving is
+        not something they did.
+        """
         async with self._lock:
-            await self.conn.execute(
-                "DELETE FROM admins WHERE id = ? AND is_owner = 0", (admin_id,)
-            )
-            await self.conn.commit()
+            try:
+                cur = await self.conn.execute(
+                    "DELETE FROM admins WHERE id = ? AND is_owner = 0", (admin_id,)
+                )
+                if cur.rowcount:
+                    await self.conn.execute(
+                        "UPDATE keys SET owner_admin_id = NULL"
+                        " WHERE owner_admin_id = ?", (admin_id,)
+                    )
+                await self.conn.commit()
+            except BaseException:
+                await self.conn.rollback()
+                raise
 
     # packages --------------------------------------------------------------
     async def add_package(self, name: str, gb: float | None, days: int | None,

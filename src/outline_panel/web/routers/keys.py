@@ -180,11 +180,16 @@ async def create_key(sid: str, request: Request, body: CreateBody,
 @router.put("/servers/{sid}/keys/{kid}/name", dependencies=[Depends(require("keys.edit"))])
 async def rename_key(sid: str, kid: str, body: NameBody):
     api = api_or_404(sid)
+    # Adopt — and so validate — before touching Outline, the way every other
+    # edit route does. Renaming first meant an id that exists nowhere came back
+    # as 502 "the upstream failed" instead of 404 "there is no such key", and
+    # a key the panel had never seen was renamed upstream before anything
+    # checked whether it was real.
+    await ksvc.ensure_local(sid, kid)
     try:
         await api.rename_key(kid, body.name)
     except OutlineError as e:
         raise errors.upstream(str(e))
-    await ksvc.ensure_local(sid, kid)
     await db.set_name(sid, kid, body.name)
     return {"ok": True}
 
@@ -253,9 +258,13 @@ async def disable_key(sid: str, kid: str):
 @router.post("/servers/{sid}/keys/{kid}/enable", dependencies=[Depends(require("keys.edit"))])
 async def enable_key(sid: str, kid: str):
     api = api_or_404(sid)
-    meta = await db.get_key(sid, kid)
+    # ensure_local rather than get_key: `disable` on the same key already
+    # adopts it, so enabling was the one side of the pair that left a key
+    # unadopted — and answered 502 for an id that does not exist, where its
+    # twin answers 404.
+    meta = await ksvc.ensure_local(sid, kid)
     try:
-        await ksvc.enable_on_outline(api, kid, meta or {})
+        await ksvc.enable_on_outline(api, kid, meta)
     except OutlineError as e:
         raise errors.upstream(str(e))
     await db.set_disabled(sid, kid, False)
