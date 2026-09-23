@@ -1,0 +1,43 @@
+# managed by outline-panel (deploy/remote.sh) — edits are overwritten on deploy
+{
+	servers {
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
+}
+
+@DOMAIN@ {
+	# Static files straight off disk, precompressed at deploy time: Python
+	# never sees them. Versioned (?v=) assets and fonts are immutable.
+	handle_path /static/* {
+		root * @STATIC@
+		@immutable {
+			query v=*
+		}
+		@fonts path /vendor/fonts/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		header @fonts Cache-Control "public, max-age=31536000, immutable"
+		# only where nothing above set one (`?` = set if absent)
+		header ?Cache-Control "no-cache"
+		header X-Content-Type-Options nosniff
+		file_server {
+			precompressed gzip
+		}
+	}
+
+	# Everything else is the app. No `encode` here on purpose: the app
+	# compresses its own pages and leaves API responses (which carry secrets)
+	# uncompressed, to stay clear of BREACH.
+	handle {
+		reverse_proxy 127.0.0.1:@PORT@ {
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	header -Server
+	log {
+		output discard
+	}
+}

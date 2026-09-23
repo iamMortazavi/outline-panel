@@ -37,31 +37,40 @@ password, generates a session secret, and starts a `systemd` service. Then open
 > `COOKIE_SECURE=auto` — it works over plain `http://IP:8000` for first setup and
 > automatically becomes `Secure` once you're behind HTTPS.
 
-### Automatic HTTPS (Caddy)
+### Production deploy (recommended)
 
-Point your domain's DNS at the server, then:
+From a checkout, one command ships the committed `HEAD` to a server over SSH
+and makes it live behind Caddy with automatic HTTPS:
 
 ```bash
-# 1) bind the panel to localhost and trust the proxy headers (in .env), restart
-sed -i 's/^HOST=.*/HOST=127.0.0.1/' /opt/outline-panel/.env
-grep -q '^TRUST_PROXY=' /opt/outline-panel/.env \
-  && sed -i 's/^TRUST_PROXY=.*/TRUST_PROXY=true/' /opt/outline-panel/.env \
-  || echo 'TRUST_PROXY=true' >> /opt/outline-panel/.env
-systemctl restart outline-panel
-# 2) install Caddy (https://caddyserver.com/docs/install) and configure it
-printf 'your-domain.com {\n\treverse_proxy 127.0.0.1:8000\n}\n' > /etc/caddy/Caddyfile
-systemctl restart caddy
+deploy/deploy.sh root@panel.example.com            # domain = the SSH host
+deploy/deploy.sh root@1.2.3.4 --domain panel.example.com
+deploy/deploy.sh root@1.2.3.4 --no-domain          # plain http://IP:8000
 ```
 
-`TRUST_PROXY=true` lets the panel honor Caddy's `X-Forwarded-*` headers (real
-client IPs for the login rate limit, HTTPS-aware Secure cookies). Leave it
-`false` for direct `http://IP:8000` use, where those headers are spoofable.
+Re-run it to ship an update. What it sets up (`deploy/remote.sh`), tuned for a
+small VPS that also runs Outline:
 
-Caddy fetches and auto-renews a Let's Encrypt certificate and redirects HTTP→HTTPS.
-See [`deploy/Caddyfile.example`](deploy/Caddyfile.example).
+- **Releases, not a working copy:** each deploy is unpacked to
+  `/opt/outline-panel/releases/<id>` and installed into one venv. It goes live
+  only when `/healthz` answers; otherwise the previous release is restored.
+- **Data apart from code:** config in `/etc/outline-panel/env` (0640), the
+  database in `/var/lib/outline-panel`, backed up before every restart (last 7
+  kept). An `install.sh` layout is migrated on first run, originals untouched.
+- **One lean process:** a single uvloop worker runs the dashboard, scheduler and
+  bot; no access log; SQLite in WAL with `synchronous=NORMAL`; `MALLOC_ARENA_MAX=2`.
+- **Caddy does the static work:** assets are precompressed at deploy time and
+  served from disk with immutable caching, so Python only handles pages and the
+  API. API responses are never compressed (BREACH).
+- **systemd sandbox and limits:** a dedicated user, read-only system,
+  `MemoryHigh=300M`/`MemoryMax=450M` and lower CPU/IO weight so Outline keeps
+  priority. A 1 GB swapfile is added on machines under 2 GB with none.
+- Caddy is skipped if something else already owns ports 80/443; the panel then
+  listens on `:8000` for your existing proxy.
 
-Manage it: `systemctl {status|restart|stop} outline-panel`
-Locked out? `/opt/outline-panel/.venv/bin/outline-panel-admin reset-password`
+Manage it: `systemctl {status|restart|stop} outline-panel`, logs with
+`journalctl -u outline-panel -f`.
+Locked out? `outline-panel-admin reset-password`
 
 ## Docker
 

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
-from aiogram import Bot
-from aiogram.types import MenuButtonWebApp, WebAppInfo
-
-from .dispatcher import build_dispatcher
+# aiogram is imported where a bot is actually started, not here: importing it
+# costs ~120 MB of resident memory (its whole API model tree), which a panel
+# with no bot configured — or one on a small VPS — should not pay.
+if TYPE_CHECKING:
+    from aiogram import Bot
 
 log = logging.getLogger("bot.manager")
 
@@ -46,6 +48,8 @@ class BotManager:
 
     async def validate_token(self, token: str) -> str:
         """Return the bot @username, or raise on an invalid token."""
+        from aiogram import Bot
+
         probe = Bot(token)
         try:
             me = await probe.get_me()
@@ -66,6 +70,11 @@ class BotManager:
             return await self._start_locked(token)
 
     async def _start_locked(self, token: str) -> str:
+        from aiogram import Bot
+        from aiogram.types import MenuButtonWebApp, WebAppInfo
+
+        from .dispatcher import build_dispatcher
+
         await self._stop_locked()
         bot = Bot(token)
         me = await bot.get_me()  # validates the token

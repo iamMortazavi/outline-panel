@@ -291,3 +291,17 @@ async def test_listing_keys_does_not_re_read_settings_per_server(app):
     # Only the session-lifetime lookup in current_admin is left. Before, this
     # was that plus two row reads for each of the five servers.
     assert reads <= 2, f"{reads} settings row reads for one /api/keys"
+
+
+def test_the_web_process_does_not_load_the_bot_library_until_a_bot_starts():
+    """aiogram's model tree is ~120 MB resident — most of the process on a small
+    VPS — and a panel with no bot configured has no use for it. It is imported
+    when a bot is started, never at import time."""
+    import subprocess
+    import sys
+
+    code = "import sys, outline_panel.web.app; print('aiogram' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         env={**__import__("os").environ, "ENABLE_SCHEDULER": "false"})
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "False", "importing the web app pulled in aiogram"

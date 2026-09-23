@@ -201,6 +201,11 @@ class DB:
         # WAL allows concurrent reads/writes without locking the whole DB
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.execute("PRAGMA busy_timeout=5000")
+        # NORMAL is the WAL-mode setting SQLite recommends: a commit survives a
+        # crash of the process, and only an OS crash can lose the last few —
+        # without the fsync per write that FULL costs on a slow VPS disk.
+        await self._db.execute("PRAGMA synchronous=NORMAL")
+        await self._db.execute("PRAGMA temp_store=MEMORY")
         await self._migrate()
 
     async def _migrate(self) -> None:
@@ -407,6 +412,12 @@ class DB:
 
     async def close(self) -> None:
         if self._db is not None:
+            # keeps the query planner's statistics current, cheaply; SQLite's
+            # own advice is to run it just before closing a connection
+            try:
+                await self._db.execute("PRAGMA optimize")
+            except Exception:  # noqa: BLE001 — never block shutdown on it
+                pass
             await self._db.close()
             self._db = None
 
