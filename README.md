@@ -147,9 +147,14 @@ src/outline_panel/
     manager.py     in-process start/stop
     run.py         standalone runner
   static/
-    index.html           single-file web dashboard
+    index.html           dashboard shell (assets versioned by content hash)
+    app.js  organic.css  the dashboard (Organic design system)
+    fonts.css            self-hosted Caprasimo / Figtree / Vazirmatn faces
+    i18n.js              English + Persian strings, RTL
+    sub.html             customer subscription page
     miniapp.html         Telegram Mini App
-    vendor/qrcode.js     self-hosted QR generator
+    vendor/fonts/        woff2 subsets + OFL licences
+    vendor/qrcode*.js    self-hosted QR generators
 tests/                   pytest suite
 install.sh  Dockerfile  docker-compose.yml  deploy/  .github/workflows/ci.yml
 ```

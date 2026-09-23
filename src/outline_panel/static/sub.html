@@ -3,112 +3,134 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#0a0d12" />
+<meta name="theme-color" content="#f5ead8" />
 <title>Subscription</title>
-<!-- System fonts only: this page is opened when the tunnel is down, on networks
-     that block Google. No external request may gate the render. -->
+<!-- No font CDN: this page is opened when the tunnel is down, on networks that
+     block Google. The faces are same-origin and font-display:swap, so nothing
+     external gates the render. -->
+<link rel="stylesheet" href="/static/fonts.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='16' fill='%23c67139'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='18' text-anchor='middle' fill='%23f5ead8'%3EO%3C/text%3E%3C/svg%3E">
 <script src="/static/i18n.js"></script>
 <script src="/static/vendor/qrcode.js"></script>
 <style>
+  /* Organic, the dashboard's design system, in a sheet of its own: this page
+     shares no markup with the dashboard, so it takes the tokens, not the
+     classes. Keep the palette in step with organic.css. */
   :root{
-    --bg:#0a0d12;--panel:#10151d;--panel2:#151b25;--line:#1f2733;--line2:#2a3340;
-    --text:#eef2f8;--muted:#9aa6b6;--faint:#6b7689;--acc:#37d4e6;--acc-rgb:55,212,230;
-    --ink:#04141a;--ok:#5fe0a0;--warn:#f6c453;--danger:#ff6b7a;
+    --bg:#f5ead8;--panel:#ebddc5;--panel2:#f8f0e2;--line:rgba(46,33,24,.12);--line2:rgba(46,33,24,.2);
+    --text:#2e2118;--muted:#6b5a4a;--faint:#8a7866;--acc:#c67139;--acc-600:#a95c2c;--acc-700:#8c4a22;
+    --leaf:#7a8a5e;--leaf-100:#e3e8d6;--leaf-700:#4f5c3b;--acc-100:#f6dcc6;
+    --ink:#fdf8ef;--ok:var(--leaf-700);--warn:#a8741b;--danger:var(--acc-700);
     --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace;
-    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,system-ui,sans-serif;
-    --display:var(--sans);
+    --sans:"Figtree","Vazirmatn",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
+    --display:"Caprasimo","Vazirmatn",Georgia,serif;
+    --r-lg:28px;--r-md:20px;--r-sm:14px;
+    color-scheme:light;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;min-height:100dvh;
-    background-image:radial-gradient(130% 80% at 50% -15%,rgba(var(--acc-rgb),.09),transparent 56%),radial-gradient(circle at 1px 1px,rgba(255,255,255,.02) 1px,transparent 0);
-    background-size:100% 100%,24px 24px;background-attachment:fixed;padding:env(safe-area-inset-top) 0 40px}
+    padding:env(safe-area-inset-top) 0 calc(40px + env(safe-area-inset-bottom))}
+  :lang(fa) *{letter-spacing:0!important}
   .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
-  .wrap{max-width:480px;margin:0 auto;padding:22px 16px 0}
-  .brand{display:flex;align-items:center;gap:9px;margin-bottom:22px}
-  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--acc);box-shadow:0 0 11px var(--acc)}
-  .brand b{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:-.2px}
-  .brand span{color:var(--faint);font-size:12.5px;margin-inline-start:auto}
+  .wrap{max-width:520px;margin:0 auto;padding:22px 16px 0}
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+  .brand .dot{width:30px;height:30px;border-radius:50%;background:var(--acc);color:var(--ink);display:grid;place-items:center;font-family:var(--display);font-size:17px;line-height:1}
+  .brand b{font-family:var(--display);font-weight:400;font-size:20px}
+  .brand>span:not(.dot){color:var(--faint);font-size:11.5px;font-weight:700;letter-spacing:.08em;margin-inline-start:auto}
 
-  .hero{position:relative;border-radius:20px;padding:22px;background:linear-gradient(135deg,var(--acc),#53e0d2);color:#03171b;overflow:hidden;box-shadow:0 16px 40px -20px rgba(var(--acc-rgb),.6);margin-bottom:13px}
-  .hero::after{content:"";position:absolute;right:-50px;top:-70px;width:190px;height:190px;border-radius:50%;background:rgba(255,255,255,.16)}
-  .hero .who{font-family:var(--display);font-weight:800;font-size:24px;letter-spacing:-.5px;position:relative}
-  .hero .sub{font-size:12.5px;opacity:.8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
-  .ring{display:flex;align-items:center;gap:18px;margin-top:16px;position:relative}
+  .hero{position:relative;border-radius:var(--r-lg);padding:24px;background:var(--acc);color:var(--ink);overflow:hidden;margin-bottom:12px}
+  .hero::after{content:"";position:absolute;inset-inline-end:-60px;top:-80px;width:210px;height:210px;border-radius:50%;background:rgba(253,248,239,.13)}
+  .hero .who{font-family:var(--display);font-weight:400;font-size:28px;line-height:1.15;position:relative;overflow-wrap:anywhere}
+  .hero .sub{font-size:11.5px;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+  .ring{display:flex;align-items:center;gap:18px;margin-top:18px;position:relative}
   .ring svg{flex:none}
-  .ring .big{font-family:var(--display);font-weight:800;font-size:27px;line-height:1;letter-spacing:-.5px}
-  .ring .lbl{font-size:12.5px;opacity:.85;margin-top:4px}
+  .ring .track{stroke:rgba(253,248,239,.25)}.ring .arc{stroke:var(--ink)}
+  .ring text{fill:var(--ink);font-family:var(--sans);font-weight:800;font-size:17px}
+  .ring .big{font-family:var(--display);font-weight:400;font-size:30px;line-height:1}
+  .ring .lbl{font-size:13px;opacity:.9;margin-top:6px}
 
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:13px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:15px}
-  .card .t{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
-  .card .v{font-family:var(--display);font-weight:700;font-size:19px;margin-top:5px}
-  .sectitle{font-size:12px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:18px 4px 10px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .card{background:var(--panel);border-radius:var(--r-md);padding:16px}
+  .card .t{font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.08em}
+  .card .v{font-family:var(--display);font-weight:400;font-size:21px;margin-top:6px}
+  .sectitle{font-family:var(--display);font-size:19px;color:var(--text);margin:26px 4px 10px}
 
-  .link{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px}
-  .link .url{font-family:var(--mono);font-size:12px;color:var(--acc);word-break:break-all;line-height:1.5;margin-bottom:12px}
+  .link{background:var(--panel);border-radius:var(--r-md);padding:16px}
+  .link .url{font-family:var(--mono);font-size:12px;color:var(--acc-700);word-break:break-all;line-height:1.5;margin-bottom:12px;background:var(--panel2);border-radius:12px;padding:10px 12px}
   .row{display:flex;gap:9px}
-  .btn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;
-    background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 92%,#fff),var(--acc));color:var(--ink);box-shadow:0 8px 20px -10px rgba(var(--acc-rgb),.6)}
+  .btn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;border:none;border-radius:999px;padding:13px 18px;font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;
+    background:var(--acc);color:var(--ink);transition:background .15s,transform .1s}
+  .btn:hover{background:var(--acc-600)}
   .btn:active{transform:translateY(1px)}
-  .btn-sec{flex:none;background:var(--panel2);border:1px solid var(--line2);color:var(--text);box-shadow:none;padding:13px 15px}
+  .btn:focus-visible,.mini:focus-visible,.add:focus-visible,.seg button:focus-visible,.langbtn:focus-visible{outline:3px solid color-mix(in srgb,var(--acc) 45%,transparent);outline-offset:2px}
+  .btn-sec{flex:none;background:var(--panel2);color:var(--text);padding:13px 16px}
+  .btn-sec:hover{background:#fffaf1}
 
-  .srv{background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:14px;margin-bottom:10px}
+  .srv{background:var(--panel);border-radius:var(--r-md);padding:16px;margin-bottom:10px}
   .srv-top{display:flex;align-items:center;gap:10px}
   .srv-name{font-weight:700;font-size:15px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;flex:none}
-  .pill.ok{background:rgba(95,224,160,.16);color:var(--ok)}.pill.off{background:rgba(255,107,122,.16);color:var(--danger)}
-  .bar{height:6px;border-radius:5px;background:var(--panel2);overflow:hidden;margin:10px 0 7px}
-  .bar>i{display:block;height:100%;border-radius:5px;background:var(--acc)}
-  .srv-sub{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+  .pill{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;flex:none}
+  .pill.ok{background:var(--leaf-100);color:var(--leaf-700)}.pill.off{background:var(--acc-100);color:var(--acc-700)}
+  .bar{height:8px;border-radius:999px;background:var(--panel2);overflow:hidden;margin:12px 0 8px}
+  .bar>i{display:block;height:100%;border-radius:999px;background:var(--leaf)}
+  .srv-sub{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
   /* the ss:// line and byte counts stay LTR inside an RTL page — a URL reordered
      by the bidi algorithm is unreadable and, worse, looks wrong when copied,
      and "24.0 GB" renders as "GB 24.0". Direction only: .big keeps its own face. */
   [dir="rtl"] .url,[dir="rtl"] .mono,[dir="rtl"] .big{direction:ltr;text-align:start;unicode-bidi:embed}
+  [dir="rtl"] .url{text-align:left}
   [dir="rtl"] .ring .lbl{direction:rtl}
-  .langbtn{background:none;border:1px solid var(--line2);color:var(--muted);
-    border-radius:8px;padding:3px 9px;font:inherit;font-size:11.5px;cursor:pointer}
-  .srv-acts{display:flex;gap:8px;margin-top:11px}
-  .mini{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--panel2);border:1px solid var(--line2);color:var(--text);border-radius:11px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .langbtn{background:var(--panel);border:none;color:var(--text);
+    border-radius:999px;padding:6px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+  .srv-acts{display:flex;gap:8px;margin-top:12px}
+  .mini{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--panel2);border:none;color:var(--text);border-radius:999px;padding:10px 8px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;min-height:40px;white-space:nowrap}
+  .mini:hover{background:#fffaf1}
   .mini:active{opacity:.7}
-  .mini svg{width:15px;height:15px}
+  .mini svg{width:15px;height:15px;flex:none}
 
   /* connect guide */
-  .seg{display:flex;gap:5px;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:4px;margin-bottom:11px;overflow-x:auto}
-  .seg button{flex:1;min-width:72px;background:none;border:1px solid transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;padding:8px 6px;border-radius:9px;cursor:pointer;white-space:nowrap}
-  .seg button.on{background:var(--panel2);border-color:var(--line2);color:var(--acc)}
-  .app{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px 12px;margin-bottom:9px}
-  .app .ic{width:36px;height:36px;border-radius:11px;background:var(--panel2);border:1px solid var(--line2);display:grid;place-items:center;font-size:17px;flex:none}
+  .seg{display:flex;gap:4px;background:var(--panel);border-radius:999px;padding:4px;margin-bottom:12px;overflow-x:auto;scrollbar-width:none}
+  .seg::-webkit-scrollbar{display:none}
+  .seg button{flex:1 1 auto;min-width:0;background:none;border:none;color:var(--muted);font:inherit;font-size:13px;font-weight:700;padding:9px 10px;border-radius:999px;cursor:pointer;white-space:nowrap}
+  @media (max-width:380px){.seg button{font-size:12px;padding:9px 7px}}
+  .seg button.on{background:var(--text);color:var(--bg)}
+  .app{display:flex;align-items:center;gap:12px;background:var(--panel);border-radius:var(--r-md);padding:12px 14px;margin-bottom:8px}
+  .app .ic{width:40px;height:40px;border-radius:50%;background:var(--panel2);display:grid;place-items:center;font-size:18px;flex:none}
   .app .who2{flex:1;min-width:0}
-  .app .nm2{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .app .nm2{font-weight:700;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* wraps rather than ellipsing: on a 375px screen the longer notes are the
      ones that actually tell the user something */
-  .app .ds{font-size:11.5px;color:var(--faint);margin-top:2px;line-height:1.45}
-  .add{flex:none;border:none;border-radius:10px;padding:9px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
-    background:linear-gradient(180deg,color-mix(in srgb,var(--acc) 92%,#fff),var(--acc));color:var(--ink)}
+  .app .ds{font-size:12px;color:var(--faint);margin-top:2px;line-height:1.45}
+  .add{flex:none;border:none;border-radius:999px;padding:9px 16px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;
+    background:var(--acc);color:var(--ink)}
+  .add:hover{background:var(--acc-600)}
   .add:active{transform:translateY(1px)}
-  .steps{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-bottom:11px}
-  .steps li{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:4px}
+  .steps{background:var(--leaf-100);border-radius:var(--r-md);padding:14px 16px;margin-bottom:12px}
+  .steps li{font-size:13px;color:var(--leaf-700);line-height:1.6;margin-bottom:4px}
   .steps li:last-child{margin-bottom:0}
   .steps b{color:var(--text)}
-  .steps ol{margin:0;padding-inline-start:19px;padding-left:unset}
+  .steps ol{margin:0;padding:0;padding-inline-start:22px}
+  .hint{font-size:12px;color:var(--faint);line-height:1.55;margin:4px 6px 0}
 
   .center{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:70vh;gap:10px;padding:24px}
-  .spin{width:22px;height:22px;border:2.5px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:rot .7s linear infinite}
+  .spin{width:24px;height:24px;border:3px solid var(--line2);border-top-color:var(--acc);border-radius:50%;animation:rot .7s linear infinite}
   @keyframes rot{to{transform:rotate(360deg)}}
-  .emoji{font-size:46px}.ttl{font-weight:800;font-size:18px}.muted{color:var(--muted)}
-  .foot{text-align:center;color:var(--faint);font-size:12px;margin-top:20px}
-  .foot a{color:var(--acc);cursor:pointer;text-decoration:none}
+  .emoji{width:72px;height:72px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-size:32px}
+  .ttl{font-family:var(--display);font-weight:400;font-size:22px}.muted{color:var(--muted)}
+  .foot{text-align:center;color:var(--faint);font-size:12.5px;margin-top:24px}
+  .foot a{color:var(--acc-700);font-weight:700;cursor:pointer;text-decoration:none}
 
   /* qr modal */
-  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);z-index:40;display:none;align-items:center;justify-content:center;padding:24px}
+  .scrim{position:fixed;inset:0;background:rgba(46,33,24,.45);backdrop-filter:blur(3px);z-index:40;display:none;align-items:center;justify-content:center;padding:24px}
   .scrim.on{display:flex}
-  .qrbox{background:var(--bg);border:1px solid var(--line2);border-radius:20px;padding:20px;max-width:320px;width:100%;text-align:center}
-  .qrbox .qr{background:#fff;border-radius:16px;padding:16px;margin:6px auto 14px;width:230px;max-width:78vw}
+  .qrbox{background:var(--bg);border-radius:var(--r-lg);padding:22px;max-width:320px;width:100%;text-align:center;box-shadow:0 24px 60px -20px rgba(46,33,24,.45)}
+  .qrbox .qr{background:#fff;border-radius:var(--r-md);padding:16px;margin:8px auto 16px;width:230px;max-width:78vw}
   .qrbox .qr svg{width:100%;height:auto;display:block}
-  .qrbox .nm{font-weight:700;margin-bottom:2px}
-  #toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(16px);background:#000d;color:#fff;padding:11px 20px;border-radius:13px;font-size:13.5px;font-weight:600;z-index:60;opacity:0;transition:.25s;pointer-events:none}
+  .qrbox .nm{font-family:var(--display);font-size:19px;margin-bottom:2px}
+  #toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(16px);background:var(--text);color:var(--bg);padding:11px 20px;border-radius:999px;font-size:13.5px;font-weight:700;z-index:60;opacity:0;transition:.25s;pointer-events:none}
   #toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:.01ms!important}}
 </style>
 </head>
 <body>
@@ -202,13 +224,13 @@ function connectSection(d){
       '<li>'+t('Tap <b>Add</b> — the app opens and imports your subscription.')+'</li>'+
       '<li>'+esc(t('Press connect. Your data and expiry update automatically.'))+'</li>'+
     '</ol></div>'+rows+
-    '<div style="font-size:11.5px;color:var(--faint);line-height:1.55;margin:2px 4px 0">'+
+    '<div class="hint">'+
       esc(t('Nothing happened? The app probably isn’t installed yet. Install it, '+
             'then copy the subscription link above and paste it in the app.'))+'</div>';
 }
 
 function ring(pct){const r=30,c=2*Math.PI*r,off=c*(1-Math.min(pct,100)/100);
-  return '<svg width="74" height="74" viewBox="0 0 74 74"><circle cx="37" cy="37" r="'+r+'" fill="none" stroke="rgba(3,23,27,.18)" stroke-width="8"/><circle cx="37" cy="37" r="'+r+'" fill="none" stroke="#03171b" stroke-width="8" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+off+'" transform="rotate(-90 37 37)"/><text x="37" y="42" text-anchor="middle" font-family="var(--display)" font-weight="800" font-size="17" fill="#03171b">'+Math.round(pct)+'%</text></svg>';}
+  return '<svg width="74" height="74" viewBox="0 0 74 74" aria-hidden="true"><circle class="track" cx="37" cy="37" r="'+r+'" fill="none" stroke-width="8"/><circle class="arc" cx="37" cy="37" r="'+r+'" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+off+'" transform="rotate(-90 37 37)"/><text x="37" y="43" text-anchor="middle">'+Math.round(pct)+'%</text></svg>';}
 
 function render(d){
   const used=d.used||0, total=d.total||0, unlimited=d.unlimited||total===0;
@@ -216,7 +238,7 @@ function render(d){
   const remain=unlimited?null:Math.max(0,total-used);
   const ex=expiry(d.expire);
   const multi=(d.servers||[]).length>1;
-  let h='<div class="wrap"><div class="brand"><span class="dot"></span><b>Outline</b><span>'+esc(t('SUBSCRIPTION'))+'</span>'+
+  let h='<div class="wrap"><div class="brand"><span class="dot" aria-hidden="true">O</span><b>Outline</b><span>'+esc(t('SUBSCRIPTION'))+'</span>'+
      '<button class="langbtn" id="lang" style="margin-inline-start:10px">'+esc(nextLangLabel())+'</button></div>';
   h+='<div class="hero"><div class="sub">'+esc(t('Data used'))+'</div><div class="who">'+esc(d.name)+'</div>'+
      '<div class="ring">'+(unlimited?'<div><div class="big">'+fmtB(used)+'</div><div class="lbl">'+esc(t('Unlimited plan'))+'</div></div>':
@@ -259,7 +281,7 @@ function render(d){
     setTimeout(()=>{if(!document.hidden)toast(t('App not installed yet — install it, then tap Add'));},1200);
   });
 }
-function fail(msg){document.getElementById('app').innerHTML='<div class="center"><div class="emoji">🔗</div><div class="ttl">'+esc(msg)+'</div><div class="muted">'+esc(t('Check the link, or ask your provider for a new one.'))+'</div></div>';}
+function fail(msg){document.getElementById('app').innerHTML='<div class="center"><div class="emoji" aria-hidden="true">🔗</div><div class="ttl">'+esc(msg)+'</div><div class="muted">'+esc(t('Check the link, or ask your provider for a new one.'))+'</div></div>';}
 async function boot(){
   try{const r=await fetch('/sub/'+encodeURIComponent(token)+'/info',{headers:{'Accept':'application/json'}});
     if(r.status===404)return fail(t('Subscription not found'));

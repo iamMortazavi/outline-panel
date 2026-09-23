@@ -52,8 +52,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 # Ship the dashboard, the Mini App, and its self-hosted vendor assets (the
-# `static/*` glob alone does not match the nested `static/vendor/` directory).
-outline_panel = ["static/*", "static/vendor/*"]
+# `static/*` glob alone does not match the nested `static/vendor/` directories).
+outline_panel = ["static/*", "static/vendor/*", "static/vendor/fonts/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

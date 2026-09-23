@@ -12,14 +12,16 @@ Servers can be added from the UI (Settings). On first run, OUTLINE_API_URL from
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from ..core import config
 from ..core.scheduler import expiry_loop
@@ -98,6 +100,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Outline Panel", lifespan=lifespan)
 
+
+class _AssetGZip(GZipMiddleware):
+    """GZip for the dashboard shell and /static — and nothing else. API
+    responses carry key material and are deliberately left uncompressed (the
+    BREACH pattern); the fonts are already compressed."""
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path", "") if scope["type"] == "http" else ""
+        if path in ("/", "/tma") or (path.startswith("/static/")
+                                     and not path.startswith("/static/vendor/fonts/")):
+            await super().__call__(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
 # Registered first so it wraps outermost and sees the final status of every
 # mutating request, including ones rejected by a dependency.
 app.middleware("http")(audit_middleware)
@@ -107,6 +123,25 @@ app.middleware("http")(observability_middleware)
 # Outermost: the profile host must be gated before anything else looks at the
 # request, so a 404 there costs nothing and leaks nothing.
 app.middleware("http")(profile_host_guard)
+
+
+@app.middleware("http")
+async def static_cache(request: Request, call_next):
+    """Long-lived caching for what cannot go stale, revalidation for the rest.
+
+    A versioned URL (``?v=<content hash>``) names exactly one version of a file,
+    and the fonts never change — both are safe to keep for a year. Anything
+    else under /static (the customer page's script, the QR library) is
+    revalidated with its ETag, which costs a 304 rather than the file.
+    """
+    resp = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/") and resp.status_code == 200:
+        if "v" in request.query_params or path.startswith("/static/vendor/fonts/"):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        else:
+            resp.headers.setdefault("Cache-Control", "no-cache")
+    return resp
 
 
 @app.middleware("http")
@@ -178,9 +213,27 @@ async def metrics_route(request: Request):
     return await metrics_endpoint(db, reg)
 
 
+# The dashboard's CSS and JS are separate files so a browser can keep them
+# between visits. Their URLs carry a hash of their contents, stamped into the
+# page once at startup: an upgrade changes the hash, so nobody ever runs a
+# cached app.js against a newer server, and until then the files are cached
+# for a year (see static_cache below).
+def _asset_version() -> str:
+    h = hashlib.sha256()
+    for name in ("fonts.css", "organic.css", "app.js", "i18n.js"):
+        h.update((STATIC_DIR / name).read_bytes())
+    return h.hexdigest()[:12]
+
+
+ASSET_VERSION = _asset_version()
+_INDEX_HTML = (STATIC_DIR / "index.html").read_text(encoding="utf-8").replace("__V__", ASSET_VERSION)
+
+
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    # no-cache, not no-store: the shell is revalidated every load, so a new
+    # version is picked up at once, but it is tiny and carries no secrets.
+    return HTMLResponse(_INDEX_HTML, headers={"Cache-Control": "no-cache"})
 
 
 @app.exception_handler(HTTPException)
@@ -203,3 +256,5 @@ async def http_exc_handler(request, exc: HTTPException):
 app.include_router(profile_router)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Added last, so it wraps outermost and compresses the final bytes.
+app.add_middleware(_AssetGZip, minimum_size=1024)
